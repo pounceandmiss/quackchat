@@ -1,0 +1,69 @@
+// The avatar layer, exposed to QML as `App.avatars`. QQuickPixmapCache already
+// decodes and caches by URL, so this only covers what it can't: tracking the
+// current hash per (acc,jid) for cache invalidation, and bridging the async
+// `avatar data` fetch to an AvatarSink.
+//
+// Core/Qml only, no QImage - the sink does the decoding, so the headless model
+// tests never pull in QtGui.
+#ifndef AVATARCONTROLLER_H
+#define AVATARCONTROLLER_H
+
+#include <QHash>
+#include <QObject>
+#include <QSet>
+#include <QString>
+#include <QVariant>
+#include <QtQml/qqmlregistration.h>
+
+class TackyBackend;
+class AvatarSink;
+
+class AvatarController : public QObject {
+    Q_OBJECT
+    QML_ANONYMOUS
+    // Bumped on every avatar change. QML reads it purely to give the image-URL
+    // bindings a dependency, so they re-run hashFor() on an update.
+    Q_PROPERTY(int rev READ rev NOTIFY changed)
+
+public:
+    explicit AvatarController(QObject *parent = nullptr);
+
+    void setBackend(TackyBackend *backend);
+
+    int rev() const { return m_rev; }
+
+    // The current hash for a JID, or "" if none is known - not the image, just
+    // the token QML mixes into the URL to cache-bust. The first call for a JID
+    // also marks it `visible`, which is what makes the backend fetch it and
+    // push an `avatar <Update>` carrying the hash.
+    Q_INVOKABLE QString hashFor(const QString &acc, const QString &jid);
+
+    // Completes `sink` when the reply lands or fails. Called from the image
+    // provider's loader thread, so it hops onto this object's thread first.
+    void fetch(const QString &acc, const QString &jid, const QString &hash,
+               AvatarSink *sink);
+
+    // Public so tests can drive hash tracking with canned events.
+    void handleEvent(const QString &module, const QString &name,
+                     const QVariant &args);
+
+signals:
+    void changed();
+
+private slots:
+    void onResult(int token, const QVariant &data);
+    void onError(int token, const QString &message);
+
+private:
+    static QString key(const QString &acc, const QString &jid);
+    static QString normJid(const QString &jid);
+    void ensureVisible(const QString &acc, const QString &jid);
+
+    TackyBackend *m_backend = nullptr;
+    QHash<QString, QString> m_hash;     // "acc\njid" -> hash
+    QHash<int, AvatarSink *> m_pending; // request token -> waiting sink
+    QSet<QString> m_visible;
+    int m_rev = 0;
+};
+
+#endif // AVATARCONTROLLER_H

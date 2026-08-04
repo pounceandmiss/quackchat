@@ -1,0 +1,6 @@
+build/
+build-android/
+CMakeUserPresets.json
+.qtcreator/
+.cache/
+aqtinstall.log
