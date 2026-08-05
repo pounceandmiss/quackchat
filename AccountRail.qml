@@ -21,6 +21,17 @@ Rectangle {
         color: Theme.hairline
     }
 
+    // Android and iOS are single-window, so there the details get a full-screen
+    // sheet over the shell instead of a window of their own.
+    function openSettings(jid) {
+        if (Theme.mobile) {
+            settingsSheet.account = jid
+            settingsSheet.open()
+        } else {
+            AppWindows.accountSettings(jid)
+        }
+    }
+
     // Maps a connState string to the status-dot color.
     function stateColor(state, enabled) {
         if (!enabled)
@@ -115,6 +126,10 @@ Rectangle {
                 Menu {
                     id: ctx
                     MenuItem {
+                        text: "Account details…"
+                        onTriggered: rail.openSettings(cell.jid)
+                    }
+                    MenuItem {
                         text: cell.acctEnabled ? "Disable" : "Enable"
                         onTriggered: cell.acctEnabled ? App.accounts.disable(cell.jid)
                                                       : App.accounts.enable(cell.jid)
@@ -166,4 +181,27 @@ Rectangle {
     }
 
     AddAccountSheet { id: addSheet }
+
+    // Full-screen rather than a centred dialog: the form plus a device list of
+    // unknown length is a screenful.
+    Dialog {
+        id: settingsSheet
+        property alias account: settingsPage.account
+        parent: Overlay.overlay
+        modal: true
+        padding: 0
+        x: 0
+        y: 0
+        width: parent ? parent.width : 0
+        height: parent ? parent.height : 0
+        // The sheet outlives each visit, so start from what is stored rather
+        // than from whatever was typed and abandoned last time.
+        onAboutToShow: settingsPage.bindAccount()
+
+        AccountSettingsPage {
+            id: settingsPage
+            anchors.fill: parent
+            onDone: settingsSheet.close()
+        }
+    }
 }

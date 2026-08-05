@@ -17,6 +17,18 @@ ChatListModel *AppController::chatListFor(const QString &acc) {
     return m;
 }
 
+AccountSettings *AppController::accountSettingsFor(const QString &acc) {
+    if (acc.isEmpty())
+        return nullptr;
+    AccountSettings *&s = m_accountSettings[acc];
+    if (!s) {
+        s = new AccountSettings(this);
+        s->setBackend(&m_backend);
+        s->setAccount(acc);
+    }
+    return s;
+}
+
 void AppController::startFromEnvironment() {
     if (m_started)
         return;

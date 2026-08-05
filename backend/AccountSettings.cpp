@@ -1,0 +1,141 @@
+#include "AccountSettings.h"
+
+#include "TackyBackend.h"
+
+AccountSettings::AccountSettings(QObject *parent) : QObject(parent) {}
+
+void AccountSettings::setAccount(const QString &acc) {
+    if (m_account == acc)
+        return;
+    m_account = acc;
+    m_devices.setAccount(acc);
+    // The page shows this account's own keys, so it is its own subject.
+    m_devices.setJid(acc);
+    emit accountChanged();
+    refresh();
+}
+
+void AccountSettings::setBackend(TackyBackend *backend) {
+    if (m_backend == backend)
+        return;
+    if (m_backend)
+        m_backend->disconnect(this);
+    m_backend = backend;
+    m_devices.setBackend(backend);
+    if (m_backend) {
+        connect(m_backend, &TackyBackend::event, this,
+                &AccountSettings::handleEvent);
+        connect(m_backend, &TackyBackend::result, this,
+                &AccountSettings::handleResult);
+        connect(m_backend, &TackyBackend::error, this,
+                &AccountSettings::handleError);
+    }
+    refresh();
+}
+
+void AccountSettings::refresh() {
+    if (!m_backend || m_account.isEmpty())
+        return;
+    m_getToken =
+        m_backend->request(QStringLiteral("account"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("acc"), m_account}});
+    requestNick();
+}
+
+// Our own nick, so the subject is the account itself.
+void AccountSettings::requestNick() {
+    m_nickGetToken =
+        m_backend->request(QStringLiteral("nick"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("acc"), m_account},
+                                       {QStringLiteral("jid"), m_account}});
+}
+
+void AccountSettings::save(const QString &password, const QString &nick) {
+    if (!m_backend || m_account.isEmpty())
+        return;
+
+    bool wrote = false;
+    if (password != m_password) {
+        m_backend->notify(QStringLiteral("account"), QStringLiteral("add"),
+                          QVariantMap{{QStringLiteral("acc"), m_account},
+                                      {QStringLiteral("password"), password}});
+        m_password = password;
+        emit passwordChanged();
+        wrote = true;
+    }
+
+    if (nick != m_nick) {
+        // Publishing the nickname is a round trip to the server, so this is
+        // the one write worth waiting on before calling the save done.
+        m_nickToken =
+            m_backend->request(QStringLiteral("nick"), QStringLiteral("set"),
+                               QVariantMap{{QStringLiteral("acc"), m_account},
+                                           {QStringLiteral("nick"), nick}});
+        setStatus(QStringLiteral("Saving"), false);
+        emit savingChanged();
+        return;
+    }
+
+    setStatus(wrote ? QStringLiteral("Saved") : QString(), false);
+    emit saved();
+}
+
+void AccountSettings::handleEvent(const QString &module, const QString &name,
+                                  const QVariant &args) {
+    if (!m_backend || module != QLatin1String("nick") ||
+        name != QLatin1String("Changed"))
+        return;
+    const QVariantMap a = args.toMap();
+    if (a.value(QStringLiteral("acc")).toString() != m_account)
+        return;
+    // <Changed> carries the JID, not the nick; the cache holds the new value.
+    if (a.value(QStringLiteral("jid")).toString() != m_account)
+        return;
+    requestNick();
+}
+
+void AccountSettings::handleResult(int token, const QVariant &data) {
+    if (token == m_getToken) {
+        applyAccount(data.toMap());
+    } else if (token == m_nickGetToken) {
+        applyNick(data.toString());
+    } else if (token == m_nickToken) {
+        m_nickToken = -1;
+        emit savingChanged();
+        setStatus(QStringLiteral("Saved"), false);
+        emit saved();
+    }
+}
+
+// A failed read (no such account yet, or no backend) leaves the fields alone
+// rather than blanking what the user typed, so only the write is reported.
+void AccountSettings::handleError(int token, const QString &message) {
+    if (token != m_nickToken)
+        return;
+    m_nickToken = -1;
+    emit savingChanged();
+    setStatus(message, true);
+}
+
+void AccountSettings::applyAccount(const QVariantMap &row) {
+    const QString password = row.value(QStringLiteral("password")).toString();
+    if (password == m_password)
+        return;
+    m_password = password;
+    emit passwordChanged();
+}
+
+void AccountSettings::applyNick(const QString &nick) {
+    if (nick == m_nick)
+        return;
+    m_nick = nick;
+    emit nickChanged();
+}
+
+void AccountSettings::setStatus(const QString &text, bool error) {
+    if (m_status == text && m_statusError == error)
+        return;
+    m_status = text;
+    m_statusError = error;
+    emit statusChanged();
+}

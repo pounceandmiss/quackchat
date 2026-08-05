@@ -12,6 +12,7 @@
 #include <QString>
 #include <QtQml/qqmlregistration.h>
 
+#include "AccountSettings.h"
 #include "AccountsModel.h"
 #include "AvatarController.h"
 #include "ChatListModel.h"
@@ -35,6 +36,7 @@ public:
     // Lazily created and cached here; all windows on the same account share one
     // instance. Returns nullptr for an empty acc.
     Q_INVOKABLE ChatListModel *chatListFor(const QString &acc);
+    Q_INVOKABLE AccountSettings *accountSettingsFor(const QString &acc);
 
     // Start a persistent on-disk backend and sign in TACKY_ACC if it is set.
     // No-op once started.
@@ -45,6 +47,7 @@ private:
     AccountsModel m_accounts;
     AvatarController m_avatars;
     QHash<QString, ChatListModel *> m_chatLists;
+    QHash<QString, AccountSettings *> m_accountSettings;
     bool m_started = false;
 };
 
