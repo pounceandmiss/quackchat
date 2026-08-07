@@ -2,6 +2,7 @@
 // locally and emits real message/<New> events, exercising the full delivery
 // path: backend emit -> queued hop -> TackyBackend signal -> model.
 #include <QtTest>
+#include <QCryptographicHash>
 #include <QSignalSpy>
 
 #include "ChatListModel.h"
@@ -39,6 +40,8 @@ private slots:
     // Search against the real store: arg names, cursor and result shape are
     // tacky's, and only a round trip proves we speak them.
     void searchFindsWhatWasStored();
+    // Avatar bytes survive the JSON transport unchanged.
+    void avatarBytesSurviveTheWire();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -300,6 +303,49 @@ void TestIntegration::searchFindsWhatWasStored() {
     QTRY_VERIFY_WITH_TIMEOUT(wide.rowCount() == 1, 5000);
     QCOMPARE(wide.data(wide.index(0), SearchModel::ChatJidRole).toString(),
              QString("friend@example.com"));
+
+    backend.stop();
+}
+
+// `avatar publish -data` takes raw bytes, but the transport between here and
+// tacky is JSON, which is text, so tacky declares the argument base64 and
+// decodes it on arrival. This drives every possible byte through `avatar
+// inject` (the same -data, no server needed) and reads it out again. The
+// returned hash is tacky's own SHA-1 of what it received, so a match proves it
+// decoded to our bytes exactly.
+void TestIntegration::avatarBytesSurviveTheWire() {
+    QByteArray bytes(256, Qt::Uninitialized);
+    for (int i = 0; i < 256; ++i)
+        bytes[i] = static_cast<char>(i);
+
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    QSignalSpy results(&backend, &TackyBackend::result);
+    QSignalSpy errors(&backend, &TackyBackend::error);
+
+    const int injectToken =
+        backend.request("avatar", "inject",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "me@example.com"},
+                                    {"data", QString::fromLatin1(bytes.toBase64())}});
+    QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty(), 5000);
+    QVERIFY2(errors.isEmpty(), "inject reported an error");
+    QCOMPARE(results.first().at(0).toInt(), injectToken);
+
+    const QString hash = results.first().at(1).toString();
+    QCOMPARE(hash, QString(QCryptographicHash::hash(bytes, QCryptographicHash::Sha1)
+                               .toHex()));
+
+    // And back out: `avatar data` is base64, the same reply the image provider
+    // decodes for display.
+    results.clear();
+    backend.request("avatar", "data",
+                    QVariantMap{{"acc", "me@example.com"}, {"hash", hash}});
+    QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty(), 5000);
+    QCOMPARE(QByteArray::fromBase64(results.first().at(1).toString().toLatin1()),
+             bytes);
 
     backend.stop();
 }

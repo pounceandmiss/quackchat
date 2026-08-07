@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Quack
 
@@ -45,6 +46,21 @@ Page {
                                   && (passwordField.text !== page.settings.password
                                       || nickField.text !== page.settings.nick)
 
+    // Whether this account has an avatar published, which is what decides if
+    // there is anything to remove. The hash is the truth here rather than the
+    // loaded picture, so the control does not blink out while one is fetching;
+    // `rev` is read only to give the binding something to depend on, as in
+    // Avatar.qml.
+    readonly property bool hasAvatar: {
+        const rev = App.avatars.rev
+        return rev >= 0 && page.account !== ""
+               && App.avatars.hashFor(page.account, page.account) !== ""
+    }
+
+    // Nothing can be done to the picture while one is already on its way out.
+    readonly property bool avatarEditable: page.settings !== null
+                                           && !page.settings.avatarBusy
+
     background: Rectangle { color: Theme.background }
 
     function copyFingerprint(spaced) {
@@ -61,6 +77,42 @@ Page {
         color: Theme.textPrimary
         font.pixelSize: 18
         font.bold: true
+    }
+
+    component Caption: Text {
+        color: Theme.textDim
+        font.pixelSize: 11
+    }
+
+    // The picture is published on its own, so this is not wired to Save.
+    FileDialog {
+        id: avatarDialog
+        objectName: "avatarDialog"
+        title: "Choose a picture"
+        // Android's picker filters by MIME type, which FileDialog does not
+        // expose, so it lists everything there; the decode is what turns a
+        // non-image away.
+        nameFilters: ["Images (*.png *.jpg *.jpeg *.gif *.webp)", "All files (*)"]
+        onAccepted: if (page.settings) page.settings.setAvatar(avatarDialog.selectedFile)
+    }
+
+    component Card: Rectangle {
+        default property alias content: cardColumn.data
+        Layout.fillWidth: true
+        implicitHeight: cardColumn.implicitHeight + 28
+        color: Theme.surface
+        radius: 12
+        border.width: 1
+        border.color: Theme.hairline
+
+        ColumnLayout {
+            id: cardColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 14
+            spacing: 10
+        }
     }
 
     header: PageHeader {
@@ -99,64 +151,148 @@ Page {
 
             Item { Layout.preferredHeight: 4 }
 
+            // The picture leads the page rather than sharing a card with the
+            // fields, and both things that can be done to it ride on a chip
+            // over its lower edge: no second page to open, and nothing to aim
+            // at on a phone. Tapping the picture sets one too, which is the
+            // large target for the common action.
+            Item {
+                id: avatarEditor
+                objectName: "avatarEditor"
+                readonly property int edge: 112
+
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: 8
+                Layout.preferredWidth: avatarEditor.edge
+                // The chip hangs half of itself past the picture's bottom.
+                Layout.preferredHeight: avatarEditor.edge + avatarActions.height / 2
+
+                Avatar {
+                    id: accountAvatar
+                    objectName: "accountAvatar"
+                    width: avatarEditor.edge
+                    height: avatarEditor.edge
+                    account: page.account
+                    jid: page.account
+                    label: page.account
+                    initialsPixelSize: 40
+                    opacity: page.settings && page.settings.avatarBusy ? 0.5 : 1
+                    Behavior on opacity { NumberAnimation { duration: 140 } }
+                }
+
+                // Pressed feedback, in the picture's own shape.
+                Rectangle {
+                    width: accountAvatar.width
+                    height: accountAvatar.height
+                    radius: accountAvatar.radius
+                    antialiasing: true
+                    color: Theme.textPrimary
+                    opacity: avatarTap.pressed ? 0.18 : 0
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                }
+
+                HoverHandler {
+                    enabled: avatarTap.enabled
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    id: avatarTap
+                    objectName: "avatarTap"
+                    enabled: page.avatarEditable
+                    onTapped: avatarDialog.open()
+                }
+
+                Rectangle {
+                    id: avatarActions
+                    objectName: "avatarActions"
+                    anchors.horizontalCenter: accountAvatar.horizontalCenter
+                    anchors.verticalCenter: accountAvatar.bottom
+                    width: actionRow.implicitWidth + 4
+                    height: 40
+                    radius: height / 2
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: Theme.hairline
+                    visible: setAvatar.visible || removeAvatar.visible
+
+                    Row {
+                        id: actionRow
+                        anchors.centerIn: parent
+
+                        IconButton {
+                            id: setAvatar
+                            objectName: "avatarSetButton"
+                            text: "📷"
+                            Accessible.name: qsTr("Choose a picture")
+                            visible: page.avatarEditable
+                            onClicked: avatarDialog.open()
+                        }
+
+                        // Offered only once there is something to remove.
+                        IconButton {
+                            id: removeAvatar
+                            objectName: "avatarRemoveButton"
+                            text: "🗑️"
+                            Accessible.name: qsTr("Remove the picture")
+                            visible: page.avatarEditable && page.hasAvatar
+                            onClicked: if (page.settings) page.settings.clearAvatar()
+                        }
+                    }
+                }
+            }
+
+            // Upload progress while it is out, and why it failed when it did.
+            // A success says nothing: the new picture is right above this.
+            Caption {
+                objectName: "avatarStatus"
+                Layout.fillWidth: true
+                Layout.leftMargin: 16
+                Layout.rightMargin: 16
+                horizontalAlignment: Text.AlignHCenter
+                visible: text !== ""
+                text: page.settings ? page.settings.avatarStatus : ""
+                color: page.settings && page.settings.avatarError ? Theme.negative
+                                                                  : Theme.textDim
+                wrapMode: Text.WordWrap
+            }
+
             // Who this account is, and what it signs in with.
             Card {
-                RowLayout {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 14
-
-                    Avatar {
-                        Layout.preferredWidth: 72
-                        Layout.preferredHeight: 72
-                        Layout.alignment: Qt.AlignTop
-                        radius: 10
-                        account: page.account
-                        jid: page.account
-                        label: page.account
-                        initialsPixelSize: 26
-                    }
-
-                    ColumnLayout {
+                    spacing: 2
+                    Caption { text: "XMPP address" }
+                    Text {
                         Layout.fillWidth: true
-                        spacing: 8
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Caption { text: "XMPP address" }
-                            Text {
-                                Layout.fillWidth: true
-                                text: page.account
-                                color: Theme.textPrimary
-                                font.pixelSize: 15
-                                elide: Text.ElideRight
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 2
-                            Caption { text: "Password" }
-                            TextField {
-                                id: passwordField
-                                objectName: "passwordField"
-                                Layout.fillWidth: true
-                                // Armed by bindAccount, which owns both fields.
-                                echoMode: TextInput.Password
-                                inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
-                                onAccepted: if (page.dirty) page.save()
-                            }
-                        }
-
-                        // Saving the credential does not re-authenticate.
-                        Caption {
-                            Layout.fillWidth: true
-                            visible: page.settings !== null
-                                     && passwordField.text !== page.settings.password
-                            text: "Takes effect the next time this account connects."
-                            wrapMode: Text.WordWrap
-                        }
+                        text: page.account
+                        color: Theme.textPrimary
+                        font.pixelSize: 15
+                        elide: Text.ElideRight
                     }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Caption { text: "Password" }
+                    TextField {
+                        id: passwordField
+                        objectName: "passwordField"
+                        Layout.fillWidth: true
+                        // Armed by bindAccount, which owns both fields.
+                        echoMode: TextInput.Password
+                        inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
+                        onAccepted: if (page.dirty) page.save()
+                    }
+                }
+
+                // Saving the credential does not re-authenticate.
+                Caption {
+                    Layout.fillWidth: true
+                    visible: page.settings !== null
+                             && passwordField.text !== page.settings.password
+                    text: "Takes effect the next time this account connects."
+                    wrapMode: Text.WordWrap
                 }
             }
 

@@ -9,6 +9,7 @@
 
 #include "AppController.h"
 #include "AvatarImageProvider.h"
+#include "QImageAvatarEncoder.h"
 
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
@@ -18,12 +19,17 @@ int main(int argc, char *argv[]) {
     // alert simply shows without an icon.
     app.setApplicationName(QStringLiteral("quackchat"));
 
+    // Declared before the engine so it outlives everything holding a pointer
+    // to it.
+    QImageAvatarEncoder avatarEncoder;
+
     QQmlApplicationEngine engine;
     // Create the singleton and connect before the UI loads, so the first frame
     // already shows the real connection state.
     if (auto *controller = engine.singletonInstance<AppController *>("Quack", "App")) {
         engine.addImageProvider(QStringLiteral("avatar"), // engine takes ownership
                                 new AvatarImageProvider(controller->avatars()));
+        controller->setAvatarEncoder(&avatarEncoder);
         controller->startFromEnvironment();
     }
 

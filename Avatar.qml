@@ -73,6 +73,12 @@ Rectangle {
         source: picture
         maskEnabled: true
         maskSource: mask
+        // The mask edge is a soft alpha ramp (see the multisampling below), and
+        // the default cut - everything above alpha 0 - snaps all of it to fully
+        // opaque, which is the antialiasing thrown away again. Cut at half
+        // coverage instead and spread the step over the ramp.
+        maskThresholdMin: 0.5
+        maskSpreadAtMin: 1.0
         visible: av.hasPicture
     }
     Item {

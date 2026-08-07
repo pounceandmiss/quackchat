@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 6.5 REQUIRED
-    COMPONENTS Core Gui Network Qml Quick QuickControls2 Test)
+    COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test)
 # Desktop notifications on Linux go over the session bus. Optional: without it
 # the app builds and runs exactly as before, just silently. Android posts its
 # own from the backend service (android/.../Notifications.java), so it is never
@@ -192,12 +192,13 @@ qt_add_qml_module(quack
         ${_notifier}
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
+        backend/AvatarEncoder.h
         backend/AvatarSink.h)
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
 # Core/Qml PUBLIC so the headless tests get the headers without linking QtGui.
 target_link_libraries(quack
     PUBLIC Qt6::Core Qt6::Network Qt6::Qml
-    PRIVATE Qt6::Quick Qt6::QuickControls2)
+    PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::QuickDialogs2)
 if(ANDROID)
     # The interpreter belongs to the backend service's process, reached over a
     # socket. Linking it here too would put a second writer on tacky's store.
@@ -209,7 +210,10 @@ if(TARGET Qt6::DBus)
     target_link_libraries(quack PRIVATE Qt6::DBus)
 endif()
 
-qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp)
+# The QImage half of avatar publishing stays out of `quack`, like the image
+# provider, so the headless tests keep their QtGui-free include path.
+qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp
+                            backend/QImageAvatarEncoder.cpp)
 target_link_libraries(quackchat PRIVATE
     quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 if(ANDROID)
@@ -276,6 +280,13 @@ target_link_libraries(tst_avatar PRIVATE
     quack Qt6::Test Qt6::Gui Qt6::Quick)
 add_test(NAME tst_avatar COMMAND tst_avatar)
 set_tests_properties(tst_avatar PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# needs QtGui for QImage
+qt_add_executable(tst_avatarencoder
+    backend/tst_avatarencoder.cpp backend/QImageAvatarEncoder.cpp)
+target_link_libraries(tst_avatarencoder PRIVATE quack Qt6::Test Qt6::Gui)
+add_test(NAME tst_avatarencoder COMMAND tst_avatarencoder)
+set_tests_properties(tst_avatarencoder PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 qt_add_executable(tst_qmlload backend/tst_qmlload.cpp)
 target_link_libraries(tst_qmlload PRIVATE

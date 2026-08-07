@@ -2,7 +2,32 @@
 #include <QSignalSpy>
 
 #include "AccountSettings.h"
+#include "AvatarEncoder.h"
 #include "TackyBackend.h"
+
+namespace {
+// Stands in for the QImage side, which lives in the GUI target. Hands back
+// bytes that are not a PNG at all - nothing below here decodes them.
+class StubEncoder : public AvatarEncoder {
+public:
+    QByteArray bytes = QByteArray("stub-avatar-bytes");
+    QString failWith; // non-empty -> encode() reports this instead
+
+    AvatarImage encode(const QUrl &source, QString *error) const override {
+        ++calls;
+        lastSource = source;
+        if (!failWith.isEmpty()) {
+            if (error)
+                *error = failWith;
+            return {};
+        }
+        return {bytes, 128, 128};
+    }
+
+    mutable int calls = 0;
+    mutable QUrl lastSource;
+};
+} // namespace
 
 class TestAccountSettings : public QObject {
     Q_OBJECT
@@ -11,8 +36,12 @@ private slots:
     void loadsFromCannedData();
     void nickChangedEventWithoutBackend();
     void devicesFollowTheAccount();
+    void avatarNeedsAnEncoder();
+    void avatarReportsAnUnreadablePicture();
+    void ignoresProgressWhenNothingIsInFlight();
     void integrationLoadsAndSavesPassword();
     void integrationSaveWithoutChangesIsNoWrite();
+    void integrationAvatarPublishFailureIsReported();
     void refetchesNickOnReady();
 };
 
@@ -68,6 +97,58 @@ void TestAccountSettings::devicesFollowTheAccount() {
     QCOMPARE(s.devices()->jid(), QString("me@h"));
 }
 
+// The headless build has no QImage side at all; saying so beats a crash.
+void TestAccountSettings::avatarNeedsAnEncoder() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@example.com");
+
+    s.setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
+    QVERIFY(!s.avatarBusy()); // nothing was sent, so nothing is pending
+    QVERIFY(s.avatarError());
+    QVERIFY(!s.avatarStatus().isEmpty());
+
+    backend.stop();
+}
+
+// A picture that will not decode is refused before anything reaches the wire.
+void TestAccountSettings::avatarReportsAnUnreadablePicture() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    StubEncoder encoder;
+    encoder.failWith = "Unsupported image format";
+
+    AccountSettings s;
+    s.setAvatarEncoder(&encoder);
+    s.setBackend(&backend);
+    s.setAccount("me@example.com");
+
+    s.setAvatar(QUrl::fromLocalFile("/tmp/notes.txt"));
+    QCOMPARE(encoder.calls, 1);
+    QCOMPARE(encoder.lastSource, QUrl::fromLocalFile("/tmp/notes.txt"));
+    QVERIFY(!s.avatarBusy());
+    QVERIFY(s.avatarError());
+    QCOMPARE(s.avatarStatus(), QString("Unsupported image format"));
+
+    backend.stop();
+}
+
+// `avatar <Progress>` is broadcast, so it also arrives for a publish some other
+// page started. Showing one under a picture nobody is changing would be a line
+// that never clears. (The line a publish of our own does show is in tst_qmlload,
+// where there is a page to read it off.)
+void TestAccountSettings::ignoresProgressWhenNothingIsInFlight() {
+    AccountSettings s;
+    s.setAccount("me@example.com");
+
+    s.handleEvent("avatar", "Progress",
+                  QVariantMap{{"acc", "me@example.com"},
+                              {"message", "Uploading avatar data..."}});
+    QCOMPARE(s.avatarStatus(), QString());
+}
+
 // Real backend: the stored credential round-trips through `account get` and
 // `account add`, which is how tacky's own sign-in form writes it.
 void TestAccountSettings::integrationLoadsAndSavesPassword() {
@@ -117,6 +198,39 @@ void TestAccountSettings::integrationSaveWithoutChangesIsNoWrite() {
     QCOMPARE(saved.count(), 1);
     QCOMPARE(s.status(), QString()); // nothing was written, so nothing to report
     QVERIFY(!s.saving());
+
+    backend.stop();
+}
+
+// A publish that cannot even be routed - here, to an account that was never
+// added - is answered on the token rather than dropped: tacky catches the
+// throw in `avatar publish` itself, and the JSON dispatcher catches whatever
+// escapes before that. So the page reports the reason instead of sitting on
+// "Publishing" for good, and needs no timer of its own.
+//
+// The other failure shape, a request that reaches the wire and is never
+// answered, is covered by tacky's own 60s iq timeout - too long to wait for
+// here, and not this side's behaviour to prove.
+void TestAccountSettings::integrationAvatarPublishFailureIsReported() {
+    TackyBackend backend;
+    QVERIFY(backend.start()); // no account added, so routing has nothing to find
+
+    StubEncoder encoder;
+    AccountSettings s;
+    s.setAvatarEncoder(&encoder);
+    s.setBackend(&backend);
+    s.setAccount("me@example.com");
+
+    QSignalSpy busy(&s, &AccountSettings::avatarBusyChanged);
+    s.setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
+    QCOMPARE(encoder.calls, 1);
+    QVERIFY(s.avatarBusy());
+    QCOMPARE(s.avatarStatus(), QString("Publishing"));
+
+    QTRY_VERIFY_WITH_TIMEOUT(!s.avatarBusy(), 5000);
+    QCOMPARE(busy.count(), 2); // in flight, then done
+    QVERIFY(s.avatarError());
+    QVERIFY(!s.avatarStatus().isEmpty());
 
     backend.stop();
 }

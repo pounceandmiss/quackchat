@@ -95,6 +95,17 @@ private slots:
         QVERIFY(!junk.errorString().isEmpty());
     }
 
+    // The texture is cut to the size the Image asked for, so a hero-sized
+    // avatar is not served the same 96px one a list row gets. An Image that
+    // asks for nothing still gets the small default, and no caller can pin a
+    // full-resolution photo in the cache.
+    void sizesTheTextureToTheRequest() {
+        QCOMPARE(AvatarResponse::edgeFor(QSize(224, 224)), 224);
+        QCOMPARE(AvatarResponse::edgeFor(QSize()), 96);       // no sourceSize
+        QCOMPARE(AvatarResponse::edgeFor(QSize(0, 88)), 88);  // width-only bind
+        QCOMPARE(AvatarResponse::edgeFor(QSize(4096, 4096)), 256);
+    }
+
     // With no backend wired, fetch() completes the sink as a failure rather than
     // leaving it hanging.
     void fetchWithoutBackendFails() {

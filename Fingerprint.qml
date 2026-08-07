@@ -46,26 +46,39 @@ ColumnLayout {
         text: "00000000"
     }
 
-    Grid {
-        id: grid
-        objectName: "fingerprintGroups"
+    // The Grid is wrapped rather than laid out directly: its columns are read
+    // off the width it is handed, while a positioner's implicitWidth is
+    // measured from its children, so in a layout the two chase each other -
+    // the recursive rearrange the layout aborts on. This wrapper owes its
+    // width to nothing, which cuts the loop.
+    Item {
+        id: gridBox
         Layout.fillWidth: true
-        columns: fp.columnsFor(fp.width, groupMetrics.width, fp.groupGap, fp.groups.length)
-        columnSpacing: fp.groupGap
-        rowSpacing: 2
-        readonly property real cellWidth:
-            (fp.width - grid.columnSpacing * (grid.columns - 1)) / grid.columns
+        Layout.preferredHeight: grid.implicitHeight
 
-        Repeater {
-            model: fp.groups
-            delegate: Text {
-                required property string modelData
-                objectName: "fingerprintGroup"
-                width: grid.cellWidth
-                text: modelData
-                color: Theme.textPrimary
-                font.family: "monospace"
-                font.pixelSize: fp.groupSize
+        Grid {
+            id: grid
+            objectName: "fingerprintGroups"
+            anchors.left: parent.left
+            anchors.right: parent.right
+            columns: fp.columnsFor(gridBox.width, groupMetrics.width, fp.groupGap,
+                                   fp.groups.length)
+            columnSpacing: fp.groupGap
+            rowSpacing: 2
+            readonly property real cellWidth:
+                (gridBox.width - grid.columnSpacing * (grid.columns - 1)) / grid.columns
+
+            Repeater {
+                model: fp.groups
+                delegate: Text {
+                    required property string modelData
+                    objectName: "fingerprintGroup"
+                    width: grid.cellWidth
+                    text: modelData
+                    color: Theme.textPrimary
+                    font.family: "monospace"
+                    font.pixelSize: fp.groupSize
+                }
             }
         }
     }

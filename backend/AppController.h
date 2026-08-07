@@ -46,6 +46,10 @@ public:
     AudioDevices *audio() { return &m_audio; }
     NotificationController *notifications() { return &m_notifications; }
 
+    // Set by the GUI host, which owns the QImage side. Not owned here, and
+    // expected to outlive this object.
+    void setAvatarEncoder(const AvatarEncoder *encoder);
+
     // Lazily created and cached here; all windows on the same account share one
     // instance. Returns nullptr for an empty acc.
     Q_INVOKABLE ChatListModel *chatListFor(const QString &acc);
@@ -65,6 +69,7 @@ private:
     CallsModel m_calls;
     AudioDevices m_audio;
     NotificationController m_notifications;
+    const AvatarEncoder *m_encoder = nullptr;
     QHash<QString, ChatListModel *> m_chatLists;
     QHash<QString, AccountSettings *> m_accountSettings;
     bool m_started = false;

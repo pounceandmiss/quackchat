@@ -9,7 +9,9 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQmlError>
+#include <QQuickImageProvider>
 #include <QQuickItem>
+#include <QQuickView>
 #include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -18,11 +20,42 @@
 
 #include "AccountSettings.h"
 #include "AppController.h"
+#include "AvatarEncoder.h"
 #include "CallsModel.h"
 #include "ChatListModel.h"
 #include "OmemoDevicesModel.h"
 #include "SearchModel.h"
 #include "TackyBackend.h"
+
+namespace {
+// Stands in for the GUI's QImage encoder, so a publish can be put in flight
+// without one. The engine's backend is never started here, so the request goes
+// no further than its token.
+class StubEncoder : public AvatarEncoder {
+public:
+    AvatarImage encode(const QUrl &, QString *) const override {
+        return {QByteArray("stub-avatar-bytes"), 128, 128};
+    }
+};
+
+// Stands in for the real image provider, so an avatar can be rendered without
+// a backend. Flat red, which nothing else on screen is.
+class SolidImageProvider : public QQuickImageProvider {
+public:
+    SolidImageProvider() : QQuickImageProvider(QQuickImageProvider::Image) {}
+    QImage requestImage(const QString &, QSize *size, const QSize &) override {
+        QImage img(64, 64, QImage::Format_ARGB32_Premultiplied);
+        img.fill(Qt::red);
+        if (size)
+            *size = img.size();
+        return img;
+    }
+};
+
+bool isPicture(const QColor &c) {
+    return c.red() > 150 && c.green() < 100 && c.blue() < 100;
+}
+} // namespace
 
 class TestQmlLoad : public QObject {
     Q_OBJECT
@@ -81,10 +114,22 @@ class TestQmlLoad : public QObject {
         return nullptr;
     }
 
+    // Where an item lands in some ancestor's coordinates, which is the only
+    // way to compare two that do not share a parent.
+    static QRectF itemRect(QQuickItem *item, QQuickItem *within) {
+        return item->mapRectToItem(within,
+                                   QRectF(0, 0, item->width(), item->height()));
+    }
+
     static void assertNoQmlErrors(const QStringList &warnings) {
         for (const QString &w : warnings)
             if (w.contains("ReferenceError") || w.contains("is not defined") ||
-                w.contains("TypeError"))
+                w.contains("TypeError") ||
+                // A layout whose size depends on what it is sizing. The layout
+                // gives up after two passes and leaves whatever it had, so this
+                // is a real defect that otherwise only shows as a stray line on
+                // stderr.
+                w.contains("recursive rearrange"))
                 QFAIL(qPrintable("QML error: " + w));
     }
 
@@ -432,6 +477,48 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // The picture is masked to the avatar's rounded shape, and the mask cuts at
+    // half coverage so the rim keeps its antialiasing rather than snapping to
+    // 1-bit. Softening that cut is easy to overdo, so pin both ends: the middle
+    // must still be the picture, and the corner must still be outside it.
+    void maskedPictureKeepsItsShape() {
+        // MultiEffect is a shader, and the offscreen platform ctest runs under
+        // has no path to render one - the grab comes back blank. So this one
+        // only means anything on a machine with a display.
+        if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+            QSKIP("MultiEffect needs a renderer the offscreen platform lacks");
+
+        QQuickView view;
+        view.engine()->addImageProvider("avatar", new SolidImageProvider);
+        auto *app = view.engine()->singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        // What the backend would have told us, minus the backend.
+        app->avatars()->handleEvent("avatar", "Update",
+                                    QVariantMap{{"acc", "me@example.com"},
+                                                {"jid", "me@example.com"},
+                                                {"hash", "h1"}});
+
+        view.loadFromModule("Quack", "Avatar");
+        QVERIFY2(view.status() != QQuickView::Error, "Avatar did not load");
+        QQuickItem *avatar = view.rootObject();
+        QVERIFY(avatar);
+        avatar->setProperty("account", "me@example.com");
+        avatar->setProperty("jid", "me@example.com");
+        view.resize(64, 64);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        QTRY_VERIFY(avatar->property("hasPicture").toBool());
+
+        const QImage shot = view.grabWindow();
+        QCOMPARE(shot.size(), QSize(64, 64));
+        // Default radius is a circle, so the middle is picture and the corner
+        // is not.
+        QVERIFY2(isPicture(shot.pixelColor(32, 32)),
+                 "the mask ate the picture");
+        QVERIFY2(!isPicture(shot.pixelColor(1, 1)),
+                 "the corner was not rounded off");
+    }
+
     void loadsAccountSettings() {
         QStringList warnings;
         QQmlEngine e;
@@ -448,6 +535,10 @@ private slots:
         QVERIFY(!win.isNull());
         auto *w = qobject_cast<QQuickWindow *>(win.data());
         QVERIFY(w);
+        // Taller than the shipped 760 so every card is inside the viewport at
+        // once: the trust picker below is dragged with synthesized mouse
+        // events, which need it on screen rather than scrolled out of reach.
+        w->setHeight(1400);
         w->grabWindow(); // force a render so the cards' bindings evaluate
         QCoreApplication::processEvents();
 
@@ -473,6 +564,87 @@ private slots:
         QObject *nick = w->findChild<QObject *>("nickField");
         QVERIFY(nick);
         QCOMPARE(nick->property("text").toString(), QString("Kitsunia"));
+
+        // The picture itself is the control. Nothing has been asked of it yet,
+        // so it takes taps and the line under it is empty.
+        QQuickItem *editor = findItem(w->contentItem(), "avatarEditor");
+        QObject *avatarTap = w->findChild<QObject *>("avatarTap");
+        QObject *avatarStatus = w->findChild<QObject *>("avatarStatus");
+        QVERIFY(editor);
+        QVERIFY(avatarTap);
+        QVERIFY(avatarStatus);
+        QVERIFY(avatarTap->property("enabled").toBool());
+        QVERIFY(!avatarStatus->property("visible").toBool());
+
+        // Comfortably past the 44px a finger wants, and the chip that says it
+        // is tappable sits within those bounds rather than off the picture.
+        QVERIFY2(editor->width() >= 44 && editor->height() >= 44,
+                 qPrintable(QString("tap target is only %1x%2")
+                                .arg(editor->width())
+                                .arg(editor->height())));
+        QQuickItem *setButton = findItem(editor, "avatarSetButton");
+        QVERIFY(setButton);
+        QVERIFY(setButton->property("visible").toBool());
+        QVERIFY(editor->boundingRect().contains(itemRect(setButton, editor)));
+        QVERIFY2(setButton->width() >= 36 && setButton->height() >= 36,
+                 qPrintable(QString("the set action is only %1x%2")
+                                .arg(setButton->width())
+                                .arg(setButton->height())));
+
+        // Removing is its own action on the same chip, offered only once there
+        // is something to remove.
+        QQuickItem *remove = findItem(editor, "avatarRemoveButton");
+        QVERIFY(remove);
+        QVERIFY(!remove->property("visible").toBool()); // nothing published yet
+
+        app->avatars()->handleEvent(
+            "avatar", "Update",
+            QVariantMap{{"acc", "me@example.com"},
+                        {"jid", "me@example.com"},
+                        {"hash", "abc123"}});
+        QCoreApplication::processEvents();
+        w->grabWindow(); // the chip grew by an action; let the Row place it
+        QVERIFY(remove->property("visible").toBool());
+        QVERIFY(editor->boundingRect().contains(itemRect(remove, editor)));
+        QVERIFY(remove->width() >= 36 && remove->height() >= 36);
+        // Side by side on the chip: two separate targets, not one that moves.
+        QVERIFY2(!itemRect(setButton, editor).intersects(itemRect(remove, editor)),
+                 "the avatar's two actions overlap");
+
+        // And it goes away again when the avatar does.
+        app->avatars()->handleEvent("avatar", "Update",
+                                    QVariantMap{{"acc", "me@example.com"},
+                                                {"jid", "me@example.com"},
+                                                {"hash", ""}});
+        QCoreApplication::processEvents();
+        QVERIFY(!remove->property("visible").toBool());
+
+        // A build with no QImage side refuses the picture instead of sending
+        // it, and the refusal reaches the page.
+        settings->setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
+        QCoreApplication::processEvents();
+        QVERIFY(!settings->avatarBusy());
+        QVERIFY(avatarStatus->property("visible").toBool());
+        QVERIFY(!avatarStatus->property("text").toString().isEmpty());
+
+        // With an encoder the publish goes out, and the picture stops taking
+        // taps until it answers - along with the chip that advertises them.
+        StubEncoder encoder;
+        settings->setAvatarEncoder(&encoder);
+        settings->setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
+        QCoreApplication::processEvents();
+        QVERIFY(settings->avatarBusy());
+        QVERIFY(!avatarTap->property("enabled").toBool());
+        QVERIFY(!setButton->property("visible").toBool());
+        QCOMPARE(avatarStatus->property("text").toString(), QString("Publishing"));
+
+        // tacky narrates the upload while it is out; the same line shows it.
+        settings->handleEvent("avatar", "Progress",
+                              QVariantMap{{"acc", "me@example.com"},
+                                          {"message", "Updating metadata..."}});
+        QCoreApplication::processEvents();
+        QCOMPARE(avatarStatus->property("text").toString(),
+                 QString("Updating metadata..."));
 
         QObject *list = w->findChild<QObject *>("deviceList");
         QVERIFY(list);
@@ -571,6 +743,12 @@ private slots:
         // singletons and re-evaluate its bindings against them on the way down.
         // QQmlApplicationEngine drops its windows first.
         QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
+        QCoreApplication::processEvents();
+
+        // Tear the page down inside the test rather than at the end of scope,
+        // so anything its destruction logs is still collected. Note this does
+        // not reproduce the delegate teardown seen in the running app.
+        win.reset();
         QCoreApplication::processEvents();
 
         assertNoQmlErrors(warnings);

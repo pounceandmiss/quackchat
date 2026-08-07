@@ -19,6 +19,17 @@ class AvatarController;
 // out of AvatarController.
 class AvatarResponse : public QQuickImageResponse, public AvatarSink {
 public:
+    // `edge` is the longest side of the texture this response will hand back.
+    explicit AvatarResponse(int edge = kDefaultEdge) : m_edge(edge) {}
+
+    // The caller's sourceSize, clamped. A texture is cached per avatar URL for
+    // as long as it is on screen, so an Image that asks for nothing gets the
+    // small default rather than the full-size photo tacky ships.
+    static int edgeFor(const QSize &requested) {
+        const int asked = qMax(requested.width(), requested.height());
+        return asked > 0 ? qMin(asked, kCeilingEdge) : kDefaultEdge;
+    }
+
     QQuickTextureFactory *textureFactory() const override {
         return QQuickTextureFactory::textureFactoryForImage(m_image);
     }
@@ -31,10 +42,12 @@ public:
             m_image.loadFromData(bytes); // any format, often JPEG
         if (m_image.isNull()) {
             m_error = QStringLiteral("no avatar"); // -> Image.status == Error
-        } else if (m_image.width() > kMaxEdge || m_image.height() > kMaxEdge) {
-            // The backend ships full-size bytes; cache a small texture rather
-            // than a full-res photo per contact.
-            m_image = m_image.scaled(kMaxEdge, kMaxEdge, Qt::KeepAspectRatio,
+        } else if (m_image.width() > m_edge || m_image.height() > m_edge) {
+            // The backend ships full-size bytes; cache a texture the size it
+            // is drawn at rather than a full-res photo per contact. A smaller
+            // one is left alone - scaling it up here would only spend memory
+            // to blur it sooner.
+            m_image = m_image.scaled(m_edge, m_edge, Qt::KeepAspectRatio,
                                      Qt::SmoothTransformation);
         }
         emit finished();
@@ -45,7 +58,9 @@ public:
     }
 
 private:
-    static constexpr int kMaxEdge = 96; // covers a 44px avatar on a 2x display
+    static constexpr int kDefaultEdge = 96;  // a 44px avatar on a 2x display
+    static constexpr int kCeilingEdge = 256; // the settings page's, on one too
+    int m_edge;
     QImage m_image;
     QString m_error;
 };

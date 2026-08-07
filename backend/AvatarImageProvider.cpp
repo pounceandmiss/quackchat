@@ -6,8 +6,8 @@
 
 QQuickImageResponse *
 AvatarImageProvider::requestImageResponse(const QString &id,
-                                          const QSize & /*requestedSize*/) {
-    auto *resp = new AvatarResponse();
+                                          const QSize &requestedSize) {
+    auto *resp = new AvatarResponse(AvatarResponse::edgeFor(requestedSize));
 
     // id is "<acc>/<jid>/<hash>". acc is a bare JID and hash is hex, so neither
     // holds a '/'; splitting on the first and last one survives a jid that does

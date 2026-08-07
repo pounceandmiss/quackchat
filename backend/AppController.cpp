@@ -2,6 +2,8 @@
 
 #include "Notifier.h"
 
+#include <utility>
+
 #ifdef Q_OS_ANDROID
 #include <QCoreApplication>
 #include <QJniObject>
@@ -53,10 +55,19 @@ AccountSettings *AppController::accountSettingsFor(const QString &acc) {
     AccountSettings *&s = m_accountSettings[acc];
     if (!s) {
         s = new AccountSettings(this);
+        s->setAvatarEncoder(m_encoder);
         s->setBackend(&m_backend);
         s->setAccount(acc);
     }
     return s;
+}
+
+// main() sets this before the UI loads, but a settings page opened first would
+// otherwise keep a null encoder for good, so reach the cached ones too.
+void AppController::setAvatarEncoder(const AvatarEncoder *encoder) {
+    m_encoder = encoder;
+    for (AccountSettings *s : std::as_const(m_accountSettings))
+        s->setAvatarEncoder(encoder);
 }
 
 void AppController::startFromEnvironment() {
