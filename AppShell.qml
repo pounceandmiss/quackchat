@@ -83,8 +83,9 @@ Item {
                 implicitWidth: 1
                 color: Theme.hairline
                 readonly property bool engaged: SplitHandle.hovered || SplitHandle.pressed
+                // Widens to the right only. Handles sit above the panes, so a
+                // centred strip eats presses on the list's scrollbar.
                 containmentMask: Item {
-                    x: (grip.width - width) / 2
                     width: 18
                     height: grip.height
                 }
