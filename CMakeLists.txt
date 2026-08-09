@@ -115,6 +115,7 @@ qt_add_qml_module(quack
         backend/TackyBackend.cpp backend/TackyBackend.h
         backend/ChatModel.cpp backend/ChatModel.h
         backend/MessageMarkup.cpp backend/MessageMarkup.h
+        backend/AuthorNames.cpp backend/AuthorNames.h
         backend/ChatListModel.cpp backend/ChatListModel.h
         backend/AccountsModel.cpp backend/AccountsModel.h
         backend/AccountSettings.cpp backend/AccountSettings.h
@@ -138,8 +139,8 @@ endif()
 if(NOT ANDROID)
 enable_testing()
 
-foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_accountsmodel
-          tst_omemodevices tst_accountsettings tst_integration)
+foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
+          tst_accountsmodel tst_omemodevices tst_accountsettings tst_integration)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})

@@ -21,6 +21,7 @@
 #include <memory>
 
 #include "AppController.h"
+#include "AuthorNames.h"
 #include "ChatModel.h"
 #include "TackyBackend.h"
 
@@ -110,10 +111,13 @@ class TestChatPage : public QObject {
         return nullptr;
     }
 
-    Chat open(const QString &jid) {
+    Chat open(const QString &jid, bool groupchat = false) {
         Chat chat;
         chat.window.reset(m_component->createWithInitialProperties(
-            {{"account", kAcc}, {"chatJid", jid}, {"chatName", "Friend"}}));
+            {{"account", kAcc},
+             {"chatJid", jid},
+             {"chatName", "Friend"},
+             {"chatGroupchat", groupchat}}));
         if (auto *win = qobject_cast<QQuickWindow *>(chat.window.get()))
             chat.feed = win->findChild<QQuickItem *>("chatFeed");
         return chat;
@@ -149,6 +153,7 @@ private slots:
     void plainMessageDrawsNoQuote();
     void ticksFollowBothHops();
     void reactionChipsShowTheBackendSet();
+    void senderNamesComeFromAuthorGet();
 };
 
 void TestChatPage::initTestCase() {
@@ -178,6 +183,10 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "react@example.com"},
                                          {"body", "react to me"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "room@example.com"},
+                                         {"body", "who said that"}});
 
     // jump@ gets the target, then more than a page on top of it, then a reply
     // to the target - so the jump has somewhere to travel.
@@ -568,6 +577,49 @@ void TestChatPage::reactionChipsShowTheBackendSet() {
     QTRY_VERIFY_WITH_TIMEOUT(
         model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
     QTRY_VERIFY(!row->isVisible());
+}
+
+// The name used to be the JID chopped at the "@", which is neither the roster
+// name nor a room nick. It comes from author get now, and follows <Changed>.
+void TestChatPage::senderNamesComeFromAuthorGet() {
+    const Chat chat = open("room@example.com", true);
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+
+    // Someone else's message: nothing is connected, so it is injected rather
+    // than received, but the row is the shape the backend hands over.
+    const QString from = QStringLiteral("room@example.com/ann");
+    ChatModel *model = chat.model();
+    model->applyBatch(QVariantList{QVariantMap{
+        {"timestamp", QVariant::fromValue<qlonglong>(9000000000000000LL)},
+        {"from_jid", from},
+        {"is_outgoing", false},
+        {"content", QVariantMap{{"type", "text"}, {"body", "who said that"}}}}});
+    QTRY_COMPARE(chat.count(), 2);
+
+    // The row is fetched afresh each poll: the delegate for a freshly inserted
+    // index is not in place the moment the count changes.
+    auto authorLine = [&] { return findItem(chat.row(0), "authorLine"); };
+    QTRY_VERIFY(authorLine() && authorLine()->isVisible()); // a room names its voices
+    QQuickItem *line = authorLine();
+    // Nothing is connected, so the JID stands in until a name arrives.
+    QCOMPARE(line->property("text").toString(), from);
+
+    auto *authors = chat.win()->findChild<AuthorNames *>();
+    QVERIFY(authors);
+    authors->handleEvent("author", "Changed",
+                         QVariantMap{{"acc", kAcc},
+                                     {"chat", "room@example.com"},
+                                     {"from", from},
+                                     {"name", "Ann from the room"}});
+    QTRY_COMPARE(line->property("text").toString(), QString("Ann from the room"));
+
+    // A 1:1 has only two voices, both already named around the bubble.
+    const Chat direct = open("quiet@example.com");
+    QTRY_COMPARE(direct.count(), kQuiet);
+    QQuickItem *quietLine = findItem(direct.row(0), "authorLine");
+    QVERIFY(quietLine);
+    QVERIFY(!quietLine->isVisible());
 }
 
 QTEST_MAIN(TestChatPage)

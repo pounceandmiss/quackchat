@@ -122,12 +122,23 @@ Page {
             feed.positionViewAtIndex(row, ListView.Center)
     }
 
-    // Replies carry the author's JID; a bare local part is friendlier, and our
-    // own account is worth naming outright.
-    function replyName(jid) {
-        if (jid === "" || jid === page.account)
-            return "You"
-        return jid.indexOf("@") > 0 ? jid.substring(0, jid.indexOf("@")) : jid
+    AuthorNames {
+        id: authors
+        backend: App.backend
+        account: page.account
+        chat: page.chatJid
+    }
+
+    // Rows carry a from_jid; tacky resolves the name behind it. Until the map
+    // lands the JID stands in for it, which is what tacky falls back to anyway.
+    function authorName(jid) {
+        if (jid === "")
+            return ""
+        const known = authors.names[jid]
+        return known !== undefined && known !== "" ? known : jid
+    }
+    function selfOrAuthorName(jid) {
+        return jid === "" || jid === page.account ? "You" : authorName(jid)
     }
 
     function fmtTime(ts) {
@@ -364,6 +375,7 @@ Page {
                 id: wrap
                 required property string body
                 required property string markup
+                required property string from
                 required property string replyBody
                 required property string replyAuthor
                 required property bool outgoing
@@ -378,8 +390,12 @@ Page {
                     width: feed.width
                     text: wrap.body
                     markup: wrap.markup
+                    author: page.authorName(wrap.from)
+                    // Rooms have many voices; a 1:1 has only the two, already
+                    // named by the header and the bubble side.
+                    showAuthor: page.chatGroupchat && !wrap.outgoing
                     replyBody: wrap.replyBody
-                    replyAuthor: page.replyName(wrap.replyAuthor)
+                    replyAuthor: page.selfOrAuthorName(wrap.replyAuthor)
                     highlighted: page.highlightTs === wrap.timestamp
                     onQuoteTapped: chatModel.gotoReplyTarget(wrap.timestamp)
                     outgoing: wrap.outgoing

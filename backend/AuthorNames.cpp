@@ -1,0 +1,74 @@
+#include "AuthorNames.h"
+
+AuthorNames::AuthorNames(QObject *parent) : QObject(parent) {}
+
+void AuthorNames::setBackend(TackyBackend *backend) {
+    if (m_backend == backend)
+        return;
+    if (m_backend)
+        m_backend->disconnect(this);
+    m_backend = backend;
+    if (m_backend) {
+        connect(m_backend, &TackyBackend::event, this, &AuthorNames::handleEvent);
+        connect(m_backend, &TackyBackend::result, this, &AuthorNames::handleResult);
+    }
+    emit backendChanged();
+    refresh();
+}
+
+void AuthorNames::setAccount(const QString &acc) {
+    if (m_account == acc)
+        return;
+    m_account = acc;
+    emit accountChanged();
+    refresh();
+}
+
+void AuthorNames::setChat(const QString &chat) {
+    if (m_chat == chat)
+        return;
+    m_chat = chat;
+    emit chatChanged();
+    refresh();
+}
+
+// One map per chat, so the old one goes as soon as the chat does - a stale
+// name under a new conversation would be worse than a bare JID.
+void AuthorNames::refresh() {
+    m_pending = 0;
+    if (!m_names.isEmpty()) {
+        m_names.clear();
+        emit namesChanged();
+    }
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_pending = m_backend->request(
+        QStringLiteral("author"), QStringLiteral("get"),
+        QVariantMap{{QStringLiteral("acc"), m_account},
+                    {QStringLiteral("chat"), m_chat}});
+}
+
+void AuthorNames::handleResult(int token, const QVariant &data) {
+    if (token != m_pending)
+        return;
+    m_pending = 0;
+    m_names = data.toMap();
+    emit namesChanged();
+}
+
+// <Changed> re-resolves one sender in place: a roster edit, a nick change, a
+// newly arrived occupant. Refetching the whole map for one of them is waste.
+void AuthorNames::handleEvent(const QString &module, const QString &name,
+                              const QVariant &args) {
+    if (module != QLatin1String("author") || name != QLatin1String("Changed"))
+        return;
+    const QVariantMap a = args.toMap();
+    if (a.value(QStringLiteral("acc")).toString() != m_account ||
+        a.value(QStringLiteral("chat")).toString() != m_chat)
+        return;
+    const QString from = a.value(QStringLiteral("from")).toString();
+    if (from.isEmpty())
+        return;
+    m_names.insert(from, a.value(QStringLiteral("name")).toString());
+    emit namesChanged();
+}

@@ -13,6 +13,10 @@ Item {
     // The body as rich text, empty when it has no formatting spans - which
     // keeps the ordinary message off the rich-text path entirely.
     property string markup: ""
+    // Who sent it, drawn above the body when the chat has more than two voices.
+    property string author: ""
+    property bool showAuthor: false
+
     // The message this one answers: a one-line preview and its author, both
     // resolved by tacky. Empty when this is not a reply.
     property string replyBody: ""
@@ -295,6 +299,17 @@ Item {
                 anchors.top: parent.top
                 anchors.leftMargin: 12
                 anchors.topMargin: 8
+
+                Text {
+                    objectName: "authorLine"
+                    visible: root.showAuthor && root.author !== ""
+                    text: root.author
+                    color: Theme.accent
+                    font.pixelSize: 12
+                    font.bold: true
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: root.maxBubbleWidth
+                }
 
                 // The quoted target, above the answer. tacky keeps the outgoing
                 // body free of the "> " wire fallback, so nothing is repeated
