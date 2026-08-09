@@ -82,6 +82,7 @@ class TestChatPage : public QObject {
         }
     };
 
+    qlonglong m_jumpTarget = 0; // first message of jump@, the reply's target
     QQmlEngine *m_engine = nullptr;
     AppController *m_app = nullptr;
     QQmlComponent *m_component = nullptr;
@@ -134,6 +135,7 @@ private slots:
     void mouseDragSelectsBodyText();
     void rightClickStillOpensTheBubbleMenu();
     void replyingFromTheComposerThreadsTheTarget();
+    void tappingAQuoteJumpsToItsTarget();
 };
 
 void TestChatPage::initTestCase() {
@@ -158,6 +160,27 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "replies@example.com"},
                                          {"body", kOriginal}});
+
+    // jump@ gets the target, then more than a page on top of it, then a reply
+    // to the target - so the jump has somewhere to travel.
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "jump@example.com"},
+                                         {"body", kOriginal}});
+    m_jumpTarget = call(*m_app->backend(), "message", "history",
+                        QVariantMap{{"acc", kAcc}, {"chat", "jump@example.com"}})
+                       .toList()
+                       .first()
+                       .toMap()
+                       .value("timestamp")
+                       .toLongLong();
+    QVERIFY(m_jumpTarget > 0);
+    seed("jump@example.com", kPage + 10);
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "jump@example.com"},
+                                         {"body", "answering the first"},
+                                         {"reply_to_ts", m_jumpTarget}});
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "select@example.com"},
@@ -404,6 +427,48 @@ void TestChatPage::replyingFromTheComposerThreadsTheTarget() {
     QQuickItem *quote = findItem(chat.feed, "replyQuote");
     QVERIFY(quote);
     QTRY_VERIFY(quote->isVisible());
+}
+
+// The whole tappable path against the real store: a reply far above the tail,
+// a tap on its quote, and the feed lands on the message it answered.
+void TestChatPage::tappingAQuoteJumpsToItsTarget() {
+    const Chat chat = open("jump@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+    ChatModel *model = chat.model();
+
+    // Row 0 is the reply, seeded last; its target is the very first message,
+    // well outside the page the chat opened on.
+    const qlonglong replyTs =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+    QCOMPARE(model->data(model->index(0), ChatModel::ReplyBodyRole).toString(), kOriginal);
+    QCOMPARE(model->rowOfTimestamp(m_jumpTarget), -1); // not in the open window
+
+    QQuickItem *quote = findItem(chat.feed, "replyQuote");
+    QVERIFY(quote);
+    QVERIFY(quote->isVisible());
+    const QPointF hit = quote->mapToScene(QPointF(quote->width() / 2, quote->height() / 2));
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, hit.toPoint());
+
+    // The slice replaces the window and the target is in it, centred.
+    QTRY_VERIFY_WITH_TIMEOUT(model->rowOfTimestamp(m_jumpTarget) >= 0, 5000);
+    QVERIFY(!model->atTail());
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QCOMPARE(page->property("highlightTs").toLongLong(), m_jumpTarget);
+
+    // Off the tail, the way back is offered.
+    QQuickItem *jump = chat.feed->findChild<QQuickItem *>("jumpToLatest");
+    QVERIFY(jump);
+    QTRY_VERIFY(jump->isVisible());
+
+    // Taking it reloads the newest page and puts the feed back on the tail.
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {},
+                      jump->mapToScene(QPointF(jump->width() / 2, jump->height() / 2)).toPoint());
+    QTRY_VERIFY_WITH_TIMEOUT(model->atTail(), 5000);
+    QCOMPARE(model->rowOfTimestamp(replyTs), 0);
 }
 
 QTEST_MAIN(TestChatPage)

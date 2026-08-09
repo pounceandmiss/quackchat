@@ -45,6 +45,9 @@ private slots:
     void markupEscapesAndKeepsWhitespace();
     void markupRoleReadsTheContentUnion();
     void markupRoleFollowsTheQuoteColor();
+    void anchorOnScreenKeepsTheWindow();
+    void anchorOffScreenReplacesTheWindow();
+    void unresolvedReplyTargetMovesNothing();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
     void catchupReconcileRepages();
@@ -349,6 +352,74 @@ void TestChatModel::markupRoleFollowsTheQuoteColor() {
     QCOMPARE(chg.count(), 1);
     QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
     QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));
+}
+
+// goto_result's anchor decides the work: one already displayed only needs
+// scrolling to, so the window - and the at-tail flag with it - stays put.
+void TestChatModel::anchorOnScreenKeepsTheWindow() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");                // initial history is token 1
+    m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
+    QVERIFY(m.atTail());
+
+    QSignalSpy anchored(&m, &ChatModel::anchored);
+    m.gotoTimestamp(100);            // token 2
+    m.handleResult(2, QJsonDocument::fromJson(R"({
+        "anchor":100,"messages":[{"timestamp":100}]})").object().toVariantMap());
+    QCOMPARE(anchored.count(), 1);
+    QCOMPARE(anchored.first().at(0).toLongLong(), 100LL);
+    QCOMPARE(m.rowCount(), 2);       // untouched
+    QVERIFY(m.atTail());
+}
+
+void TestChatModel::anchorOffScreenReplacesTheWindow() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.handleResult(1, msgs(R"([{"timestamp":900}])"));
+    QVERIFY(m.atTail());
+
+    QSignalSpy anchored(&m, &ChatModel::anchored);
+    m.gotoTimestamp(20);
+    m.handleResult(2, QJsonDocument::fromJson(R"({
+        "anchor":20,"messages":[{"timestamp":10},{"timestamp":20}]})")
+                          .object().toVariantMap());
+    QCOMPARE(anchored.first().at(0).toLongLong(), 20LL);
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(m.data(m.index(0), ChatModel::TimestampRole).toLongLong(), 20LL);
+    QVERIFY(!m.atTail());            // the slice need not reach the tail
+}
+
+// An uncached target answers an empty anchor. Clearing the window on that
+// would strand the user on a blank feed for a tap that resolved to nothing.
+void TestChatModel::unresolvedReplyTargetMovesNothing() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.handleResult(1, msgs(R"([{"timestamp":100,"reply_id":"x","reply_to":"b@h"},
+                               {"timestamp":50}])"));
+
+    QSignalSpy anchored(&m, &ChatModel::anchored);
+    m.gotoReplyTarget(100);          // token 2
+    m.handleResult(2, QJsonDocument::fromJson(R"({"anchor":"","messages":[]})")
+                          .object().toVariantMap());
+    QCOMPARE(anchored.count(), 1);
+    QCOMPARE(anchored.first().at(0).toLongLong(), 0LL);
+    QCOMPARE(m.rowCount(), 2);
+    QVERIFY(m.atTail());
+
+    // A row that is not a reply has nothing to jump to, and never asks.
+    anchored.clear();
+    m.gotoReplyTarget(50);
+    QCOMPARE(anchored.count(), 1);
+    QCOMPARE(anchored.first().at(0).toLongLong(), 0LL);
 }
 
 void TestChatModel::catchupGatesLiveInserts() {

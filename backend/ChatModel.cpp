@@ -224,24 +224,44 @@ void ChatModel::loadNewer() {
     issueHistory(QStringLiteral("new"), newestTs(), true);
 }
 
-void ChatModel::gotoTimestamp(qlonglong ts, const QString &source) {
+// Both jumps land in the same reply handler, which decides then whether the
+// window has to move at all - so neither leaves the tail up front. A target
+// already on screen only needs scrolling to.
+void ChatModel::issueGoto(const QString &method, const QVariantMap &args) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
         return;
     cancelDir(QStringLiteral("goto"));
     cancelDir(QStringLiteral("old"));
     cancelDir(QStringLiteral("new"));
     cancelDir(QStringLiteral("catchup"));
-    setAtTail(false);
-    QVariantMap a{{QStringLiteral("acc"), m_account},
-                  {QStringLiteral("chat"), m_chat},
-                  {QStringLiteral("date"), ts},
-                  {QStringLiteral("source"), source},
-                  {QStringLiteral("limit"), 50},
-                  {QStringLiteral("tag"), m_chat + QStringLiteral("/goto")}};
-    const int tok =
-        m_backend->request(QStringLiteral("message"), QStringLiteral("goto"), a);
+    QVariantMap a = args;
+    a.insert(QStringLiteral("acc"), m_account);
+    a.insert(QStringLiteral("chat"), m_chat);
+    a.insert(QStringLiteral("limit"), 50);
+    a.insert(QStringLiteral("tag"), m_chat + QStringLiteral("/goto"));
+    const int tok = m_backend->request(QStringLiteral("message"), method, a);
     m_pending.insert(tok, QStringLiteral("goto"));
     markInflight(QStringLiteral("goto"), true);
+}
+
+void ChatModel::gotoTimestamp(qlonglong ts, const QString &source) {
+    issueGoto(QStringLiteral("goto"), {{QStringLiteral("date"), ts},
+                                       {QStringLiteral("source"), source}});
+}
+
+void ChatModel::gotoReplyTarget(qlonglong ts) {
+    const int row = indexOfTs(ts);
+    if (row < 0)
+        return;
+    const QVariantMap m = m_msgs.at(row);
+    const QString id = m.value(QStringLiteral("reply_id")).toString();
+    if (id.isEmpty()) {
+        emit anchored(0);
+        return;
+    }
+    issueGoto(QStringLiteral("gotoReply"),
+              {{QStringLiteral("reply_id"), id},
+               {QStringLiteral("reply_to"), m.value(QStringLiteral("reply_to"))}});
 }
 
 void ChatModel::resetToBottom() {
@@ -429,7 +449,13 @@ void ChatModel::handleResult(int token, const QVariant &data) {
         if (page.isEmpty() || pageNewest == m_tailTs)
             applyBatch(page);
     } else if (role == QLatin1String("goto")) {
-        applyGotoSlice(data.toMap().value(QStringLiteral("messages")).toList());
+        // An anchor already on screen means the window stays as it is, tail
+        // and all; an unresolved one (empty anchor) means nothing to go to.
+        const QVariantMap res = data.toMap();
+        const qlonglong anchor = res.value(QStringLiteral("anchor")).toLongLong();
+        if (anchor != 0 && indexOfTs(anchor) < 0)
+            applyGotoSlice(res.value(QStringLiteral("messages")).toList());
+        emit anchored(anchor);
     }
     // goto resets the window, so its delta isn't a plain insert count; the view
     // only fills on init/old and ignores goto's number.

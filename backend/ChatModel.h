@@ -78,6 +78,10 @@ public:
     Q_INVOKABLE void loadNewer();                 // page above the newest row
     Q_INVOKABLE void gotoTimestamp(qlonglong ts,
                                    const QString &source = "local");
+    // Jump to whatever the message at `ts` answered. A target the store cannot
+    // resolve comes back empty and leaves the window alone.
+    Q_INVOKABLE void gotoReplyTarget(qlonglong ts);
+    Q_INVOKABLE int rowOfTimestamp(qlonglong ts) const { return indexOfTs(ts); }
     Q_INVOKABLE void resetToBottom();
     // replyToTs names the message being answered, 0 for a plain send.
     Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
@@ -109,6 +113,9 @@ signals:
     // the net rows inserted. The view pages off this to fill an under-tall
     // viewport, and stops when added == 0 (archive exhausted).
     void loaded(const QString &dir, int added);
+    // A jump settled on `ts`, which the view scrolls to; 0 when the target
+    // could not be resolved and nothing moved.
+    void anchored(qlonglong ts);
 
 private:
     void reload();
@@ -117,6 +124,7 @@ private:
     bool isMyCatchup(const QString &jid) const;
     void reconcileCatchup();
     int indexOfTs(qlonglong ts) const;
+    void issueGoto(const QString &method, const QVariantMap &args);
     int insertPos(qlonglong ts) const;
     void issueHistory(const QString &dir, qlonglong cursor, bool haveCursor);
     void cancelDir(const QString &dir);

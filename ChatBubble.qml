@@ -34,6 +34,11 @@ Item {
     signal copyRequested()
     signal replyRequested()
     signal reactRequested(string emoji)
+    // Tapping the quote jumps to the message it previews.
+    signal quoteTapped()
+
+    // Briefly tinted after a jump lands on this row.
+    property bool highlighted: false
 
     readonly property real maxBubbleWidth: Math.min(parent ? parent.width * 0.72 : 320, 480)
 
@@ -184,8 +189,10 @@ Item {
         anchors.topMargin: -4
         anchors.bottomMargin: -4
         color: Theme.selection
-        opacity: root.selected ? 0.45 : 0.0
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        // The jump tint fades in fast and out slowly, so the eye catches where
+        // it landed without the row staying marked.
+        opacity: root.selected ? 0.45 : root.highlighted ? 0.35 : 0.0
+        Behavior on opacity { NumberAnimation { duration: root.highlighted ? 120 : 450 } }
     }
 
     Rectangle {
@@ -291,6 +298,7 @@ Item {
                 // body free of the "> " wire fallback, so nothing is repeated
                 // between this and the text below.
                 RowLayout {
+                    id: replyQuote
                     objectName: "replyQuote"
                     visible: root.isReply
                     spacing: 7
@@ -323,6 +331,15 @@ Item {
                             maximumLineCount: 1
                         }
                     }
+
+                    // Above the bubble's own handlers, so a tap on the quote
+                    // jumps rather than opening the reaction bar.
+                    TapHandler {
+                        enabled: !root.selectionMode
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        onTapped: root.quoteTapped()
+                    }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                 }
 
                 TextEdit {

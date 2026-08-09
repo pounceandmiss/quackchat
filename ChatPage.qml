@@ -95,6 +95,33 @@ Page {
     }
     function cancelReply() { replyTo = 0; replyBody = ""; replyOutgoing = false }
 
+    // The row a jump landed on, tinted until the timer below clears it.
+    property real highlightTs: 0
+    Timer {
+        id: highlightFade
+        interval: 1600
+        onTriggered: page.highlightTs = 0
+    }
+
+    Connections {
+        target: chatModel
+        // A resolved jump either kept the window and scrolled, or replaced it;
+        // either way the row exists by now. callLater lets the view lay the
+        // new slice out before we ask for its index.
+        function onAnchored(ts) {
+            if (ts === 0)
+                return
+            page.highlightTs = ts
+            highlightFade.restart()
+            Qt.callLater(page.scrollToHighlight)
+        }
+    }
+    function scrollToHighlight() {
+        const row = chatModel.rowOfTimestamp(page.highlightTs)
+        if (row >= 0)
+            feed.positionViewAtIndex(row, ListView.Center)
+    }
+
     // Replies carry the author's JID; a bare local part is friendlier, and our
     // own account is worth naming outright.
     function replyName(jid) {
@@ -314,6 +341,12 @@ Page {
                 function onChatChanged() { feed.olderExhausted = false }
                 function onAccountChanged() { feed.olderExhausted = false }
                 function onLoaded(dir, added) {
+                    // A goto replaces the window, so what we knew about its old
+                    // end is gone; the new slice will trigger its own fill.
+                    if (dir === "goto") {
+                        feed.olderExhausted = false
+                        return
+                    }
                     if (dir !== "init" && dir !== "old")
                         return
                     // A fresh newest page is a brand-new window: whatever we knew
@@ -324,10 +357,12 @@ Page {
                     // stop, so we don't spin re-requesting an empty page.
                     else if (added === 0)
                         feed.olderExhausted = true
-                    Qt.callLater(feed.topUp)
                 }
             }
-            onCountChanged: Qt.callLater(topUp)
+            // contentHeight, not count: rows land before the view lays them
+            // out, and topUp reading the geometry from before the page would
+            // see no slack above and pull another one it does not need.
+            onContentHeightChanged: Qt.callLater(topUp)
             onHeightChanged: Qt.callLater(topUp)
 
             delegate: Item {
@@ -348,6 +383,8 @@ Page {
                     markup: wrap.markup
                     replyBody: wrap.replyBody
                     replyAuthor: page.replyName(wrap.replyAuthor)
+                    highlighted: page.highlightTs === wrap.timestamp
+                    onQuoteTapped: chatModel.gotoReplyTarget(wrap.timestamp)
                     outgoing: wrap.outgoing
                     time: page.fmtTime(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus)
@@ -375,6 +412,34 @@ Page {
                 // live <New> events land there on their own.
                 if (!chatModel.atTail && newerBuffer() < fillThreshold)
                     chatModel.loadNewer()
+            }
+
+            // Jumping to a reply's target leaves the tail, and paging back is a
+            // long way, so offer the one-tap route the backend already has.
+            Rectangle {
+                objectName: "jumpToLatest"
+                parent: feed
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.rightMargin: 14
+                anchors.bottomMargin: 12
+                width: 38
+                height: 38
+                radius: 19
+                color: Theme.surface
+                border.color: Theme.hairline
+                opacity: chatModel.atTail ? 0 : 1
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "⌄"
+                    color: Theme.textDim
+                    font.pixelSize: 20
+                }
+                TapHandler { onTapped: chatModel.resetToBottom() }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
 
             // Floats over the oldest edge instead of riding along as a footer:
