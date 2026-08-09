@@ -47,6 +47,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
         return m.value(QStringLiteral("remote_status")).toString();
     case FromRole:         return m.value(QStringLiteral("from_jid"));
     case RetractedRole:    return m.value(QStringLiteral("retracted"));
+    case ReactionsRole:    return m.value(QStringLiteral("reactions")).toMap();
     // Coerced, not passed through: these keys are absent on an ordinary
     // message, and a missing QVariant reaches QML as undefined, which a string
     // property renders as the word "undefined" instead of nothing.
@@ -68,6 +69,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {RemoteStatusRole, "remoteStatus"},
         {FromRole, "from"},
         {RetractedRole, "retracted"},
+        {ReactionsRole, "reactions"},
         {ReplyBodyRole, "replyBody"},
         {ReplyAuthorRole, "replyAuthor"},
         {RawRole, "raw"},
@@ -298,6 +300,27 @@ void ChatModel::send(const QString &body, qlonglong replyToTs) {
     if (replyToTs != 0)
         a.insert(QStringLiteral("reply_to_ts"), replyToTs);
     m_backend->notify(QStringLiteral("message"), QStringLiteral("send"), a);
+}
+
+// The aggregated map comes back as a <Reactions> event, so neither of these
+// touches the row: they ask, and the backend answers with the whole set.
+void ChatModel::react(qlonglong ts, const QString &emoji) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty() || emoji.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("react"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts},
+                                  {QStringLiteral("emoji"), emoji}});
+}
+
+void ChatModel::reactClear(qlonglong ts) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("reactClear"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts}});
 }
 
 void ChatModel::cullOld(int count) {

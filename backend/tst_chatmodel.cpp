@@ -47,6 +47,7 @@ private slots:
     void markupRoleFollowsTheQuoteColor();
     void replyRolesAreAlwaysStrings();
     void remoteStatusTracksTheFarEnd();
+    void reactionsComeFromTheAggregatedMap();
     void anchorOnScreenKeepsTheWindow();
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
@@ -354,6 +355,36 @@ void TestChatModel::markupRoleFollowsTheQuoteColor() {
     QCOMPARE(chg.count(), 1);
     QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
     QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));
+}
+
+// The backend owns the set: react only asks, and the answer arrives as a
+// <Reactions> event carrying the whole aggregated map.
+void TestChatModel::reactionsComeFromTheAggregatedMap() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300}])"));
+    QVERIFY(m.data(m.index(0), ChatModel::ReactionsRole).toMap().isEmpty());
+
+    // Asking does not change the row; only the event that follows does.
+    m.react(300, "👍");
+    QVERIFY(m.data(m.index(0), ChatModel::ReactionsRole).toMap().isEmpty());
+
+    feedEvent(m, R"(["event","message","Reactions",{"acc":"me@h","jid":"a@h",
+        "timestamp":300,"reactions":{"👍":{"reactors":["me@h","b@h"],"mine":true},
+                                     "🙏":{"reactors":["b@h"],"mine":false}}}])");
+    const QVariantMap r = m.data(m.index(0), ChatModel::ReactionsRole).toMap();
+    QCOMPARE(r.size(), 2);
+    QCOMPARE(r.value("👍").toMap().value("reactors").toList().size(), 2);
+    QVERIFY(r.value("👍").toMap().value("mine").toBool());
+    QVERIFY(!r.value("🙏").toMap().value("mine").toBool());
+
+    // The map is replaced wholesale, never merged.
+    feedEvent(m, R"(["event","message","Reactions",
+        {"acc":"me@h","jid":"a@h","timestamp":300,"reactions":{}}])");
+    QVERIFY(m.data(m.index(0), ChatModel::ReactionsRole).toMap().isEmpty());
 }
 
 // The two hops are separate fields and separate roles; <Status> can move

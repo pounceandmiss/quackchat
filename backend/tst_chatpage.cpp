@@ -148,6 +148,7 @@ private slots:
     void tappingAQuoteJumpsToItsTarget();
     void plainMessageDrawsNoQuote();
     void ticksFollowBothHops();
+    void reactionChipsShowTheBackendSet();
 };
 
 void TestChatPage::initTestCase() {
@@ -172,6 +173,11 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "replies@example.com"},
                                          {"body", kOriginal}});
+
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "react@example.com"},
+                                         {"body", "react to me"}});
 
     // jump@ gets the target, then more than a page on top of it, then a reply
     // to the target - so the jump has somewhere to travel.
@@ -533,6 +539,35 @@ void TestChatPage::ticksFollowBothHops() {
     QQuickItem *tick = findItem(chat.row(0), "statusTick");
     QVERIFY(tick);
     QCOMPARE(tick->property("text").toString(), QString("◌"));
+}
+
+// Reactions used to live in the view and go nowhere. They are the backend's
+// set now, so the chips have to come back from it.
+void TestChatPage::reactionChipsShowTheBackendSet() {
+    const Chat chat = open("react@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    QQuickItem *row = findItem(chat.row(0), "reactionRow");
+    QVERIFY(row);
+    QVERIFY(!row->isVisible());
+
+    model->react(ts, "👍");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+    const QVariantMap mine = model->data(model->index(0), ChatModel::ReactionsRole).toMap();
+    QVERIFY(mine.value("👍").toMap().value("mine").toBool());
+    QTRY_VERIFY(row->isVisible());
+
+    // XEP-0444 react is a toggle, so the same emoji again takes it back and
+    // the chip goes with it.
+    model->react(ts, "👍");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+    QTRY_VERIFY(!row->isVisible());
 }
 
 QTEST_MAIN(TestChatPage)

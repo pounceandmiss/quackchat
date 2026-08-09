@@ -130,19 +130,6 @@ Page {
         return jid.indexOf("@") > 0 ? jid.substring(0, jid.indexOf("@")) : jid
     }
 
-    // GUI-only dummy, not sent anywhere. Keyed by timestamp so a reaction
-    // survives its bubble being recycled as you scroll.
-    property var reactions: ({})
-    function reactionFor(ts) { return reactions[ts] !== undefined ? reactions[ts] : "" }
-    function react(ts, emoji) {
-        const next = Object.assign({}, reactions)
-        if (next[ts] === emoji)
-            delete next[ts]
-        else
-            next[ts] = emoji
-        reactions = next
-    }
-
     function fmtTime(ts) {
         if (!ts) return ""
         const d = new Date(ts / 1000) // tacky timestamps are microseconds
@@ -383,6 +370,7 @@ Page {
                 required property string serverStatus
                 required property string remoteStatus
                 required property var timestamp
+                required property var reactions
                 width: feed.width
                 height: bubble.height
                 ChatBubble {
@@ -399,11 +387,11 @@ Page {
                     status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
-                    reaction: page.reactionFor(wrap.timestamp)
+                    reactions: wrap.reactions
                     onToggleRequested: page.toggle(wrap.timestamp, wrap.body)
                     onCopyRequested: page.copyText(wrap.body)
                     onReplyRequested: page.startReply(wrap.timestamp, wrap.body, wrap.outgoing)
-                    onReactRequested: (emoji) => page.react(wrap.timestamp, emoji)
+                    onReactRequested: (emoji) => chatModel.react(wrap.timestamp, emoji)
                 }
             }
 

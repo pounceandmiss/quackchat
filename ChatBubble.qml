@@ -28,10 +28,10 @@ Item {
     property bool selected: false
     property bool selectionMode: false
 
-    // GUI-only dummy reaction; "" = none.
-    property string reaction: ""
+    // The aggregated map from the backend: emoji -> {reactors, mine}.
+    property var reactions: ({})
+    readonly property var reactionKeys: reactions ? Object.keys(reactions) : []
     readonly property var reactionChoices: ["👍", "❤️", "😂", "😮", "😢", "🙏"]
-    onReactionChanged: if (reaction !== "") reactionPop.restart()
     signal toggleRequested()
     signal copyRequested()
     signal replyRequested()
@@ -385,24 +385,59 @@ Item {
             }
         }
 
-        Rectangle {
-            id: reactionChip
-            visible: root.reaction !== ""
+        // One chip per emoji, each carrying its count, with our own picks
+        // outlined. Tapping a chip toggles that emoji, same call as picking it
+        // from the bar.
+        Row {
+            id: reactionRow
+            objectName: "reactionRow"
+            visible: root.reactionKeys.length > 0
             anchors.top: bubble.bottom
-            anchors.topMargin: -13
+            anchors.topMargin: -11
             anchors.right: root.outgoing ? bubble.right : undefined
             anchors.left:  root.outgoing ? undefined : bubble.left
             anchors.rightMargin: 10
             anchors.leftMargin: 10
-            width: 26; height: 26; radius: 13
-            color: Theme.surface
-            border.color: Theme.hairline
+            spacing: 3
             z: 5
-            Text { anchors.centerIn: parent; text: root.reaction; font.pixelSize: 15 }
-            NumberAnimation {
-                id: reactionPop
-                target: reactionChip; property: "scale"
-                from: 0.3; to: 1.0; duration: 220; easing.type: Easing.OutBack
+
+            Repeater {
+                model: root.reactionKeys
+                delegate: Rectangle {
+                    id: chip
+                    required property string modelData
+                    readonly property var entry: root.reactions[chip.modelData]
+                    readonly property int count: entry && entry.reactors ? entry.reactors.length : 0
+                    readonly property bool mine: entry ? entry.mine === true : false
+
+                    height: 22
+                    width: chipRow.width + 12
+                    radius: 11
+                    color: Theme.surface
+                    border.color: chip.mine ? Theme.accent : Theme.hairline
+                    border.width: chip.mine ? 1.5 : 1
+
+                    Row {
+                        id: chipRow
+                        anchors.centerIn: parent
+                        spacing: 3
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: chip.modelData
+                            font.pixelSize: 12
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: chip.count > 1
+                            text: chip.count
+                            color: chip.mine ? Theme.accent : Theme.textDim
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+                    }
+                    TapHandler { onTapped: root.reactRequested(chip.modelData) }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                }
             }
         }
     }

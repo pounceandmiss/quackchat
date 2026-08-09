@@ -45,6 +45,7 @@ public:
         RemoteStatusRole, // and the hop after it: none/delivered/read
         FromRole,
         RetractedRole,   // tombstone: render the deleted-message placeholder
+        ReactionsRole,   // aggregated map: emoji -> {reactors, mine}
         ReplyBodyRole,   // one-line preview of the message this one answers
         ReplyAuthorRole, // and who wrote it; both empty when this is no reply
         RawRole,
@@ -86,6 +87,10 @@ public:
     Q_INVOKABLE void resetToBottom();
     // replyToTs names the message being answered, 0 for a plain send.
     Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
+    // Toggles one emoji in our own set for that message, per XEP-0444; the
+    // same call again takes it back.
+    Q_INVOKABLE void react(qlonglong ts, const QString &emoji);
+    Q_INVOKABLE void reactClear(qlonglong ts);
     Q_INVOKABLE void cullOld(int count);          // view dropped oldest rows
     Q_INVOKABLE void cullNew(int count);          // view dropped newest rows
 
