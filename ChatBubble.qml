@@ -53,6 +53,9 @@ Item {
     DragHandler {
         id: swipe
         enabled: !root.selectionMode
+        // Touch only, leaving the mouse drag to the body's text selection.
+        // Device rather than Qt.platform.os, so a touchscreen laptop gets both.
+        acceptedDevices: PointerDevice.TouchScreen
         target: null   // we move rowContent ourselves
         yAxis.enabled: false
         xAxis.enabled: true
@@ -77,6 +80,7 @@ Item {
 
     Menu {
         id: ctxMenu
+        objectName: "bubbleMenu"
         width: 180
         background: Rectangle {
             color: Theme.surface
@@ -288,9 +292,11 @@ Item {
                     font.pixelSize: 15
                     wrapMode: TextEdit.Wrap
                     readOnly: true
-                    // Off so a horizontal drag stays free for swipe-to-reply;
-                    // TextEdit would otherwise keep the grab. Copy is via the menu.
-                    selectByMouse: false
+                    // Free to take the mouse drag now that the swipe is touch
+                    // only. Persistent so the highlight survives the focus
+                    // moving to the composer.
+                    selectByMouse: true
+                    persistentSelection: true
                     Layout.maximumWidth: root.maxBubbleWidth
                 }
 

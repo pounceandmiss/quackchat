@@ -30,6 +30,8 @@ constexpr int kPage = 50;               // tacky's default history limit
 constexpr int kSeeded = 2 * kPage + 40; // two whole local pages, then a short one
 constexpr int kQuiet = 3;               // shorter than any viewport
 const QString kStyled = QStringLiteral("*bold* and plain");
+// Long enough that a drag across the bubble lands mid-word at both ends.
+const QString kSelectable = QStringLiteral("the quick brown fox jumps over the lazy dog");
 
 // Blocks until the backend answers. Requests queue behind the notifies issued
 // before them, so this doubles as a barrier for seeding.
@@ -69,6 +71,8 @@ class TestChatPage : public QObject {
                 return qQNaN();
             return out.toReal();
         }
+
+        QQuickWindow *win() const { return qobject_cast<QQuickWindow *>(window.get()); }
 
         // Park the viewport `slack` pixels short of the oldest edge, reading
         // that edge afresh because a page that lands moves it.
@@ -126,6 +130,8 @@ private slots:
     void underTallViewportPagesWithoutScrolling();
     void reachingTheOldestEdgeRetriesAfterExhaustion();
     void bubbleRendersMarkupAsRichText();
+    void mouseDragSelectsBodyText();
+    void rightClickStillOpensTheBubbleMenu();
 };
 
 void TestChatPage::initTestCase() {
@@ -146,6 +152,10 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "styled@example.com"},
                                          {"body", kStyled}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "select@example.com"},
+                                         {"body", kSelectable}});
 
     // Barrier: this result cannot come back before the sends above ran.
     const QVariantList stored =
@@ -296,6 +306,61 @@ void TestChatPage::bubbleRendersMarkupAsRichText() {
     QVERIFY(QMetaObject::invokeMethod(body, "getText", Q_RETURN_ARG(QString, plain),
                                       Q_ARG(int, 0), Q_ARG(int, 14)));
     QCOMPARE(plain, QString("bold and plain"));
+}
+
+// Whether the body or the swipe handler wins the mouse drag is decided by
+// event delivery, so nothing short of a synthesised drag settles it.
+void TestChatPage::mouseDragSelectsBodyText() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QVERIFY(body->width() > 0 && body->height() > 0);
+
+    // Window coordinates, on the first line only - across a wrap the release
+    // point would sit above the press point.
+    const QPointF left = body->mapToScene(QPointF(2, body->height() / 4));
+    const QPointF right = body->mapToScene(QPointF(body->width() - 2, body->height() / 4));
+
+    const qreal parked = chat.prop("contentY");
+    QTest::mousePress(chat.win(), Qt::LeftButton, {}, left.toPoint());
+    QTest::mouseMove(chat.win(), QPointF((left.x() + right.x()) / 2, left.y()).toPoint());
+    QTest::mouseMove(chat.win(), right.toPoint());
+    QTest::mouseRelease(chat.win(), Qt::LeftButton, {}, right.toPoint());
+
+    const QString picked = body->property("selectedText").toString();
+    QVERIFY2(picked.size() > 3, qPrintable(QString("selected only %1").arg(picked)));
+    QVERIFY2(kSelectable.contains(picked), qPrintable(picked));
+
+    // A horizontal drag must not have flicked the feed out from under it.
+    QCOMPARE(chat.prop("contentY"), parked);
+}
+
+// The body is painted over the bubble's right-button MouseArea and has a
+// context menu of its own, either of which could swallow the press.
+void TestChatPage::rightClickStillOpensTheBubbleMenu() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+
+    // The Menu is a QObject child of the bubble, and the bubble hangs off the
+    // visual tree with its delegate, so climb the parent items to reach it.
+    QObject *menu = nullptr;
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
+        menu = at->findChild<QObject *>("bubbleMenu");
+    QVERIFY(menu);
+    QVERIFY(!menu->property("opened").toBool());
+
+    QTest::mouseClick(chat.win(), Qt::RightButton, {},
+                      body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint());
+    QTRY_VERIFY(menu->property("opened").toBool());
 }
 
 QTEST_MAIN(TestChatPage)
