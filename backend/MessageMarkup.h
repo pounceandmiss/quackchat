@@ -8,9 +8,11 @@
 #include <QString>
 #include <QVariantList>
 
-// Spans are [{type, offset, length}], offsets in code points. Returns an empty
-// string when nothing needs marking up, which is the caller's signal to draw
-// the body as plain text and skip rich text entirely.
-QString messageMarkup(const QString &body, const QVariantList &spans);
+// Spans are [{type, offset, length}], offsets in code points. `quoteColor` is a
+// CSS color for quoted runs, which the palette owns rather than this file.
+// Returns an empty string when nothing needs marking up, which is the caller's
+// signal to draw the body as plain text and skip rich text entirely.
+QString messageMarkup(const QString &body, const QVariantList &spans,
+                      const QString &quoteColor);
 
 #endif // MESSAGEMARKUP_H

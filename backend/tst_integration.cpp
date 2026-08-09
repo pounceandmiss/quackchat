@@ -111,6 +111,20 @@ void TestIntegration::markupFollowsTackysStylingSpans() {
     QCOMPARE(chat.data(chat.index(0), ChatModel::MarkupRole).toString(),
              QString::fromUtf8("\U0001F600 <b>bold</b> and <i>soft</i>"));
 
+    // Quotes keep their "> " markers and run together across lines, so the
+    // whole block is one colored span and the reply below it is not in it.
+    chat.setQuoteColor("#0a0");
+    backend.notify("message", "send",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"chat", "friend@example.com"},
+                               {"body", "> they said\n> and then\nmy reply"}});
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 2, 5000);
+    QCOMPARE(chat.data(chat.index(0), ChatModel::BodyRole).toString(),
+             QString("> they said\n> and then\nmy reply"));
+    QCOMPARE(chat.data(chat.index(0), ChatModel::MarkupRole).toString(),
+             QString("<span style=\"color:#0a0\">&gt; they said<br>&gt; and then"
+                     "</span><br>my reply"));
+
     backend.stop();
 }
 

@@ -10,8 +10,8 @@ Item {
     id: root
 
     property string text: ""
-    // The body as rich text; empty when it carries no formatting spans, which
-    // keeps the common message on the cheaper plain-text path.
+    // The body as rich text, empty when it has no formatting spans - which
+    // keeps the ordinary message off the rich-text path entirely.
     property string markup: ""
     property string time: ""
     property bool outgoing: false
@@ -279,10 +279,11 @@ Item {
                 anchors.topMargin: 8
 
                 TextEdit {
+                    id: bodyText
                     objectName: "bubbleText"
-                    text: root.markup !== "" ? root.markup : root.text
-                    textFormat: root.markup !== "" ? TextEdit.RichText
-                                                   : TextEdit.PlainText
+                    readonly property bool rich: root.markup !== ""
+                    text: bodyText.rich ? root.markup : root.text
+                    textFormat: bodyText.rich ? TextEdit.RichText : TextEdit.PlainText
                     color: Theme.textPrimary
                     font.pixelSize: 15
                     wrapMode: TextEdit.Wrap

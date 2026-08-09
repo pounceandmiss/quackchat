@@ -30,6 +30,7 @@ QtObject {
             accent2:     "#ffca66",   // lighter accent (gradient top)
             accentDeep:  "#e07b00",   // pressed / icon accent
             positive:    "#0f9d76",   // mallard green, online, read ticks
+            quote:       "#2f8f68",   // quoted lines (tacky keeps their "> " markers)
             negative:    "#d9534f",
             warning:     "#e0a325",
             onAccent:    "#5a3a00",   // text/icon drawn on an accent fill
@@ -51,6 +52,7 @@ QtObject {
             accent2:     "#4cc4ad",
             accentDeep:  "#0d7d69",
             positive:    "#e0a325",   // a small amber pop for read ticks
+            quote:       "#0f8a6e",
             negative:    "#d9534f",
             warning:     "#e0a325",
             onAccent:    "#ffffff",
@@ -72,6 +74,7 @@ QtObject {
             accent2:     "#6aa6dd",
             accentDeep:  "#2c6aa6",
             positive:    "#2fae8f",
+            quote:       "#2c8a66",
             negative:    "#d9534f",
             warning:     "#dda01f",
             onAccent:    "#ffffff",
@@ -93,6 +96,7 @@ QtObject {
             accent2:     "#e892ac",
             accentDeep:  "#c14f77",
             positive:    "#4fae8a",
+            quote:       "#3c8f6c",
             negative:    "#d1495b",
             warning:     "#d99a2b",
             onAccent:    "#ffffff",
@@ -114,6 +118,7 @@ QtObject {
             accent2:     "#9cb884",
             accentDeep:  "#5f7d47",
             positive:    "#4f9e7a",
+            quote:       "#3d8759",
             negative:    "#c25450",
             warning:     "#d3a02c",
             onAccent:    "#ffffff",
@@ -135,6 +140,7 @@ QtObject {
             accent2:     "#33d17a",
             accentDeep:  "#06a850",
             positive:    "#06a850",
+            quote:       "#1e8a4c",
             negative:    "#fa5151",
             warning:     "#fa9d3b",
             onAccent:    "#ffffff",
@@ -156,6 +162,7 @@ QtObject {
             accent2:     "#66bb6a",   // green 400
             accentDeep:  "#2e7d32",   // green 800
             positive:    "#43a047",
+            quote:       "#2e7d32",
             negative:    "#e53935",
             warning:     "#fb8c00",
             onAccent:    "#ffffff",
@@ -177,6 +184,7 @@ QtObject {
             accent2:     "#7cc4fb",
             accentDeep:  "#2b7de9",
             positive:    "#4fc3f7",
+            quote:       "#6fcf97",
             negative:    "#e5533d",
             warning:     "#e0a325",
             onAccent:    "#ffffff",
@@ -198,6 +206,7 @@ QtObject {
             accent2:     "#ff9e86",
             accentDeep:  "#e85c3a",
             positive:    "#ff9e86",
+            quote:       "#86d6a4",
             negative:    "#ff6b6b",
             warning:     "#ffb454",
             onAccent:    "#2a0f04",
@@ -222,6 +231,7 @@ QtObject {
     readonly property color accent2:     p.accent2
     readonly property color accentDeep:  p.accentDeep
     readonly property color positive:    p.positive
+    readonly property color quote:       p.quote
     readonly property color negative:    p.negative
     readonly property color warning:     p.warning
     readonly property color onAccent:    p.onAccent

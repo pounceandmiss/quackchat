@@ -16,6 +16,13 @@ static QVariantList msgs(const QByteArray &json) {
     return QJsonDocument::fromJson(json).array().toVariantList();
 }
 
+static QVariantList spans(const QByteArray &json) {
+    return QJsonDocument::fromJson(json).array().toVariantList();
+}
+
+// Stands in for the palette's; the markup only ever passes it through.
+static const QString kQuote = QStringLiteral("#0a0");
+
 class TestChatModel : public QObject {
     Q_OBJECT
 private slots:
@@ -37,6 +44,7 @@ private slots:
     void markupCountsCodePoints();
     void markupEscapesAndKeepsWhitespace();
     void markupRoleReadsTheContentUnion();
+    void markupRoleFollowsTheQuoteColor();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
     void catchupReconcileRepages();
@@ -236,38 +244,36 @@ void TestChatModel::loadingOlderTracksTheOldRequest() {
     QVERIFY(!m.loadingOlder());
 }
 
-static QVariantList spans(const QByteArray &json) {
-    return QJsonDocument::fromJson(json).array().toVariantList();
-}
-
 // One tag pair per span type, and nothing at all when there is nothing to mark
 // up - the empty string is what puts the bubble back on the plain-text path.
 void TestChatModel::markupWrapsSpans() {
-    QCOMPARE(messageMarkup("plain", {}), QString());
-    QCOMPARE(messageMarkup("", spans(R"([{"type":"bold","offset":0,"length":1}])")),
+    QCOMPARE(messageMarkup("plain", {}, kQuote), QString());
+    QCOMPARE(messageMarkup("", spans(R"([{"type":"bold","offset":0,"length":1}])"), kQuote),
              QString());
     // A type we don't know draws as text rather than leaking brackets.
-    QCOMPARE(messageMarkup("hi", spans(R"([{"type":"sparkle","offset":0,"length":2}])")),
+    QCOMPARE(messageMarkup("hi", spans(R"([{"type":"sparkle","offset":0,"length":2}])"), kQuote),
              QString());
 
     QCOMPARE(messageMarkup("hi there",
-                           spans(R"([{"type":"bold","offset":0,"length":2}])")),
+                           spans(R"([{"type":"bold","offset":0,"length":2}])"), kQuote),
              QString("<b>hi</b> there"));
     QCOMPARE(messageMarkup("a b",
-                           spans(R"([{"type":"italic","offset":2,"length":1}])")),
+                           spans(R"([{"type":"italic","offset":2,"length":1}])"), kQuote),
              QString("a <i>b</i>"));
     QCOMPARE(messageMarkup("gone",
-                           spans(R"([{"type":"overstrike","offset":0,"length":4}])")),
+                           spans(R"([{"type":"overstrike","offset":0,"length":4}])"), kQuote),
              QString("<s>gone</s>"));
     QCOMPARE(messageMarkup("ls -l",
-                           spans(R"([{"type":"monospace","offset":0,"length":5}])")),
+                           spans(R"([{"type":"monospace","offset":0,"length":5}])"), kQuote),
              QString("<span style=\"font-family:monospace\">ls -l</span>"));
-    QCOMPARE(messageMarkup("said so",
-                           spans(R"([{"type":"quote","offset":0,"length":7}])")),
-             QString("<blockquote>said so</blockquote>"));
+    // Colored, not indented: tacky leaves the "> " markers in the body, and a
+    // <blockquote> would stack Qt's own indent and block break on top of them.
+    QCOMPARE(messageMarkup("> said so",
+                           spans(R"([{"type":"quote","offset":0,"length":9}])"), kQuote),
+             QString("<span style=\"color:#0a0\">&gt; said so</span>"));
 
     // A length running past the end is clamped, not dropped.
-    QCOMPARE(messageMarkup("hi", spans(R"([{"type":"bold","offset":0,"length":99}])")),
+    QCOMPARE(messageMarkup("hi", spans(R"([{"type":"bold","offset":0,"length":99}])"), kQuote),
              QString("<b>hi</b>"));
 }
 
@@ -277,33 +283,33 @@ void TestChatModel::markupWrapsSpans() {
 void TestChatModel::markupNestsOverlappingSpans() {
     QCOMPARE(messageMarkup("abcd", spans(R"([
         {"type":"bold","offset":0,"length":3},
-        {"type":"italic","offset":2,"length":2}])")),
+        {"type":"italic","offset":2,"length":2}])"), kQuote),
              QString("<b>ab<i>c</i></b><i>d</i>"));
 
-    // The quote is one block, not one per styled run inside it.
+    // The quote is one run, not one per styled stretch inside it.
     QCOMPARE(messageMarkup("a b c", spans(R"([
         {"type":"quote","offset":0,"length":5},
-        {"type":"bold","offset":2,"length":1}])")),
-             QString("<blockquote>a <b>b</b> c</blockquote>"));
+        {"type":"bold","offset":2,"length":1}])"), kQuote),
+             QString("<span style=\"color:#0a0\">a <b>b</b> c</span>"));
 }
 
 // tacky counts offsets in code points; QString indexes UTF-16, so anything past
 // an emoji lands a place early if the two are confused.
 void TestChatModel::markupCountsCodePoints() {
     QCOMPARE(messageMarkup(QString::fromUtf8("😀 hi"),
-                           spans(R"([{"type":"bold","offset":2,"length":2}])")),
+                           spans(R"([{"type":"bold","offset":2,"length":2}])"), kQuote),
              QString::fromUtf8("😀 <b>hi</b>"));
 }
 
 void TestChatModel::markupEscapesAndKeepsWhitespace() {
-    QCOMPARE(messageMarkup("a<b>&c", spans(R"([{"type":"bold","offset":0,"length":1}])")),
+    QCOMPARE(messageMarkup("a<b>&c", spans(R"([{"type":"bold","offset":0,"length":1}])"), kQuote),
              QString("<b>a</b>&lt;b&gt;&amp;c"));
     // Newlines and runs of spaces survive HTML's whitespace collapsing...
-    QCOMPARE(messageMarkup("a\n  b", spans(R"([{"type":"bold","offset":0,"length":1}])")),
+    QCOMPARE(messageMarkup("a\n  b", spans(R"([{"type":"bold","offset":0,"length":1}])"), kQuote),
              QString("<b>a</b><br> &nbsp;b"));
     // ...and inside <pre> they are already literal.
     QCOMPARE(messageMarkup("a\n  b",
-                           spans(R"([{"type":"preformatted","offset":0,"length":5}])")),
+                           spans(R"([{"type":"preformatted","offset":0,"length":5}])"), kQuote),
              QString("<pre>a\n  b</pre>"));
 }
 
@@ -327,6 +333,22 @@ void TestChatModel::markupRoleReadsTheContentUnion() {
     // A retraction takes the body with it, markup included.
     m.applyRetracted(200);
     QCOMPARE(m.data(m.index(1), ChatModel::MarkupRole).toString(), QString());
+}
+
+// Ctrl+T swaps the palette under an open chat, and the color is baked into the
+// markup, so the rows carrying one have to be told to redraw.
+void TestChatModel::markupRoleFollowsTheQuoteColor() {
+    ChatModel m;
+    m.setQuoteColor("#111111");
+    m.applyBatch(msgs(R"([{"timestamp":100,"content":{"type":"text","body":"> hi",
+        "formatting":[{"type":"quote","offset":0,"length":4}]}}])"));
+    QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#111111"));
+
+    QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
+    m.setQuoteColor("#222222");
+    QCOMPARE(chg.count(), 1);
+    QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
+    QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));
 }
 
 void TestChatModel::catchupGatesLiveInserts() {

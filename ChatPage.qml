@@ -50,6 +50,9 @@ Page {
         account: page.account
         chat: page.chatJid
         groupchat: page.chatGroupchat
+        // The palette's literal, since the markup wants a CSS color and the
+        // typed accessor would hand over a QColor.
+        quoteColor: Theme.p.quote
     }
 
     // ChatModel has no "selected" role, so selection lives here, keyed by each

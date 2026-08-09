@@ -31,6 +31,9 @@ class ChatModel : public QAbstractListModel {
     // comes up short locally reaches for MAM, and that leg has no timeout. The
     // view shows this rather than looking idle.
     Q_PROPERTY(bool loadingOlder READ loadingOlder NOTIFY loadingOlderChanged)
+    // CSS color for quoted runs in MarkupRole. A QString rather than a QColor:
+    // it goes straight into the markup, and QColor would pull QtGui in here.
+    Q_PROPERTY(QString quoteColor READ quoteColor WRITE setQuoteColor NOTIFY quoteColorChanged)
 
 public:
     enum Role {
@@ -61,10 +64,12 @@ public:
         return m_inflight.contains(QStringLiteral("old")) ||
                m_inflight.contains(QStringLiteral("init"));
     }
+    QString quoteColor() const { return m_quoteColor; }
     void setBackend(TackyBackend *backend);
     void setAccount(const QString &acc);
     void setChat(const QString &chat);
     void setGroupchat(bool v);
+    void setQuoteColor(const QString &css);
 
     Q_INVOKABLE void loadInitial();               // newest page (no cursor)
     Q_INVOKABLE void loadOlder();                 // page below the oldest row
@@ -96,6 +101,7 @@ signals:
     void atTailChanged();
     void catchupBusyChanged();
     void loadingOlderChanged();
+    void quoteColorChanged();
     // A history request finished; dir is init/old/new/goto/catchup and added is
     // the net rows inserted. The view pages off this to fill an under-tall
     // viewport, and stops when added == 0 (archive exhausted).
@@ -119,6 +125,8 @@ private:
     QString m_account;
     QString m_chat;
     bool m_groupchat = false;
+    // Until QML binds the palette's, and what the Tk client uses verbatim.
+    QString m_quoteColor = QStringLiteral("green");
     bool m_atTail = true;       // an empty window is vacuously at tail
     bool m_catchupBusy = false;
     qlonglong m_tailTs = 0;     // newest real-message ts, from message <Tail>

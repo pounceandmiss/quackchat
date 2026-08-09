@@ -2,61 +2,78 @@
 
 #include <QList>
 
+#include <optional>
+
 namespace {
 
 struct Span {
-    int start = 0;  // code points, half-open [start, end)
+    int start = 0; // code points, half-open [start, end)
     int end = 0;
-    int rank = 0;   // block styles outermost, so they survive an inner split
-    QString open;
-    QString close;
+    // Lower nests further out, so a block style survives an inline one splitting
+    // inside it rather than breaking into one block per styled stretch.
+    int rank = 0;
+    bool literalWhitespace = false;
+    QString openTag;
+    QString closeTag;
 };
 
-// An unknown type gets no tags and draws as plain text, so a span kind added
-// to tacky later degrades instead of leaking angle brackets into the bubble.
-bool tagsFor(const QString &type, Span &s) {
-    static const struct {
-        const char *type;
-        int rank;
-        const char *open;
-        const char *close;
-    } kinds[] = {
-        {"quote", 0, "<blockquote>", "</blockquote>"},
-        {"preformatted", 1, "<pre>", "</pre>"},
-        {"monospace", 2, "<span style=\"font-family:monospace\">", "</span>"},
-        {"bold", 3, "<b>", "</b>"},
-        {"italic", 4, "<i>", "</i>"},
-        {"overstrike", 5, "<s>", "</s>"},
-    };
-    for (const auto &k : kinds) {
-        if (type != QLatin1String(k.type))
-            continue;
-        s.rank = k.rank;
-        s.open = QLatin1String(k.open);
-        s.close = QLatin1String(k.close);
-        return true;
+// An unknown type gets no tags and draws as plain text, so a kind added to
+// tacky later degrades instead of leaking angle brackets into the bubble.
+//
+// A quote is colored rather than indented: tacky leaves the "> " markers in the
+// body, so <blockquote> would stack Qt's own indent and block break on top of
+// markers that already set the run apart.
+std::optional<Span> spanFor(const QString &type, const QString &quoteColor) {
+    Span s;
+    if (type == QLatin1String("quote")) {
+        s.rank = 0;
+        s.openTag = QStringLiteral("<span style=\"color:%1\">").arg(quoteColor);
+        s.closeTag = QStringLiteral("</span>");
+    } else if (type == QLatin1String("preformatted")) {
+        s.rank = 1;
+        s.literalWhitespace = true;
+        s.openTag = QStringLiteral("<pre>");
+        s.closeTag = QStringLiteral("</pre>");
+    } else if (type == QLatin1String("monospace")) {
+        s.rank = 2;
+        s.openTag = QStringLiteral("<span style=\"font-family:monospace\">");
+        s.closeTag = QStringLiteral("</span>");
+    } else if (type == QLatin1String("bold")) {
+        s.rank = 3;
+        s.openTag = QStringLiteral("<b>");
+        s.closeTag = QStringLiteral("</b>");
+    } else if (type == QLatin1String("italic")) {
+        s.rank = 4;
+        s.openTag = QStringLiteral("<i>");
+        s.closeTag = QStringLiteral("</i>");
+    } else if (type == QLatin1String("overstrike")) {
+        s.rank = 5;
+        s.openTag = QStringLiteral("<s>");
+        s.closeTag = QStringLiteral("</s>");
+    } else {
+        return {};
     }
-    return false;
+    return s;
 }
 
 // <pre> keeps its own whitespace; everywhere else HTML would eat the newlines
-// and the runs of spaces a chat message is entitled to keep.
-QString escaped(const QList<uint> &cps, int from, int to, bool preformatted) {
+// and the runs of spaces a chat message is entitled to keep. `from` may land
+// mid-run, so the character before it decides whether this one is a repeat.
+QString escaped(const QList<uint> &cps, int from, int to, bool literal) {
     QString out;
-    bool afterSpace = false;
+    bool afterSpace = from > 0 && cps.at(from - 1) == ' ';
     for (int i = from; i < to; ++i) {
         const uint c = cps.at(i);
         switch (c) {
         case '&': out += QLatin1String("&amp;"); break;
         case '<': out += QLatin1String("&lt;"); break;
         case '>': out += QLatin1String("&gt;"); break;
-        case '\n': out += preformatted ? QLatin1String("\n") : QLatin1String("<br>"); break;
+        case '\n': out += literal ? QLatin1String("\n") : QLatin1String("<br>"); break;
         case ' ':
-            out += (afterSpace && !preformatted) ? QLatin1String("&nbsp;")
-                                                 : QLatin1String(" ");
+            out += (afterSpace && !literal) ? QLatin1String("&nbsp;") : QLatin1String(" ");
             break;
         default:
-            for (const QChar ch : QChar::fromUcs4(c))
+            for (QChar ch : QChar::fromUcs4(c))
                 out += ch;
             break;
         }
@@ -67,7 +84,8 @@ QString escaped(const QList<uint> &cps, int from, int to, bool preformatted) {
 
 } // namespace
 
-QString messageMarkup(const QString &body, const QVariantList &spans) {
+QString messageMarkup(const QString &body, const QVariantList &spans,
+                      const QString &quoteColor) {
     if (body.isEmpty() || spans.isEmpty())
         return {};
 
@@ -76,23 +94,24 @@ QString messageMarkup(const QString &body, const QVariantList &spans) {
     const QList<uint> cps = body.toUcs4();
     const int n = cps.size();
 
-    QList<Span> open;
+    QList<Span> ordered;
     for (const QVariant &v : spans) {
         const QVariantMap m = v.toMap();
-        Span s;
-        if (!tagsFor(m.value(QStringLiteral("type")).toString(), s))
+        std::optional<Span> s =
+            spanFor(m.value(QStringLiteral("type")).toString(), quoteColor);
+        if (!s)
             continue;
-        s.start = qBound(0, m.value(QStringLiteral("offset")).toInt(), n);
-        s.end = qBound(s.start, s.start + m.value(QStringLiteral("length")).toInt(), n);
-        if (s.end > s.start)
-            open.append(s);
+        s->start = qBound(0, m.value(QStringLiteral("offset")).toInt(), n);
+        s->end = qBound(s->start, s->start + m.value(QStringLiteral("length")).toInt(), n);
+        if (s->end > s->start)
+            ordered.append(*s);
     }
-    if (open.isEmpty())
+    if (ordered.isEmpty())
         return {};
 
-    // Longest first at a shared start, then block styles outward, so nesting
-    // comes out stable and readable.
-    std::sort(open.begin(), open.end(), [](const Span &a, const Span &b) {
+    // Longest first at a shared start, then outermost rank, so the nesting is
+    // the same every time for a given set of spans.
+    std::sort(ordered.begin(), ordered.end(), [](const Span &a, const Span &b) {
         if (a.start != b.start) return a.start < b.start;
         if (a.end != b.end) return a.end > b.end;
         return a.rank < b.rank;
@@ -100,7 +119,7 @@ QString messageMarkup(const QString &body, const QVariantList &spans) {
 
     QString out;
     QList<Span> stack;
-    int next = 0; // next span in `open` to start
+    int nextSpan = 0;
     int pos = 0;
     while (pos < n) {
         // Close what ends here. Spans may overlap without nesting, so anything
@@ -111,36 +130,37 @@ QString messageMarkup(const QString &body, const QVariantList &spans) {
         if (ending >= 0) {
             QList<Span> reopen;
             for (int i = stack.size() - 1; i >= ending; --i) {
-                out += stack.at(i).close;
+                out += stack.at(i).closeTag;
                 if (stack.at(i).end > pos)
                     reopen.prepend(stack.at(i));
             }
             stack.remove(ending, stack.size() - ending);
             for (const Span &s : std::as_const(reopen)) {
-                out += s.open;
+                out += s.openTag;
                 stack.append(s);
             }
         }
 
-        while (next < open.size() && open.at(next).start <= pos) {
-            out += open.at(next).open;
-            stack.append(open.at(next));
-            ++next;
+        while (nextSpan < ordered.size() && ordered.at(nextSpan).start <= pos) {
+            out += ordered.at(nextSpan).openTag;
+            stack.append(ordered.at(nextSpan));
+            ++nextSpan;
         }
 
+        // Run to whichever comes first: a span ending or the next one opening.
         int until = n;
-        for (const Span &s : std::as_const(stack))
+        bool literal = false;
+        for (const Span &s : std::as_const(stack)) {
             until = qMin(until, s.end);
-        if (next < open.size())
-            until = qMin(until, open.at(next).start);
+            literal = literal || s.literalWhitespace;
+        }
+        if (nextSpan < ordered.size())
+            until = qMin(until, ordered.at(nextSpan).start);
 
-        bool pre = false;
-        for (const Span &s : std::as_const(stack))
-            pre = pre || s.open == QLatin1String("<pre>");
-        out += escaped(cps, pos, until, pre);
+        out += escaped(cps, pos, until, literal);
         pos = until;
     }
     for (int i = stack.size() - 1; i >= 0; --i)
-        out += stack.at(i).close;
+        out += stack.at(i).closeTag;
     return out;
 }

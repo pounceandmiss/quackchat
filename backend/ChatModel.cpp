@@ -19,11 +19,13 @@ static QString bodyOf(const QVariantMap &m) {
 // The spans index into whichever string bodyOf returned, so both come from the
 // same content variant. A retraction empties that body, and an empty body needs
 // no markup, so the tombstone falls out without a case of its own.
-static QString markupOf(const QVariantMap &m) {
-    return messageMarkup(bodyOf(m), m.value(QStringLiteral("content"))
-                                        .toMap()
-                                        .value(QStringLiteral("formatting"))
-                                        .toList());
+static QString markupOf(const QVariantMap &m, const QString &quoteColor) {
+    return messageMarkup(bodyOf(m),
+                         m.value(QStringLiteral("content"))
+                             .toMap()
+                             .value(QStringLiteral("formatting"))
+                             .toList(),
+                         quoteColor);
 }
 
 int ChatModel::rowCount(const QModelIndex &parent) const {
@@ -37,7 +39,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     switch (role) {
     case TimestampRole:    return m.value(QStringLiteral("timestamp"));
     case BodyRole:         return bodyOf(m);
-    case MarkupRole:       return markupOf(m);
+    case MarkupRole:       return markupOf(m, m_quoteColor);
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
     case ServerStatusRole: return m.value(QStringLiteral("server_status"));
     case FromRole:         return m.value(QStringLiteral("from_jid"));
@@ -150,6 +152,17 @@ void ChatModel::setGroupchat(bool v) {
         return;
     m_groupchat = v;
     emit groupchatChanged();
+}
+
+// Baked into the markup, so every row that carries one has to be redrawn -
+// Ctrl+T swaps the palette under an open chat.
+void ChatModel::setQuoteColor(const QString &css) {
+    if (m_quoteColor == css)
+        return;
+    m_quoteColor = css;
+    emit quoteColorChanged();
+    if (!m_msgs.isEmpty())
+        emit dataChanged(index(0), index(m_msgs.size() - 1), {MarkupRole});
 }
 
 // atTail stays true: an empty window is vacuously at tail, and a live event
