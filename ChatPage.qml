@@ -168,9 +168,9 @@ Page {
         }
         // The model resolved an attachment to a file on disk; handing it to the
         // desktop is the one part of opening it that has to happen up here.
-        function onAttachmentResolved(path) {
-            if (path !== "")
-                Qt.openUrlExternally("file://" + path)
+        function onAttachmentResolved(url) {
+            if (url != "")
+                Qt.openUrlExternally(url)
         }
     }
     function scrollToHighlight() {

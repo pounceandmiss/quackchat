@@ -28,15 +28,16 @@ static QString markupOf(const QVariantMap &m, const QString &quoteColor) {
                          quoteColor);
 }
 
-// What a transfer would say about an attachment nothing has happened to yet.
-// Spelled out rather than left absent so the delegate can bind to every key
-// without a guard - a missing QVariant reaches QML as undefined.
+// An attachment nothing has happened to yet. Spelled out rather than left
+// absent so the delegate binds to every key without a guard: a missing QVariant
+// reaches QML as undefined.
 static QVariantMap idleTransfer() {
     return {{QStringLiteral("state"), QString()},
             {QStringLiteral("loaded"), 0},
             {QStringLiteral("total"), 0},
             {QStringLiteral("localpath"), QString()},
             {QStringLiteral("thumbpath"), QString()},
+            {QStringLiteral("thumburl"), QUrl()},
             {QStringLiteral("error"), QString()}};
 }
 
@@ -501,11 +502,9 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
     }
 }
 
-// Transfers are account-wide, and a download is keyed and coalesced by URL - the
-// event's id is the file module's own counter, and one transfer can serve
-// several messages quoting the same URL. So the url is what we match on, and
-// every row holding it redraws. (Uploads key on id == the message timestamp;
-// nothing sends yet, so they are ignored here.)
+// Downloads are keyed and coalesced by url: the event's id is the file module's
+// own counter, and one transfer serves every message quoting that url. Uploads
+// key on id == the message timestamp; nothing sends yet, so they are ignored.
 void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
     if (name != QLatin1String("Update") ||
         a.value(QStringLiteral("direction")).toString() != QLatin1String("download"))
@@ -513,11 +512,16 @@ void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
     const QString url = a.value(QStringLiteral("url")).toString();
     if (url.isEmpty())
         return;
+    const QString thumb = a.value(QStringLiteral("thumbpath")).toString();
     QVariantMap x{{QStringLiteral("state"), a.value(QStringLiteral("state"))},
                   {QStringLiteral("loaded"), a.value(QStringLiteral("loaded"))},
                   {QStringLiteral("total"), a.value(QStringLiteral("total"))},
                   {QStringLiteral("localpath"), a.value(QStringLiteral("localpath"))},
-                  {QStringLiteral("thumbpath"), a.value(QStringLiteral("thumbpath"))},
+                  {QStringLiteral("thumbpath"), thumb},
+                  // The view needs a URL, and building one by hand from a path
+                  // loses to the first '#' or '?' in it.
+                  {QStringLiteral("thumburl"),
+                   thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
                   {QStringLiteral("error"), a.value(QStringLiteral("error"))}};
     // An image the autofetch policy held back is a decision, not a failure: the
     // attachment keeps a tap-to-load chip rather than showing an error.
@@ -589,7 +593,7 @@ void ChatModel::openAttachment(qlonglong ts, int idx) {
     // Already on disk (downloaded, or an outgoing file used in place).
     const QString local = a.value(QStringLiteral("localpath")).toString();
     if (!local.isEmpty()) {
-        emit attachmentResolved(local);
+        emit attachmentResolved(QUrl::fromLocalFile(local));
         return;
     }
     if (!m_backend || m_account.isEmpty()) {
@@ -634,7 +638,8 @@ void ChatModel::reconcileCatchup() {
 void ChatModel::handleResult(int token, const QVariant &data) {
     if (m_pendingOpen.contains(token)) {
         m_pendingOpen.remove(token);
-        emit attachmentResolved(data.toString());
+        const QString path = data.toString();
+        emit attachmentResolved(path.isEmpty() ? QUrl() : QUrl::fromLocalFile(path));
         return;
     }
     if (!m_pending.contains(token))

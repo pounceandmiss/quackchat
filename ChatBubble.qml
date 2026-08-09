@@ -72,9 +72,7 @@ Item {
 
     readonly property real maxBubbleWidth: Math.min(parent ? parent.width * 0.72 : 320, 480)
 
-    // Byte counts as the chip shows them. tacky knows the size of an outgoing
-    // file up front; for an incoming one it only emerges as the transfer's
-    // Content-Length, so either may be the one that is known.
+    // Byte counts as the chip shows them.
     function fmtSize(n) {
         if (!n || n <= 0)
             return ""
@@ -496,6 +494,9 @@ Item {
                                 return att.modelData.error
                             if (att.isImage && !att.hasThumb)
                                 return "Tap to load"
+                            // tacky knows an outgoing file's size up front; an
+                            // incoming one's only arrives as the transfer's
+                            // Content-Length, so either may be the known one.
                             return root.fmtSize(att.modelData.size > 0
                                                 ? att.modelData.size
                                                 : att.modelData.total)
@@ -523,7 +524,7 @@ Item {
                             // so a re-fetched image reuses it - a cached pixmap
                             // would keep showing the old one.
                             cache: false
-                            source: att.hasThumb ? "file:" + att.modelData.thumbpath : ""
+                            source: att.modelData.thumburl
                             fillMode: Image.PreserveAspectFit
                             readonly property real drawWidth:
                                 Math.min(thumb.implicitWidth, root.maxBubbleWidth)

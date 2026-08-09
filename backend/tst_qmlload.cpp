@@ -106,9 +106,12 @@ private slots:
         });
 
         // A real file on disk: the thumbnail's size is the decoded image's.
+        // The '#' in the directory is why the model hands over a url and not a
+        // path - "file:" concatenated onto this one loses everything after it.
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
-        const QString thumbPath = dir.filePath("a_320.png");
+        QVERIFY(QDir(dir.path()).mkdir("od#d"));
+        const QString thumbPath = dir.filePath("od#d/a_320.png");
         QImage png(24, 12, QImage::Format_RGB32);
         png.fill(Qt::red);
         QVERIFY(png.save(thumbPath));
@@ -125,12 +128,19 @@ private slots:
         // state of the transfer.
         auto attachment = [](const QString &type, const QString &name,
                              const QString &thumb, const QString &state) {
-            return QVariantMap{{"url", "https://h/" + name}, {"type", type},
-                               {"name", name},              {"size", 2048},
-                               {"mime", ""},                {"state", state},
-                               {"loaded", 0},               {"total", 0},
-                               {"localpath", ""},           {"thumbpath", thumb},
-                               {"error", ""}};
+            return QVariantMap{
+                {"url", "https://h/" + name},
+                {"type", type},
+                {"name", name},
+                {"size", 2048},
+                {"mime", ""},
+                {"state", state},
+                {"loaded", 0},
+                {"total", 0},
+                {"localpath", ""},
+                {"thumbpath", thumb},
+                {"thumburl", thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
+                {"error", ""}};
         };
         // Width up front: the bubble sizes itself off its parent, and one built
         // parentless would fall back to measuring its own content instead.
@@ -151,7 +161,8 @@ private slots:
             QTest::mouseClick(&win, Qt::LeftButton, Qt::NoModifier, p);
         };
 
-        {   // A downloaded image draws its thumbnail, and a tap opens it.
+        // A downloaded image draws its thumbnail, and a tap opens it.
+        {
             QScopedPointer<QQuickItem> b(
                 bubbleWith(attachment("image", "a.png", thumbPath, "done")));
             QVERIFY(!b.isNull());
@@ -172,7 +183,8 @@ private slots:
             QCOMPARE(loaded.count(), 0);
         }
 
-        {   // One nobody has fetched yet is a chip, and a tap fetches it.
+        // One nobody has fetched yet is a chip, and a tap fetches it.
+        {
             QScopedPointer<QQuickItem> b(
                 bubbleWith(attachment("image", "b.png", "", "")));
             QVERIFY(!b.isNull());
@@ -188,8 +200,9 @@ private slots:
             QCOMPARE(opened.count(), 0);
         }
 
-        {   // A plain file has no thumbnail to wait for: its tap opens, which
-            // downloads first if it has to.
+        // A plain file has no thumbnail to wait for: its tap opens, which
+        // downloads first if it has to.
+        {
             QScopedPointer<QQuickItem> b(
                 bubbleWith(attachment("file", "doc.pdf", "", "")));
             QVERIFY(!b.isNull());
@@ -208,7 +221,8 @@ private slots:
             QCOMPARE(size.toString(), QString("2.0 KB"));
         }
 
-        {   // A failed transfer retries rather than opening nothing.
+        // A failed transfer retries rather than opening nothing.
+        {
             QScopedPointer<QQuickItem> b(
                 bubbleWith(attachment("file", "doc.pdf", "", "failed")));
             QVERIFY(!b.isNull());

@@ -675,8 +675,6 @@ void TestChatModel::catchupReconcileReloadsEmptyWindow() {
     QVERIFY(m.atTail());
 }
 
-// --- attachments -------------------------------------------------------
-
 static const char *kMediaRow = R"([{"timestamp":100,"is_outgoing":false,
     "from_jid":"her@h","content":{"type":"media","caption":"look",
     "attachments":[{"url":"https://h/a.png","type":"image","name":"a.png",
@@ -727,6 +725,8 @@ void TestChatModel::fileUpdateMergesIntoTheRow() {
     const QVariantMap a = att0(m);
     QCOMPARE(a.value("state").toString(), QString("done"));
     QCOMPARE(a.value("thumbpath").toString(), QString("/cache/a_320.png"));
+    // The view binds to a url, which only the model can build correctly.
+    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a_320.png"));
     QCOMPARE(a.value("localpath").toString(), QString("/data/a.png"));
     QCOMPARE(a.value("total").toInt(), 1234);
     // What the message said is still there underneath.
@@ -799,8 +799,7 @@ void TestChatModel::fileEventsFilterByAcc() {
     QCOMPARE(att0(m).value("thumbpath").toString(), QString());
 }
 
-// Fetching is what makes a thumbnail appear at all, and tacky coalesces by url,
-// so asking twice for one url is just noise on the wire.
+// tacky coalesces downloads by url, so asking twice for one is noise on the wire.
 void TestChatModel::imageRowsAskForTheirThumbnailOnce() {
     TackyBackend backend;
     ChatModel m;
@@ -862,14 +861,14 @@ void TestChatModel::openAttachmentResolvesThroughTheBackend() {
     QCOMPARE(opened.count(), 0);
     m.handleResult(2, QVariant(QString("/data/a.png")));
     QCOMPARE(opened.count(), 1);
-    QCOMPARE(opened.takeFirst().at(0).toString(), QString("/data/a.png"));
+    QCOMPARE(opened.takeFirst().at(0).toUrl(), QUrl("file:///data/a.png"));
 
     // A download that could not deliver answers with an empty path rather than
     // an error, so the view is still told the tap went nowhere.
     m.openAttachment(100, 0); // token 3
     m.handleResult(3, QVariant(QString()));
     QCOMPARE(opened.count(), 1);
-    QVERIFY(opened.takeFirst().at(0).toString().isEmpty());
+    QVERIFY(opened.takeFirst().at(0).toUrl().isEmpty());
 
     // Once it is on disk there is nothing to ask for.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
@@ -878,9 +877,9 @@ void TestChatModel::openAttachmentResolvesThroughTheBackend() {
     m.openAttachment(100, 0);
     QCOMPARE(sent.count(), 0);
     QCOMPARE(opened.count(), 1);
-    QCOMPARE(opened.takeFirst().at(0).toString(), QString("/data/a.png"));
+    QCOMPARE(opened.takeFirst().at(0).toUrl(), QUrl("file:///data/a.png"));
 
-    // An index the row does not have is simply not a tap.
+    // A missing index or a missing row is not a tap on anything.
     m.openAttachment(100, 4);
     m.openAttachment(999, 0);
     QCOMPARE(opened.count(), 0);

@@ -11,6 +11,7 @@
 #include <QHash>
 #include <QList>
 #include <QSet>
+#include <QUrl>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
@@ -103,10 +104,10 @@ public:
     Q_INVOKABLE void cullNew(int count);          // view dropped newest rows
 
     // Fetch an attachment the autofetch policy held back, or one whose transfer
-    // failed. Ungated: the user asked for this one by name.
+    // failed. Ungated: the user asked for this one.
     Q_INVOKABLE void loadAttachment(qlonglong ts, int idx);
-    // Resolve an attachment to a file on disk (downloading it if need be) and
-    // report the path through attachmentResolved, for the view to hand to the OS.
+    // Resolve an attachment to a file on disk, downloading it if need be, and
+    // report where it landed through attachmentResolved.
     Q_INVOKABLE void openAttachment(qlonglong ts, int idx);
 
     // Routing and transforms are public so tests can drive them directly.
@@ -139,7 +140,7 @@ signals:
     void anchored(qlonglong ts);
     // Where an attachment the user asked to open ended up, or empty when it
     // could not be fetched. Opening it is the view's job: that needs QtGui.
-    void attachmentResolved(const QString &path);
+    void attachmentResolved(const QUrl &url);
 
 private:
     void reload();
