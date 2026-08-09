@@ -5,8 +5,8 @@
 
 ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
 
-// text carries `body`, media a `caption` (possibly "" for a bare share). Only
-// the text is surfaced; attachments want a media delegate we don't have yet.
+// text carries `body`, media a `caption` (possibly "" for a bare share). The
+// attachments themselves come out through AttachmentsRole.
 static QString bodyOf(const QVariantMap &m) {
     if (m.value(QStringLiteral("retracted")).toBool())
         return {};
@@ -28,6 +28,51 @@ static QString markupOf(const QVariantMap &m, const QString &quoteColor) {
                          quoteColor);
 }
 
+// What a transfer would say about an attachment nothing has happened to yet.
+// Spelled out rather than left absent so the delegate can bind to every key
+// without a guard - a missing QVariant reaches QML as undefined.
+static QVariantMap idleTransfer() {
+    return {{QStringLiteral("state"), QString()},
+            {QStringLiteral("loaded"), 0},
+            {QStringLiteral("total"), 0},
+            {QStringLiteral("localpath"), QString()},
+            {QStringLiteral("thumbpath"), QString()},
+            {QStringLiteral("error"), QString()}};
+}
+
+// The row carries what the message said; m_xfer carries what has happened to it
+// since. Merged here so the view binds to one list.
+QVariantList ChatModel::attachmentsOf(const QVariantMap &m) const {
+    QVariantList out;
+    if (m.value(QStringLiteral("retracted")).toBool())
+        return out;
+    const QVariantList atts = m.value(QStringLiteral("content"))
+                                  .toMap()
+                                  .value(QStringLiteral("attachments"))
+                                  .toList();
+    for (const QVariant &v : atts) {
+        QVariantMap a = idleTransfer();
+        const QVariantMap said = v.toMap();
+        for (auto it = said.begin(); it != said.end(); ++it)
+            a.insert(it.key(), it.value());
+        const QVariantMap x = m_xfer.value(a.value(QStringLiteral("url")).toString());
+        for (auto it = x.begin(); it != x.end(); ++it)
+            a.insert(it.key(), it.value());
+        out.append(a);
+    }
+    return out;
+}
+
+QVariantMap ChatModel::attachmentAt(qlonglong ts, int idx) const {
+    const int row = indexOfTs(ts);
+    if (row < 0)
+        return {};
+    const QVariantList atts = attachmentsOf(m_msgs.at(row));
+    if (idx < 0 || idx >= atts.size())
+        return {};
+    return atts.at(idx).toMap();
+}
+
 int ChatModel::rowCount(const QModelIndex &parent) const {
     return parent.isValid() ? 0 : m_msgs.size();
 }
@@ -40,6 +85,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case TimestampRole:    return m.value(QStringLiteral("timestamp"));
     case BodyRole:         return bodyOf(m);
     case MarkupRole:       return markupOf(m, m_quoteColor);
+    case AttachmentsRole:  return attachmentsOf(m);
+    case HasMediaRole:     return !attachmentsOf(m).isEmpty();
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
     case ServerStatusRole:
         return m.value(QStringLiteral("server_status")).toString();
@@ -69,6 +116,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {TimestampRole, "timestamp"},
         {BodyRole, "body"},
         {MarkupRole, "markup"},
+        {AttachmentsRole, "attachments"},
+        {HasMediaRole, "hasMedia"},
         {OutgoingRole, "outgoing"},
         {ServerStatusRole, "serverStatus"},
         {RemoteStatusRole, "remoteStatus"},
@@ -198,6 +247,11 @@ void ChatModel::reload() {
         m_msgs.clear();
         endResetModel();
     }
+    // The transfers belonged to the rows we just dropped. A re-request for one
+    // of their urls is answered from tacky's cache, so nothing is lost.
+    m_xfer.clear();
+    m_fetched.clear();
+    m_pendingOpen.clear();
     setAtTail(true);
     // Any open bracket belonged to the previous chat; the new one's own
     // <CatchupStarted> re-raises the flag if a sync is running for it.
@@ -383,10 +437,14 @@ void ChatModel::cancelDir(const QString &dir) {
 // Event names arrive bare on the JSON wire (the backend strips the Tcl <>).
 void ChatModel::handleEvent(const QString &module, const QString &name,
                             const QVariant &args) {
-    if (module != QLatin1String("message"))
-        return;
     const QVariantMap a = args.toMap();
     if (a.value(QStringLiteral("acc")).toString() != m_account)
+        return;
+    if (module == QLatin1String("file")) {
+        handleFileUpdate(name, a);
+        return;
+    }
+    if (module != QLatin1String("message"))
         return;
     const QString jid = a.value(QStringLiteral("jid")).toString();
 
@@ -443,6 +501,110 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
     }
 }
 
+// Transfers are account-wide, and a download is keyed and coalesced by URL - the
+// event's id is the file module's own counter, and one transfer can serve
+// several messages quoting the same URL. So the url is what we match on, and
+// every row holding it redraws. (Uploads key on id == the message timestamp;
+// nothing sends yet, so they are ignored here.)
+void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
+    if (name != QLatin1String("Update") ||
+        a.value(QStringLiteral("direction")).toString() != QLatin1String("download"))
+        return;
+    const QString url = a.value(QStringLiteral("url")).toString();
+    if (url.isEmpty())
+        return;
+    QVariantMap x{{QStringLiteral("state"), a.value(QStringLiteral("state"))},
+                  {QStringLiteral("loaded"), a.value(QStringLiteral("loaded"))},
+                  {QStringLiteral("total"), a.value(QStringLiteral("total"))},
+                  {QStringLiteral("localpath"), a.value(QStringLiteral("localpath"))},
+                  {QStringLiteral("thumbpath"), a.value(QStringLiteral("thumbpath"))},
+                  {QStringLiteral("error"), a.value(QStringLiteral("error"))}};
+    // An image the autofetch policy held back is a decision, not a failure: the
+    // attachment keeps a tap-to-load chip rather than showing an error.
+    if (x.value(QStringLiteral("state")).toString() == QLatin1String("failed") &&
+        a.value(QStringLiteral("error")).toString().startsWith(QLatin1String("autofetch-")))
+        x.insert(QStringLiteral("state"), QStringLiteral("blocked"));
+    m_xfer.insert(url, x);
+    redrawRowsUsing(url);
+}
+
+void ChatModel::redrawRowsUsing(const QString &url) {
+    for (int i = 0; i < m_msgs.size(); ++i) {
+        const QVariantList atts = attachmentsOf(m_msgs.at(i));
+        for (const QVariant &v : atts) {
+            if (v.toMap().value(QStringLiteral("url")).toString() != url)
+                continue;
+            const QModelIndex mi = index(i);
+            emit dataChanged(mi, mi, {AttachmentsRole});
+            break;
+        }
+    }
+}
+
+// tacky downloads the image (or reads a local source in place), derives the
+// thumbnail and reports back through file <Update>. `auto` submits the fetch to
+// the autofetch policy and its size cap; our own sends are exempt, since from
+// history they refetch the public URL that replaced the local path on upload.
+void ChatModel::fetchThumbs(const QVariantMap &msg) {
+    if (!m_backend || m_account.isEmpty())
+        return;
+    const bool incoming = !msg.value(QStringLiteral("is_outgoing")).toBool();
+    const QVariantList atts = attachmentsOf(msg);
+    for (const QVariant &v : atts) {
+        const QVariantMap a = v.toMap();
+        if (a.value(QStringLiteral("type")).toString() != QLatin1String("image"))
+            continue;
+        const QString url = a.value(QStringLiteral("url")).toString();
+        if (url.isEmpty() || m_fetched.contains(url))
+            continue;
+        m_fetched.insert(url);
+        // Fire-and-forget: progress and the thumbnail arrive as file <Update>.
+        m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
+                          QVariantMap{{QStringLiteral("acc"), m_account},
+                                      {QStringLiteral("url"), url},
+                                      {QStringLiteral("auto"), incoming ? 1 : 0},
+                                      {QStringLiteral("from"),
+                                       msg.value(QStringLiteral("from_jid"))}});
+    }
+}
+
+// No `auto`, so the policy and the size cap don't apply: this is the one the
+// user pointed at.
+void ChatModel::loadAttachment(qlonglong ts, int idx) {
+    const QVariantMap a = attachmentAt(ts, idx);
+    const QString url = a.value(QStringLiteral("url")).toString();
+    if (url.isEmpty() || !m_backend || m_account.isEmpty())
+        return;
+    m_fetched.insert(url);
+    m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("url"), url}});
+}
+
+void ChatModel::openAttachment(qlonglong ts, int idx) {
+    const QVariantMap a = attachmentAt(ts, idx);
+    const QString url = a.value(QStringLiteral("url")).toString();
+    if (url.isEmpty())
+        return;
+    // Already on disk (downloaded, or an outgoing file used in place).
+    const QString local = a.value(QStringLiteral("localpath")).toString();
+    if (!local.isEmpty()) {
+        emit attachmentResolved(local);
+        return;
+    }
+    if (!m_backend || m_account.isEmpty()) {
+        emit attachmentResolved({});
+        return;
+    }
+    // The file module answers with the local path, or "" if it could not get
+    // one - a failure, not an error reply, so there is no error leg to handle.
+    const int tok = m_backend->request(QStringLiteral("file"),
+                                       QStringLiteral("download"),
+                                       QVariantMap{{QStringLiteral("acc"), m_account},
+                                                   {QStringLiteral("url"), url}});
+    m_pendingOpen.insert(tok, url);
+}
+
 // Ours when the bracket names this chat, or when it's the account-wide one
 // (empty jid) and we're a 1:1 - the account archive carries no groupchat.
 bool ChatModel::isMyCatchup(const QString &jid) const {
@@ -470,6 +632,11 @@ void ChatModel::reconcileCatchup() {
 }
 
 void ChatModel::handleResult(int token, const QVariant &data) {
+    if (m_pendingOpen.contains(token)) {
+        m_pendingOpen.remove(token);
+        emit attachmentResolved(data.toString());
+        return;
+    }
     if (!m_pending.contains(token))
         return;
     const QString role = m_pending.take(token);
@@ -530,6 +697,9 @@ void ChatModel::applyBatch(const QVariantList &messages) {
         beginInsertRows({}, pos, pos);
         m_msgs.insert(pos, msg);
         endInsertRows();
+        // Only on the insert: a patch is a status or an edit, neither of which
+        // brings an attachment with it.
+        fetchThumbs(msg);
     }
 }
 

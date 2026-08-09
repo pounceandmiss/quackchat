@@ -40,6 +40,9 @@ public:
         TimestampRole = Qt::UserRole + 1,
         BodyRole,        // text body or media caption, from the content union
         MarkupRole,      // BodyRole as rich text; empty when it needs none
+        AttachmentsRole, // the union's attachment list, each merged with the
+                         // state of its transfer; empty for a text message
+        HasMediaRole,    // this row carries attachments, caption or not
         OutgoingRole,
         ServerStatusRole, // the hop to our own server
         RemoteStatusRole, // and the hop after it: none/delivered/read
@@ -99,6 +102,13 @@ public:
     Q_INVOKABLE void cullOld(int count);          // view dropped oldest rows
     Q_INVOKABLE void cullNew(int count);          // view dropped newest rows
 
+    // Fetch an attachment the autofetch policy held back, or one whose transfer
+    // failed. Ungated: the user asked for this one by name.
+    Q_INVOKABLE void loadAttachment(qlonglong ts, int idx);
+    // Resolve an attachment to a file on disk (downloading it if need be) and
+    // report the path through attachmentResolved, for the view to hand to the OS.
+    Q_INVOKABLE void openAttachment(qlonglong ts, int idx);
+
     // Routing and transforms are public so tests can drive them directly.
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);
@@ -127,6 +137,9 @@ signals:
     // A jump settled on `ts`, which the view scrolls to; 0 when the target
     // could not be resolved and nothing moved.
     void anchored(qlonglong ts);
+    // Where an attachment the user asked to open ended up, or empty when it
+    // could not be fetched. Opening it is the view's job: that needs QtGui.
+    void attachmentResolved(const QString &path);
 
 private:
     void reload();
@@ -142,6 +155,11 @@ private:
     void markInflight(const QString &dir, bool busy);
     qlonglong oldestTs() const;
     qlonglong newestTs() const;
+    void handleFileUpdate(const QString &name, const QVariantMap &a);
+    QVariantList attachmentsOf(const QVariantMap &m) const;
+    QVariantMap attachmentAt(qlonglong ts, int idx) const;
+    void fetchThumbs(const QVariantMap &msg);
+    void redrawRowsUsing(const QString &url);
 
     TackyBackend *m_backend = nullptr;
     QString m_account;
@@ -157,6 +175,13 @@ private:
 
     QHash<int, QString> m_pending; // token -> dir
     QSet<QString> m_inflight;
+
+    // Transfer state, which lives beside the rows rather than in them: one
+    // download serves every message quoting the same URL. Both are dropped on
+    // reload - tacky answers a repeat request from its own cache.
+    QHash<QString, QVariantMap> m_xfer;   // url -> transfer fields
+    QSet<QString> m_fetched;              // urls already asked for
+    QHash<int, QString> m_pendingOpen;    // token -> url, for openAttachment
 };
 
 #endif // CHATMODEL_H

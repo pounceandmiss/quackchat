@@ -55,6 +55,13 @@ private slots:
     void anchorOnScreenKeepsTheWindow();
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
+    void attachmentsRoleReadsTheContentUnion();
+    void fileUpdateMergesIntoTheRow();
+    void fileUpdateFansOutToEveryRowSharingTheUrl();
+    void autofetchBlockedIsNotAFailure();
+    void fileEventsFilterByAcc();
+    void imageRowsAskForTheirThumbnailOnce();
+    void openAttachmentResolvesThroughTheBackend();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
     void catchupReconcileRepages();
@@ -666,6 +673,217 @@ void TestChatModel::catchupReconcileReloadsEmptyWindow() {
     QCOMPARE(loaded.first().at(0).toString(), QString("init"));
     QCOMPARE(m.rowCount(), 2);
     QVERIFY(m.atTail());
+}
+
+// --- attachments -------------------------------------------------------
+
+static const char *kMediaRow = R"([{"timestamp":100,"is_outgoing":false,
+    "from_jid":"her@h","content":{"type":"media","caption":"look",
+    "attachments":[{"url":"https://h/a.png","type":"image","name":"a.png",
+                    "size":1234,"mime":"image/png"}]}}])";
+
+static QVariantMap att0(const ChatModel &m, int row = 0) {
+    return m.data(m.index(row), ChatModel::AttachmentsRole).toList().at(0).toMap();
+}
+
+void TestChatModel::attachmentsRoleReadsTheContentUnion() {
+    ChatModel m;
+    m.applyBatch(msgs(kMediaRow));
+    m.applyBatch(msgs(R"([{"timestamp":50,"content":{"type":"text","body":"hi"}}])"));
+
+    QVERIFY(m.data(m.index(0), ChatModel::HasMediaRole).toBool());
+    const QVariantMap a = att0(m);
+    QCOMPARE(a.value("url").toString(), QString("https://h/a.png"));
+    QCOMPARE(a.value("type").toString(), QString("image"));
+    QCOMPARE(a.value("name").toString(), QString("a.png"));
+    // Nothing has happened to it yet, but every key the delegate binds to is
+    // present: a missing one would reach QML as undefined.
+    QCOMPARE(a.value("state").toString(), QString());
+    QCOMPARE(a.value("thumbpath").toString(), QString());
+    QCOMPARE(a.value("total").toInt(), 0);
+
+    // A text row is an empty list, not an invalid variant.
+    const QVariant text = m.data(m.index(1), ChatModel::AttachmentsRole);
+    QCOMPARE(text.typeId(), QMetaType::QVariantList);
+    QVERIFY(text.toList().isEmpty());
+    QVERIFY(!m.data(m.index(1), ChatModel::HasMediaRole).toBool());
+
+    // A tombstone keeps no attachments either, same as it keeps no body.
+    m.applyRetracted(100);
+    QVERIFY(m.data(m.index(0), ChatModel::AttachmentsRole).toList().isEmpty());
+}
+
+void TestChatModel::fileUpdateMergesIntoTheRow() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(kMediaRow));
+
+    QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":7,
+        "direction":"download","state":"done","loaded":1234,"total":1234,
+        "url":"https://h/a.png","localpath":"/data/a.png",
+        "thumbpath":"/cache/a_320.png","error":""}])");
+
+    const QVariantMap a = att0(m);
+    QCOMPARE(a.value("state").toString(), QString("done"));
+    QCOMPARE(a.value("thumbpath").toString(), QString("/cache/a_320.png"));
+    QCOMPARE(a.value("localpath").toString(), QString("/data/a.png"));
+    QCOMPARE(a.value("total").toInt(), 1234);
+    // What the message said is still there underneath.
+    QCOMPARE(a.value("name").toString(), QString("a.png"));
+
+    QCOMPARE(chg.count(), 1);
+    QCOMPARE(chg.first().at(2).value<QList<int>>(),
+             QList<int>{ChatModel::AttachmentsRole});
+
+    // An upload update is not ours to read: it keys on the message id, and
+    // matching it by url would credit the wrong row.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
+        "direction":"upload","state":"active","loaded":10,"total":99,
+        "url":"","localpath":"","thumbpath":"","error":""}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("done"));
+}
+
+// One download serves every message quoting the URL, so all of them redraw.
+void TestChatModel::fileUpdateFansOutToEveryRowSharingTheUrl() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(R"([
+        {"timestamp":200,"content":{"type":"media","attachments":[
+            {"url":"https://h/a.png","type":"image","name":"a.png"}]}},
+        {"timestamp":100,"content":{"type":"media","attachments":[
+            {"url":"https://h/a.png","type":"image","name":"a.png"}]}},
+        {"timestamp":50,"content":{"type":"media","attachments":[
+            {"url":"https://h/b.png","type":"image","name":"b.png"}]}}
+    ])"));
+
+    QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"done","url":"https://h/a.png","thumbpath":"/cache/a.png"}])");
+
+    QCOMPARE(chg.count(), 2);
+    QCOMPARE(att0(m, 0).value("thumbpath").toString(), QString("/cache/a.png"));
+    QCOMPARE(att0(m, 1).value("thumbpath").toString(), QString("/cache/a.png"));
+    QCOMPARE(att0(m, 2).value("thumbpath").toString(), QString());
+}
+
+// The policy holding an image back is a decision, not an error: the view shows
+// a tap-to-load chip, and must not be handed a failure to complain about.
+void TestChatModel::autofetchBlockedIsNotAFailure() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(kMediaRow));
+
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"failed","url":"https://h/a.png","error":"autofetch-blocked"}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("blocked"));
+
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"failed","url":"https://h/a.png","error":"autofetch-too-large"}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("blocked"));
+
+    // A real failure still reads as one.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"failed","url":"https://h/a.png","error":"http error"}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("failed"));
+    QCOMPARE(att0(m).value("error").toString(), QString("http error"));
+}
+
+void TestChatModel::fileEventsFilterByAcc() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(kMediaRow));
+
+    feedEvent(m, R"(["event","file","Update",{"acc":"other@h","direction":"download",
+        "state":"done","url":"https://h/a.png","thumbpath":"/cache/a.png"}])");
+    QCOMPARE(att0(m).value("thumbpath").toString(), QString());
+}
+
+// Fetching is what makes a thumbnail appear at all, and tacky coalesces by url,
+// so asking twice for one url is just noise on the wire.
+void TestChatModel::imageRowsAskForTheirThumbnailOnce() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // the initial history request
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.applyBatch(msgs(R"([
+        {"timestamp":300,"is_outgoing":false,"from_jid":"her@h",
+         "content":{"type":"media","attachments":[
+            {"url":"https://h/a.png","type":"image","name":"a.png"}]}},
+        {"timestamp":200,"is_outgoing":false,"from_jid":"her@h",
+         "content":{"type":"media","attachments":[
+            {"url":"https://h/a.png","type":"image","name":"a.png"}]}},
+        {"timestamp":150,"is_outgoing":false,"from_jid":"her@h",
+         "content":{"type":"media","attachments":[
+            {"url":"https://h/doc.pdf","type":"file","name":"doc.pdf"}]}},
+        {"timestamp":100,"is_outgoing":true,"from_jid":"me@h",
+         "content":{"type":"media","attachments":[
+            {"url":"/home/me/c.png","type":"image","name":"c.png"}]}}
+    ])"));
+
+    QVariantList downloads;
+    for (const QList<QVariant> &call : sent)
+        if (call.at(0).toString() == "file" && call.at(1).toString() == "download")
+            downloads.append(call.at(2));
+    // The repeated url is asked for once, and the plain file not at all: only
+    // images have a thumbnail to derive.
+    QCOMPARE(downloads.size(), 2);
+
+    const QVariantMap first = downloads.at(0).toMap();
+    QCOMPARE(first.value("url").toString(), QString("https://h/a.png"));
+    QCOMPARE(first.value("acc").toString(), QString("me@h"));
+    QCOMPARE(first.value("from").toString(), QString("her@h"));
+    QCOMPARE(first.value("auto").toInt(), 1);
+    // Our own send is exempt from the policy.
+    QCOMPARE(downloads.at(1).toMap().value("auto").toInt(), 0);
+
+    // Tapping a held-back image asks again, this time ungated.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"failed","url":"https://h/a.png","error":"autofetch-blocked"}])");
+    sent.clear();
+    m.loadAttachment(300, 0);
+    QCOMPARE(sent.count(), 1);
+    QVERIFY(!sent.first().at(2).toMap().contains("auto"));
+}
+
+void TestChatModel::openAttachmentResolvesThroughTheBackend() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // token 1
+    m.applyBatch(msgs(kMediaRow));
+
+    QSignalSpy opened(&m, &ChatModel::attachmentResolved);
+    m.openAttachment(100, 0); // token 2
+    QCOMPARE(opened.count(), 0);
+    m.handleResult(2, QVariant(QString("/data/a.png")));
+    QCOMPARE(opened.count(), 1);
+    QCOMPARE(opened.takeFirst().at(0).toString(), QString("/data/a.png"));
+
+    // A download that could not deliver answers with an empty path rather than
+    // an error, so the view is still told the tap went nowhere.
+    m.openAttachment(100, 0); // token 3
+    m.handleResult(3, QVariant(QString()));
+    QCOMPARE(opened.count(), 1);
+    QVERIFY(opened.takeFirst().at(0).toString().isEmpty());
+
+    // Once it is on disk there is nothing to ask for.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"done","url":"https://h/a.png","localpath":"/data/a.png"}])");
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.openAttachment(100, 0);
+    QCOMPARE(sent.count(), 0);
+    QCOMPARE(opened.count(), 1);
+    QCOMPARE(opened.takeFirst().at(0).toString(), QString("/data/a.png"));
+
+    // An index the row does not have is simply not a tap.
+    m.openAttachment(100, 4);
+    m.openAttachment(999, 0);
+    QCOMPARE(opened.count(), 0);
 }
 
 QTEST_MAIN(TestChatModel)
