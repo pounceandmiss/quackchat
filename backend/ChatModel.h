@@ -44,6 +44,8 @@ public:
         ServerStatusRole,
         FromRole,
         RetractedRole,   // tombstone: render the deleted-message placeholder
+        ReplyBodyRole,   // one-line preview of the message this one answers
+        ReplyAuthorRole, // and who wrote it; both empty when this is no reply
         RawRole,
     };
     Q_ENUM(Role)
@@ -77,7 +79,8 @@ public:
     Q_INVOKABLE void gotoTimestamp(qlonglong ts,
                                    const QString &source = "local");
     Q_INVOKABLE void resetToBottom();
-    Q_INVOKABLE void send(const QString &body);
+    // replyToTs names the message being answered, 0 for a plain send.
+    Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
     Q_INVOKABLE void cullOld(int count);          // view dropped oldest rows
     Q_INVOKABLE void cullNew(int count);          // view dropped newest rows
 

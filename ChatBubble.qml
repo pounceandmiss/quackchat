@@ -13,6 +13,11 @@ Item {
     // The body as rich text, empty when it has no formatting spans - which
     // keeps the ordinary message off the rich-text path entirely.
     property string markup: ""
+    // The message this one answers: a one-line preview and its author, both
+    // resolved by tacky. Empty when this is not a reply.
+    property string replyBody: ""
+    property string replyAuthor: ""
+    readonly property bool isReply: replyBody !== ""
     property string time: ""
     property bool outgoing: false
     // "sent" (one tick) or "read" (two), only shown for outgoing messages
@@ -281,6 +286,44 @@ Item {
                 anchors.top: parent.top
                 anchors.leftMargin: 12
                 anchors.topMargin: 8
+
+                // The quoted target, above the answer. tacky keeps the outgoing
+                // body free of the "> " wire fallback, so nothing is repeated
+                // between this and the text below.
+                RowLayout {
+                    objectName: "replyQuote"
+                    visible: root.isReply
+                    spacing: 7
+                    Layout.maximumWidth: root.maxBubbleWidth
+                    Layout.bottomMargin: 3
+
+                    Rectangle {
+                        Layout.fillHeight: true
+                        Layout.preferredWidth: 3
+                        radius: 1.5
+                        color: Theme.accent
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.replyAuthor
+                            color: Theme.accent
+                            font.pixelSize: 12
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.replyBody
+                            color: Theme.textDim
+                            font.pixelSize: 13
+                            elide: Text.ElideRight
+                            maximumLineCount: 1
+                        }
+                    }
+                }
 
                 TextEdit {
                     id: bodyText

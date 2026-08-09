@@ -29,6 +29,8 @@ private slots:
     void chatModelReceivesLiveSent();
     // Styling spans come from tacky's own XEP-0393 parser, not a canned fixture.
     void markupFollowsTackysStylingSpans();
+    // Replies are XEP-0461: the backend owns the reference and the quote.
+    void replySendCarriesTheTargetAndComesBackResolved();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -124,6 +126,44 @@ void TestIntegration::markupFollowsTackysStylingSpans() {
     QCOMPARE(chat.data(chat.index(0), ChatModel::MarkupRole).toString(),
              QString("<span style=\"color:#0a0\">&gt; they said<br>&gt; and then"
                      "</span><br>my reply"));
+
+    backend.stop();
+}
+
+// Sending names the target by timestamp and nothing else; tacky resolves it to
+// a reply id, quotes it on the wire, and hands the row back with the preview
+// and author already worked out.
+void TestIntegration::replySendCarriesTheTargetAndComesBackResolved() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+
+    chat.send("the original\nsecond line");
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 1, 5000);
+    const qlonglong target =
+        chat.data(chat.index(0), ChatModel::TimestampRole).toLongLong();
+
+    chat.send("my answer", target);
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 2, 5000);
+
+    // The reply's own body is what was typed - the "> " quote goes on the wire
+    // as an XEP-0428 fallback, never into the row we draw.
+    QCOMPARE(chat.data(chat.index(0), ChatModel::BodyRole).toString(),
+             QString("my answer"));
+    // The preview is the target's first line only.
+    QCOMPARE(chat.data(chat.index(0), ChatModel::ReplyBodyRole).toString(),
+             QString("the original"));
+    QCOMPARE(chat.data(chat.index(0), ChatModel::ReplyAuthorRole).toString(),
+             QString("me@example.com"));
+
+    // A plain send stays plain, so the bubble knows not to draw a quote.
+    QVERIFY(chat.data(chat.index(1), ChatModel::ReplyBodyRole).toString().isEmpty());
+    QVERIFY(chat.data(chat.index(1), ChatModel::ReplyAuthorRole).toString().isEmpty());
 
     backend.stop();
 }

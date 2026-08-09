@@ -80,17 +80,28 @@ Page {
     }
     function copyText(t) { clip.text = t; clip.selectAll(); clip.copy() }
 
-    // Reply composer is GUI only, not threaded through the backend.
+    // The message being answered. Its timestamp is what the backend needs;
+    // the body and direction are only here to draw the composer banner.
+    property real replyTo: 0
     property string replyBody: ""
     property bool replyOutgoing: false
-    readonly property bool replying: replyBody !== ""
+    readonly property bool replying: replyTo !== 0
 
-    function startReply(body, outgoing) {
+    function startReply(ts, body, outgoing) {
+        replyTo = ts
         replyBody = body
         replyOutgoing = outgoing
         input.forceActiveFocus()
     }
-    function cancelReply() { replyBody = ""; replyOutgoing = false }
+    function cancelReply() { replyTo = 0; replyBody = ""; replyOutgoing = false }
+
+    // Replies carry the author's JID; a bare local part is friendlier, and our
+    // own account is worth naming outright.
+    function replyName(jid) {
+        if (jid === "" || jid === page.account)
+            return "You"
+        return jid.indexOf("@") > 0 ? jid.substring(0, jid.indexOf("@")) : jid
+    }
 
     // GUI-only dummy, not sent anywhere. Keyed by timestamp so a reaction
     // survives its bubble being recycled as you scroll.
@@ -117,7 +128,7 @@ Page {
     function sendCurrent() {
         const t = input.text.trim()
         if (t.length === 0) return
-        chatModel.send(t)
+        chatModel.send(t, page.replyTo)
         input.clear()
         cancelReply()
     }
@@ -323,6 +334,8 @@ Page {
                 id: wrap
                 required property string body
                 required property string markup
+                required property string replyBody
+                required property string replyAuthor
                 required property bool outgoing
                 required property string serverStatus
                 required property var timestamp
@@ -333,6 +346,8 @@ Page {
                     width: feed.width
                     text: wrap.body
                     markup: wrap.markup
+                    replyBody: wrap.replyBody
+                    replyAuthor: page.replyName(wrap.replyAuthor)
                     outgoing: wrap.outgoing
                     time: page.fmtTime(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus)
@@ -341,7 +356,7 @@ Page {
                     reaction: page.reactionFor(wrap.timestamp)
                     onToggleRequested: page.toggle(wrap.timestamp, wrap.body)
                     onCopyRequested: page.copyText(wrap.body)
-                    onReplyRequested: page.startReply(wrap.body, wrap.outgoing)
+                    onReplyRequested: page.startReply(wrap.timestamp, wrap.body, wrap.outgoing)
                     onReactRequested: (emoji) => page.react(wrap.timestamp, emoji)
                 }
             }
@@ -502,6 +517,7 @@ Page {
                     color: Theme.field
                     TextField {
                         id: input
+                        objectName: "messageInput"
                         anchors.fill: parent
                         anchors.leftMargin: 16
                         anchors.rightMargin: 16

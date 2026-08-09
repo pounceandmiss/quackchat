@@ -44,6 +44,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case ServerStatusRole: return m.value(QStringLiteral("server_status"));
     case FromRole:         return m.value(QStringLiteral("from_jid"));
     case RetractedRole:    return m.value(QStringLiteral("retracted"));
+    case ReplyBodyRole:    return m.value(QStringLiteral("reply_body"));
+    case ReplyAuthorRole:  return m.value(QStringLiteral("reply_author_jid"));
     case RawRole:          return m;
     default:               return {};
     }
@@ -58,6 +60,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {ServerStatusRole, "serverStatus"},
         {FromRole, "from"},
         {RetractedRole, "retracted"},
+        {ReplyBodyRole, "replyBody"},
+        {ReplyAuthorRole, "replyAuthor"},
         {RawRole, "raw"},
     };
 }
@@ -254,13 +258,18 @@ void ChatModel::resetToBottom() {
     loadInitial();
 }
 
-void ChatModel::send(const QString &body) {
+// tacky builds the XEP-0461 reference and the "> " fallback quote from the
+// target's own row, so the timestamp is the whole of what we send: the body
+// stays the text the user typed, unquoted, both on the wire and in the store.
+void ChatModel::send(const QString &body, qlonglong replyToTs) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty() || body.isEmpty())
         return;
-    m_backend->notify(QStringLiteral("message"), QStringLiteral("send"),
-                      QVariantMap{{QStringLiteral("acc"), m_account},
-                                  {QStringLiteral("chat"), m_chat},
-                                  {QStringLiteral("body"), body}});
+    QVariantMap a{{QStringLiteral("acc"), m_account},
+                  {QStringLiteral("chat"), m_chat},
+                  {QStringLiteral("body"), body}};
+    if (replyToTs != 0)
+        a.insert(QStringLiteral("reply_to_ts"), replyToTs);
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("send"), a);
 }
 
 void ChatModel::cullOld(int count) {

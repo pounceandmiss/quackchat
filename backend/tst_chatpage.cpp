@@ -30,6 +30,7 @@ constexpr int kPage = 50;               // tacky's default history limit
 constexpr int kSeeded = 2 * kPage + 40; // two whole local pages, then a short one
 constexpr int kQuiet = 3;               // shorter than any viewport
 const QString kStyled = QStringLiteral("*bold* and plain");
+const QString kOriginal = QStringLiteral("the original");
 // Long enough that a drag across the bubble lands mid-word at both ends.
 const QString kSelectable = QStringLiteral("the quick brown fox jumps over the lazy dog");
 
@@ -132,6 +133,7 @@ private slots:
     void bubbleRendersMarkupAsRichText();
     void mouseDragSelectsBodyText();
     void rightClickStillOpensTheBubbleMenu();
+    void replyingFromTheComposerThreadsTheTarget();
 };
 
 void TestChatPage::initTestCase() {
@@ -152,6 +154,10 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "styled@example.com"},
                                          {"body", kStyled}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "replies@example.com"},
+                                         {"body", kOriginal}});
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "select@example.com"},
@@ -361,6 +367,43 @@ void TestChatPage::rightClickStillOpensTheBubbleMenu() {
     QTest::mouseClick(chat.win(), Qt::RightButton, {},
                       body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint());
     QTRY_VERIFY(menu->property("opened").toBool());
+}
+
+// The composer used to hold the quoted body and nothing else, so replying sent
+// an ordinary message. What has to survive the trip is the target's timestamp.
+void TestChatPage::replyingFromTheComposerThreadsTheTarget() {
+    const Chat chat = open("replies@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong target =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    QVERIFY(chat.win());
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QVERIFY(QMetaObject::invokeMethod(page, "startReply", Q_ARG(QVariant, target),
+                                      Q_ARG(QVariant, kOriginal),
+                                      Q_ARG(QVariant, true)));
+    QVERIFY(page->property("replying").toBool());
+
+    auto *input = chat.win()->findChild<QObject *>("messageInput");
+    QVERIFY(input);
+    input->setProperty("text", "my answer");
+    QVERIFY(QMetaObject::invokeMethod(page, "sendCurrent"));
+
+    QTRY_COMPARE(chat.count(), 2);
+    QCOMPARE(model->data(model->index(0), ChatModel::BodyRole).toString(),
+             QString("my answer"));
+    QCOMPARE(model->data(model->index(0), ChatModel::ReplyBodyRole).toString(), kOriginal);
+
+    // Sending clears the banner, so the next message is not a reply too.
+    QVERIFY(!page->property("replying").toBool());
+
+    // ...and the bubble draws the quote it came back with.
+    QQuickItem *quote = findItem(chat.feed, "replyQuote");
+    QVERIFY(quote);
+    QTRY_VERIFY(quote->isVisible());
 }
 
 QTEST_MAIN(TestChatPage)
