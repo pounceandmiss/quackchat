@@ -114,6 +114,7 @@ qt_add_qml_module(quack
         backend/AppController.cpp backend/AppController.h
         backend/TackyBackend.cpp backend/TackyBackend.h
         backend/ChatModel.cpp backend/ChatModel.h
+        backend/MessageMarkup.cpp backend/MessageMarkup.h
         backend/ChatListModel.cpp backend/ChatListModel.h
         backend/AccountsModel.cpp backend/AccountsModel.h
         backend/AccountSettings.cpp backend/AccountSettings.h

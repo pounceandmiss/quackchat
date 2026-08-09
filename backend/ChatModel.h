@@ -36,6 +36,7 @@ public:
     enum Role {
         TimestampRole = Qt::UserRole + 1,
         BodyRole,        // text body or media caption, from the content union
+        MarkupRole,      // BodyRole as rich text; empty when it needs none
         OutgoingRole,
         ServerStatusRole,
         FromRole,

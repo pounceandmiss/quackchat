@@ -10,6 +10,9 @@ Item {
     id: root
 
     property string text: ""
+    // The body as rich text; empty when it carries no formatting spans, which
+    // keeps the common message on the cheaper plain-text path.
+    property string markup: ""
     property string time: ""
     property bool outgoing: false
     // "sent" (one tick) or "read" (two), only shown for outgoing messages
@@ -276,7 +279,10 @@ Item {
                 anchors.topMargin: 8
 
                 TextEdit {
-                    text: root.text
+                    objectName: "bubbleText"
+                    text: root.markup !== "" ? root.markup : root.text
+                    textFormat: root.markup !== "" ? TextEdit.RichText
+                                                   : TextEdit.PlainText
                     color: Theme.textPrimary
                     font.pixelSize: 15
                     wrapMode: TextEdit.Wrap

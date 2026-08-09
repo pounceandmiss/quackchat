@@ -29,6 +29,7 @@ const QString kAcc = QStringLiteral("me@example.com");
 constexpr int kPage = 50;               // tacky's default history limit
 constexpr int kSeeded = 2 * kPage + 40; // two whole local pages, then a short one
 constexpr int kQuiet = 3;               // shorter than any viewport
+const QString kStyled = QStringLiteral("*bold* and plain");
 
 // Blocks until the backend answers. Requests queue behind the notifies issued
 // before them, so this doubles as a barrier for seeding.
@@ -80,6 +81,19 @@ class TestChatPage : public QObject {
     AppController *m_app = nullptr;
     QQmlComponent *m_component = nullptr;
 
+    // Delegates hang off the visual tree, not the QObject one, so findChild
+    // never reaches into a row.
+    static QQuickItem *findItem(QQuickItem *root, const QString &name) {
+        const auto kids = root->childItems();
+        for (QQuickItem *kid : kids) {
+            if (kid->objectName() == name)
+                return kid;
+            if (QQuickItem *hit = findItem(kid, name))
+                return hit;
+        }
+        return nullptr;
+    }
+
     Chat open(const QString &jid) {
         Chat chat;
         chat.window.reset(m_component->createWithInitialProperties(
@@ -111,6 +125,7 @@ private slots:
     void scrollingUpPagesOlder();
     void underTallViewportPagesWithoutScrolling();
     void reachingTheOldestEdgeRetriesAfterExhaustion();
+    void bubbleRendersMarkupAsRichText();
 };
 
 void TestChatPage::initTestCase() {
@@ -127,6 +142,10 @@ void TestChatPage::initTestCase() {
 
     seed("friend@example.com", kSeeded);
     seed("quiet@example.com", kQuiet);
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "styled@example.com"},
+                                         {"body", kStyled}});
 
     // Barrier: this result cannot come back before the sends above ran.
     const QVariantList stored =
@@ -254,6 +273,29 @@ void TestChatPage::reachingTheOldestEdgeRetriesAfterExhaustion() {
     chat.scrollNearOldest();
     QVERIFY(!chat.feed->property("olderExhausted").toBool());
     QTRY_COMPARE_WITH_TIMEOUT(chat.count(), 2 * kPage, 5000);
+}
+
+// The model builds the markup; this is the other half - that Qt parses it into
+// styled runs instead of drawing the tags.
+void TestChatPage::bubbleRendersMarkupAsRichText() {
+    const Chat chat = open("styled@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    // Only reached when the model handed up markup; a bare body stays plain.
+    QCOMPARE(body->property("textFormat").toInt(), int(Qt::RichText));
+
+    // Qt re-serialises the document it parsed, so a bold weight in there is
+    // proof the <b> became a style rather than four literal characters.
+    const QString doc = body->property("text").toString();
+    QVERIFY2(doc.contains(QLatin1String("font-weight:700")), qPrintable(doc));
+
+    QString plain;
+    QVERIFY(QMetaObject::invokeMethod(body, "getText", Q_RETURN_ARG(QString, plain),
+                                      Q_ARG(int, 0), Q_ARG(int, 14)));
+    QCOMPARE(plain, QString("bold and plain"));
 }
 
 QTEST_MAIN(TestChatPage)

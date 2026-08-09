@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 
 #include "ChatModel.h"
+#include "MessageMarkup.h"
 #include "TackyBackend.h"
 
 static void feedEvent(ChatModel &m, const QByteArray &json) {
@@ -31,6 +32,11 @@ private slots:
     void cullOldKeepsTail();
     void loadedSignalReportsAdded();
     void loadingOlderTracksTheOldRequest();
+    void markupWrapsSpans();
+    void markupNestsOverlappingSpans();
+    void markupCountsCodePoints();
+    void markupEscapesAndKeepsWhitespace();
+    void markupRoleReadsTheContentUnion();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
     void catchupReconcileRepages();
@@ -228,6 +234,99 @@ void TestChatModel::loadingOlderTracksTheOldRequest() {
     m.handleResult(2, msgs(R"([{"timestamp":50}])"));
     QCOMPARE(m.rowCount(), 3);
     QVERIFY(!m.loadingOlder());
+}
+
+static QVariantList spans(const QByteArray &json) {
+    return QJsonDocument::fromJson(json).array().toVariantList();
+}
+
+// One tag pair per span type, and nothing at all when there is nothing to mark
+// up - the empty string is what puts the bubble back on the plain-text path.
+void TestChatModel::markupWrapsSpans() {
+    QCOMPARE(messageMarkup("plain", {}), QString());
+    QCOMPARE(messageMarkup("", spans(R"([{"type":"bold","offset":0,"length":1}])")),
+             QString());
+    // A type we don't know draws as text rather than leaking brackets.
+    QCOMPARE(messageMarkup("hi", spans(R"([{"type":"sparkle","offset":0,"length":2}])")),
+             QString());
+
+    QCOMPARE(messageMarkup("hi there",
+                           spans(R"([{"type":"bold","offset":0,"length":2}])")),
+             QString("<b>hi</b> there"));
+    QCOMPARE(messageMarkup("a b",
+                           spans(R"([{"type":"italic","offset":2,"length":1}])")),
+             QString("a <i>b</i>"));
+    QCOMPARE(messageMarkup("gone",
+                           spans(R"([{"type":"overstrike","offset":0,"length":4}])")),
+             QString("<s>gone</s>"));
+    QCOMPARE(messageMarkup("ls -l",
+                           spans(R"([{"type":"monospace","offset":0,"length":5}])")),
+             QString("<span style=\"font-family:monospace\">ls -l</span>"));
+    QCOMPARE(messageMarkup("said so",
+                           spans(R"([{"type":"quote","offset":0,"length":7}])")),
+             QString("<blockquote>said so</blockquote>"));
+
+    // A length running past the end is clamped, not dropped.
+    QCOMPARE(messageMarkup("hi", spans(R"([{"type":"bold","offset":0,"length":99}])")),
+             QString("<b>hi</b>"));
+}
+
+// XEP-0393 spans overlap without nesting, so a run inside another has to close
+// and reopen rather than emit crossed tags. A block style stays whole across an
+// inline one inside it.
+void TestChatModel::markupNestsOverlappingSpans() {
+    QCOMPARE(messageMarkup("abcd", spans(R"([
+        {"type":"bold","offset":0,"length":3},
+        {"type":"italic","offset":2,"length":2}])")),
+             QString("<b>ab<i>c</i></b><i>d</i>"));
+
+    // The quote is one block, not one per styled run inside it.
+    QCOMPARE(messageMarkup("a b c", spans(R"([
+        {"type":"quote","offset":0,"length":5},
+        {"type":"bold","offset":2,"length":1}])")),
+             QString("<blockquote>a <b>b</b> c</blockquote>"));
+}
+
+// tacky counts offsets in code points; QString indexes UTF-16, so anything past
+// an emoji lands a place early if the two are confused.
+void TestChatModel::markupCountsCodePoints() {
+    QCOMPARE(messageMarkup(QString::fromUtf8("😀 hi"),
+                           spans(R"([{"type":"bold","offset":2,"length":2}])")),
+             QString::fromUtf8("😀 <b>hi</b>"));
+}
+
+void TestChatModel::markupEscapesAndKeepsWhitespace() {
+    QCOMPARE(messageMarkup("a<b>&c", spans(R"([{"type":"bold","offset":0,"length":1}])")),
+             QString("<b>a</b>&lt;b&gt;&amp;c"));
+    // Newlines and runs of spaces survive HTML's whitespace collapsing...
+    QCOMPARE(messageMarkup("a\n  b", spans(R"([{"type":"bold","offset":0,"length":1}])")),
+             QString("<b>a</b><br> &nbsp;b"));
+    // ...and inside <pre> they are already literal.
+    QCOMPARE(messageMarkup("a\n  b",
+                           spans(R"([{"type":"preformatted","offset":0,"length":5}])")),
+             QString("<pre>a\n  b</pre>"));
+}
+
+// The spans index into whatever string the body role returned, so the role has
+// to read them out of the same content variant - caption for media, not body.
+void TestChatModel::markupRoleReadsTheContentUnion() {
+    ChatModel m;
+    m.applyBatch(msgs(R"([
+        {"timestamp":300,"content":{"type":"media","caption":"a shot",
+            "formatting":[{"type":"bold","offset":2,"length":4}]}},
+        {"timestamp":200,"content":{"type":"text","body":"hi",
+            "formatting":[{"type":"italic","offset":0,"length":2}]}},
+        {"timestamp":100,"content":{"type":"text","body":"bare"}}
+    ])"));
+    QCOMPARE(m.data(m.index(0), ChatModel::MarkupRole).toString(),
+             QString("a <b>shot</b>"));
+    QCOMPARE(m.data(m.index(1), ChatModel::MarkupRole).toString(),
+             QString("<i>hi</i>"));
+    QCOMPARE(m.data(m.index(2), ChatModel::MarkupRole).toString(), QString());
+
+    // A retraction takes the body with it, markup included.
+    m.applyRetracted(200);
+    QCOMPARE(m.data(m.index(1), ChatModel::MarkupRole).toString(), QString());
 }
 
 void TestChatModel::catchupGatesLiveInserts() {

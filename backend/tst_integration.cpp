@@ -6,6 +6,7 @@
 
 #include "ChatListModel.h"
 #include "ChatModel.h"
+#include "MessageMarkup.h"
 #include "TackyBackend.h"
 
 namespace {
@@ -26,6 +27,8 @@ private slots:
     void chatListRefreshesOnChanged();
     // Live outgoing message reaches the open ChatModel via message/<New>.
     void chatModelReceivesLiveSent();
+    // Styling spans come from tacky's own XEP-0393 parser, not a canned fixture.
+    void markupFollowsTackysStylingSpans();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -77,6 +80,36 @@ void TestIntegration::chatModelReceivesLiveSent() {
     QCOMPARE(chat.data(chat.index(0), ChatModel::BodyRole).toString(),
              QString("hi there"));
     QVERIFY(chat.data(chat.index(0), ChatModel::OutgoingRole).toBool());
+
+    backend.stop();
+}
+
+// Offsets are tacky's, counted its way, over a body it stripped the styling
+// characters out of. A fixture cannot catch the two sides disagreeing; only a
+// round trip through the real parser can.
+void TestIntegration::markupFollowsTackysStylingSpans() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+
+    // The emoji is the point: it is two UTF-16 units but one code point, so a
+    // span after it only lands right if both sides count the same way.
+    backend.notify("message", "send",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"chat", "friend@example.com"},
+                               {"body", QString::fromUtf8("\U0001F600 *bold* and _soft_")}});
+
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 1, 5000);
+    // tacky hands back the display body, styling characters removed.
+    QCOMPARE(chat.data(chat.index(0), ChatModel::BodyRole).toString(),
+             QString::fromUtf8("\U0001F600 bold and soft"));
+    QCOMPARE(chat.data(chat.index(0), ChatModel::MarkupRole).toString(),
+             QString::fromUtf8("\U0001F600 <b>bold</b> and <i>soft</i>"));
 
     backend.stop();
 }

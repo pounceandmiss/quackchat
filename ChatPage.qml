@@ -319,6 +319,7 @@ Page {
             delegate: Item {
                 id: wrap
                 required property string body
+                required property string markup
                 required property bool outgoing
                 required property string serverStatus
                 required property var timestamp
@@ -328,6 +329,7 @@ Page {
                     id: bubble
                     width: feed.width
                     text: wrap.body
+                    markup: wrap.markup
                     outgoing: wrap.outgoing
                     time: page.fmtTime(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus)

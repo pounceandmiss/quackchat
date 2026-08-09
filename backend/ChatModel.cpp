@@ -1,5 +1,6 @@
 #include "ChatModel.h"
 
+#include "MessageMarkup.h"
 #include "TackyBackend.h"
 
 ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
@@ -15,6 +16,16 @@ static QString bodyOf(const QVariantMap &m) {
     return c.value(QStringLiteral("body")).toString();
 }
 
+// The spans index into whichever string bodyOf returned, so both come from the
+// same content variant. A retraction empties that body, and an empty body needs
+// no markup, so the tombstone falls out without a case of its own.
+static QString markupOf(const QVariantMap &m) {
+    return messageMarkup(bodyOf(m), m.value(QStringLiteral("content"))
+                                        .toMap()
+                                        .value(QStringLiteral("formatting"))
+                                        .toList());
+}
+
 int ChatModel::rowCount(const QModelIndex &parent) const {
     return parent.isValid() ? 0 : m_msgs.size();
 }
@@ -26,6 +37,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     switch (role) {
     case TimestampRole:    return m.value(QStringLiteral("timestamp"));
     case BodyRole:         return bodyOf(m);
+    case MarkupRole:       return markupOf(m);
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
     case ServerStatusRole: return m.value(QStringLiteral("server_status"));
     case FromRole:         return m.value(QStringLiteral("from_jid"));
@@ -39,6 +51,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
     return {
         {TimestampRole, "timestamp"},
         {BodyRole, "body"},
+        {MarkupRole, "markup"},
         {OutgoingRole, "outgoing"},
         {ServerStatusRole, "serverStatus"},
         {FromRole, "from"},
