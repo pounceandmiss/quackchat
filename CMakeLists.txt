@@ -156,4 +156,11 @@ target_link_libraries(tst_qmlload PRIVATE
     quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 add_test(NAME tst_qmlload COMMAND tst_qmlload)
 set_tests_properties(tst_qmlload PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# real window + real backend: the feed has to lay out before it can page
+qt_add_executable(tst_chatpage backend/tst_chatpage.cpp)
+target_link_libraries(tst_chatpage PRIVATE
+    quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+add_test(NAME tst_chatpage COMMAND tst_chatpage)
+set_tests_properties(tst_chatpage PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

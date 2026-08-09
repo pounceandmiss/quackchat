@@ -30,6 +30,7 @@ private slots:
     void cullNewClearsTail();
     void cullOldKeepsTail();
     void loadedSignalReportsAdded();
+    void loadingOlderTracksTheOldRequest();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
     void catchupReconcileRepages();
@@ -199,6 +200,34 @@ void TestChatModel::loadedSignalReportsAdded() {
     QCOMPARE(loaded.count(), 2);
     QCOMPARE(loaded.at(1).at(0).toString(), QString("old"));
     QCOMPARE(loaded.at(1).at(1).toInt(), 0);
+}
+
+// Drives the feed's loading pill. The view keeps no in-flight latch of its own
+// and leans on the refusal below instead, since a request that never answers
+// would wedge one forever.
+void TestChatModel::loadingOlderTracksTheOldRequest() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // issues the initial history as token 1
+
+    QSignalSpy busy(&m, &ChatModel::loadingOlderChanged);
+    QVERIFY(m.loadingOlder()); // the empty window is waiting on its first page
+    m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
+    QVERIFY(!m.loadingOlder());
+    QCOMPARE(busy.count(), 1);
+
+    m.loadOlder(); // token 2
+    QVERIFY(m.loadingOlder());
+    m.loadOlder(); // refused while one is out, so token 3 is never issued
+    m.handleResult(3, msgs(R"([{"timestamp":50}])"));
+    QCOMPARE(m.rowCount(), 2);
+    QVERIFY(m.loadingOlder());
+
+    m.handleResult(2, msgs(R"([{"timestamp":50}])"));
+    QCOMPARE(m.rowCount(), 3);
+    QVERIFY(!m.loadingOlder());
 }
 
 void TestChatModel::catchupGatesLiveInserts() {

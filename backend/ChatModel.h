@@ -27,6 +27,10 @@ class ChatModel : public QAbstractListModel {
     Q_PROPERTY(bool atTail READ atTail NOTIFY atTailChanged)
     // Inside this chat's catchup bracket; gates live inserts too.
     Q_PROPERTY(bool catchupBusy READ catchupBusy NOTIFY catchupBusyChanged)
+    // A page of older history is out, possibly for good: a `before` fill that
+    // comes up short locally reaches for MAM, and that leg has no timeout. The
+    // view shows this rather than looking idle.
+    Q_PROPERTY(bool loadingOlder READ loadingOlder NOTIFY loadingOlderChanged)
 
 public:
     enum Role {
@@ -52,6 +56,10 @@ public:
     bool groupchat() const { return m_groupchat; }
     bool atTail() const { return m_atTail; }
     bool catchupBusy() const { return m_catchupBusy; }
+    bool loadingOlder() const {
+        return m_inflight.contains(QStringLiteral("old")) ||
+               m_inflight.contains(QStringLiteral("init"));
+    }
     void setBackend(TackyBackend *backend);
     void setAccount(const QString &acc);
     void setChat(const QString &chat);
@@ -86,6 +94,7 @@ signals:
     void groupchatChanged();
     void atTailChanged();
     void catchupBusyChanged();
+    void loadingOlderChanged();
     // A history request finished; dir is init/old/new/goto/catchup and added is
     // the net rows inserted. The view pages off this to fill an under-tall
     // viewport, and stops when added == 0 (archive exhausted).
@@ -101,6 +110,7 @@ private:
     int insertPos(qlonglong ts) const;
     void issueHistory(const QString &dir, qlonglong cursor, bool haveCursor);
     void cancelDir(const QString &dir);
+    void markInflight(const QString &dir, bool busy);
     qlonglong oldestTs() const;
     qlonglong newestTs() const;
 

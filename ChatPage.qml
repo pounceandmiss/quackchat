@@ -237,6 +237,7 @@ Page {
 
         ListView {
             id: feed
+            objectName: "chatFeed"
             Layout.fillWidth: true
             Layout.fillHeight: true
             model: chatModel
@@ -262,24 +263,33 @@ Page {
                 }
             }
 
-            // Scroll-driven paging (onContentYChanged below) only fires once the
-            // content is tall enough to scroll, and a cursorless initial load from
-            // tacky doesn't reach far enough back to guarantee that. Keep pulling
-            // older pages here until the feed can scroll or the archive runs dry.
-            // BottomToTop: atYEnd is the oldest edge, so olderBuffer is the
-            // distance left to it; under-tall content pins contentY and drives it
-            // negative, which is what triggers the fill.
-            readonly property real olderBuffer: originY + contentHeight - height - contentY
+            // BottomToTop lays row 0 (the newest) along the content's bottom, so
+            // the oldest row is at the content top: the oldest edge is
+            // atYBeginning, the newest atYEnd. These measure the unseen content
+            // past each edge and hit zero exactly on it; under-tall content pins
+            // contentY and drives olderBuffer negative.
+            //
+            // Functions, not bound properties: a binding refreshes off the same
+            // contentYChanged the handler below runs on, and the handler wins
+            // that race often enough to read the pre-scroll value.
+            function olderBuffer() { return contentY - originY + topMargin }
+            function newerBuffer() {
+                return originY + contentHeight + bottomMargin - height - contentY
+            }
             readonly property real fillThreshold: Math.max(400, height)
             property bool olderExhausted: false
-            property bool topping: false
 
+            // A cursorless initial load returns only the contiguous local tail,
+            // which need not even fill the viewport, so pull older pages until
+            // there is a screenful of slack above or the archive runs dry.
+            // ChatModel refuses a second `old` request while one is out, so the
+            // view needs no in-flight latch of its own - and must not keep one,
+            // since a request can stay out forever (see loadingOlder).
             function topUp() {
-                if (!page.hasChat || olderExhausted || topping || count === 0)
+                if (!page.hasChat || olderExhausted || count === 0)
                     return
-                if (olderBuffer >= fillThreshold)
+                if (olderBuffer() >= fillThreshold)
                     return
-                topping = true
                 chatModel.loadOlder()
             }
 
@@ -287,12 +297,11 @@ Page {
                 target: chatModel
                 // A reload (chat/account switch) empties the window; a fresh chat
                 // may again be under-tall, so clear the exhausted latch and refill.
-                function onChatChanged() { feed.olderExhausted = false; feed.topping = false }
-                function onAccountChanged() { feed.olderExhausted = false; feed.topping = false }
+                function onChatChanged() { feed.olderExhausted = false }
+                function onAccountChanged() { feed.olderExhausted = false }
                 function onLoaded(dir, added) {
                     if (dir !== "init" && dir !== "old")
                         return
-                    feed.topping = false
                     // A fresh newest page is a brand-new window: whatever we knew
                     // about the old end no longer holds, so clear the latch.
                     if (dir === "init")
@@ -332,11 +341,82 @@ Page {
                 }
             }
 
-            // BottomToTop: the newest edge is atYBeginning, the oldest atYEnd.
             // The model's load* calls are idempotent (guarded by in-flight tags).
             onContentYChanged: {
-                if (atYEnd) chatModel.loadOlder()
-                else if (atYBeginning) chatModel.loadNewer()
+                // An empty page only proved the archive was dry at that moment,
+                // and a `before` cursor is what reaches past the local rows into
+                // MAM, so reaching the oldest edge is worth one more try. Only
+                // on the edge, so a dry archive costs a request per arrival
+                // there rather than one per pixel.
+                if (olderBuffer() <= 0)
+                    olderExhausted = false
+                topUp()
+                // Nothing newer to page for while the window holds the tail:
+                // live <New> events land there on their own.
+                if (!chatModel.atTail && newerBuffer() < fillThreshold)
+                    chatModel.loadNewer()
+            }
+
+            // Floats over the oldest edge instead of riding along as a footer:
+            // content that came and went with the request would move the very
+            // edge the paging measures against. A `before` page can stay out for
+            // a long time - offline it never answers - so say so rather than
+            // look like the history simply ended.
+            Rectangle {
+                id: olderPill
+                objectName: "olderPill"
+                // A ListView's declared children land in its scrolling
+                // contentItem; this one belongs to the viewport.
+                parent: feed
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.top: parent.top
+                anchors.topMargin: 8
+                width: label.width + 32
+                height: 26
+                radius: 13
+                color: Theme.surface
+                opacity: chatModel.loadingOlder && !feed.olderExhausted ? 0.95 : 0
+                visible: opacity > 0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+
+                // Not a BusyIndicator: the Basic style paints that from its own
+                // palette, which ignores Theme. Animator, so a stalled fetch
+                // spins on the render thread and costs the GUI one nothing.
+                Item {
+                    id: spinner
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    width: 12
+                    height: 12
+                    RotationAnimator on rotation {
+                        running: olderPill.visible
+                        loops: Animation.Infinite
+                        from: 0; to: 360; duration: 900
+                    }
+                    Repeater {
+                        model: 8
+                        Rectangle {
+                            required property int index
+                            readonly property real angle: index * Math.PI / 4
+                            width: 3; height: 3; radius: 1.5
+                            color: Theme.accent
+                            // Fading around the ring gives the spin a direction.
+                            opacity: 0.15 + 0.85 * index / 7
+                            x: (spinner.width - width) / 2 * (1 + Math.cos(angle))
+                            y: (spinner.height - height) / 2 * (1 + Math.sin(angle))
+                        }
+                    }
+                }
+                Text {
+                    id: label
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: spinner.right
+                    anchors.leftMargin: 6
+                    text: "Loading"
+                    color: Theme.textDim
+                    font.pixelSize: 11
+                }
             }
         }
 

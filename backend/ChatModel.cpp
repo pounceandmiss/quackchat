@@ -61,6 +61,17 @@ void ChatModel::setCatchupBusy(bool v) {
     emit catchupBusyChanged();
 }
 
+// One door in and out of m_inflight, so loadingOlder cannot drift from it.
+void ChatModel::markInflight(const QString &dir, bool busy) {
+    const bool was = loadingOlder();
+    if (busy)
+        m_inflight.insert(dir);
+    else
+        m_inflight.remove(dir);
+    if (was != loadingOlder())
+        emit loadingOlderChanged();
+}
+
 qlonglong ChatModel::oldestTs() const {
     return m_msgs.isEmpty()
                ? 0
@@ -166,7 +177,7 @@ void ChatModel::issueHistory(const QString &dir, qlonglong cursor,
     const int tok = m_backend->request(QStringLiteral("message"),
                                        QStringLiteral("history"), a);
     m_pending.insert(tok, dir);
-    m_inflight.insert(dir);
+    markInflight(dir, true);
 }
 
 void ChatModel::loadInitial() { issueHistory(QStringLiteral("init"), 0, false); }
@@ -200,7 +211,7 @@ void ChatModel::gotoTimestamp(qlonglong ts, const QString &source) {
     const int tok =
         m_backend->request(QStringLiteral("message"), QStringLiteral("goto"), a);
     m_pending.insert(tok, QStringLiteral("goto"));
-    m_inflight.insert(QStringLiteral("goto"));
+    markInflight(QStringLiteral("goto"), true);
 }
 
 void ChatModel::resetToBottom() {
@@ -256,7 +267,7 @@ void ChatModel::cancelDir(const QString &dir) {
             QStringLiteral("message"), QStringLiteral("cancel"),
             QVariantMap{{QStringLiteral("acc"), m_account},
                         {QStringLiteral("tag"), m_chat + QLatin1Char('/') + dir}});
-    m_inflight.remove(dir);
+    markInflight(dir, false);
     // Drop the pending token too, so a late reply is ignored.
     for (auto it = m_pending.begin(); it != m_pending.end();) {
         if (it.value() == dir)
@@ -359,7 +370,7 @@ void ChatModel::handleResult(int token, const QVariant &data) {
     if (!m_pending.contains(token))
         return;
     const QString role = m_pending.take(token);
-    m_inflight.remove(role);
+    markInflight(role, false);
 
     const int before = m_msgs.size();
     if (role == QLatin1String("init")) {
