@@ -75,6 +75,16 @@ class TestChatPage : public QObject {
 
         QQuickWindow *win() const { return qobject_cast<QQuickWindow *>(window.get()); }
 
+        // The delegate for one row. Every row carries the same objectNames, so
+        // a search from the feed would answer with whichever it reached first.
+        QQuickItem *row(int index) const {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(feed, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item),
+                                      Q_ARG(int, index));
+            return item;
+        }
+
         // Park the viewport `slack` pixels short of the oldest edge, reading
         // that edge afresh because a page that lands moves it.
         void scrollNearOldest(qreal slack = 0) const {
@@ -136,6 +146,7 @@ private slots:
     void rightClickStillOpensTheBubbleMenu();
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
+    void plainMessageDrawsNoQuote();
 };
 
 void TestChatPage::initTestCase() {
@@ -423,8 +434,9 @@ void TestChatPage::replyingFromTheComposerThreadsTheTarget() {
     // Sending clears the banner, so the next message is not a reply too.
     QVERIFY(!page->property("replying").toBool());
 
-    // ...and the bubble draws the quote it came back with.
-    QQuickItem *quote = findItem(chat.feed, "replyQuote");
+    // ...and that row's bubble draws the quote it came back with.
+    QVERIFY(chat.row(0));
+    QQuickItem *quote = findItem(chat.row(0), "replyQuote");
     QVERIFY(quote);
     QTRY_VERIFY(quote->isVisible());
 }
@@ -446,7 +458,8 @@ void TestChatPage::tappingAQuoteJumpsToItsTarget() {
     QCOMPARE(model->data(model->index(0), ChatModel::ReplyBodyRole).toString(), kOriginal);
     QCOMPARE(model->rowOfTimestamp(m_jumpTarget), -1); // not in the open window
 
-    QQuickItem *quote = findItem(chat.feed, "replyQuote");
+    QVERIFY(chat.row(0));
+    QQuickItem *quote = findItem(chat.row(0), "replyQuote");
     QVERIFY(quote);
     QVERIFY(quote->isVisible());
     const QPointF hit = quote->mapToScene(QPointF(quote->width() / 2, quote->height() / 2));
@@ -469,6 +482,19 @@ void TestChatPage::tappingAQuoteJumpsToItsTarget() {
                       jump->mapToScene(QPointF(jump->width() / 2, jump->height() / 2)).toPoint());
     QTRY_VERIFY_WITH_TIMEOUT(model->atTail(), 5000);
     QCOMPARE(model->rowOfTimestamp(replyTs), 0);
+}
+
+// The other half of replyRolesAreAlwaysStrings, where it actually showed:
+// a message that answers nothing must draw no quote block.
+void TestChatPage::plainMessageDrawsNoQuote() {
+    const Chat chat = open("quiet@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kQuiet);
+
+    QVERIFY(chat.row(0));
+    QQuickItem *quote = findItem(chat.row(0), "replyQuote");
+    QVERIFY(quote);
+    QVERIFY(!quote->isVisible());
 }
 
 QTEST_MAIN(TestChatPage)

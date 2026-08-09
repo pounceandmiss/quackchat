@@ -44,8 +44,12 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case ServerStatusRole: return m.value(QStringLiteral("server_status"));
     case FromRole:         return m.value(QStringLiteral("from_jid"));
     case RetractedRole:    return m.value(QStringLiteral("retracted"));
-    case ReplyBodyRole:    return m.value(QStringLiteral("reply_body"));
-    case ReplyAuthorRole:  return m.value(QStringLiteral("reply_author_jid"));
+    // Coerced, not passed through: these keys are absent on an ordinary
+    // message, and a missing QVariant reaches QML as undefined, which a string
+    // property renders as the word "undefined" instead of nothing.
+    case ReplyBodyRole:    return m.value(QStringLiteral("reply_body")).toString();
+    case ReplyAuthorRole:
+        return m.value(QStringLiteral("reply_author_jid")).toString();
     case RawRole:          return m;
     default:               return {};
     }

@@ -45,6 +45,7 @@ private slots:
     void markupEscapesAndKeepsWhitespace();
     void markupRoleReadsTheContentUnion();
     void markupRoleFollowsTheQuoteColor();
+    void replyRolesAreAlwaysStrings();
     void anchorOnScreenKeepsTheWindow();
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
@@ -352,6 +353,20 @@ void TestChatModel::markupRoleFollowsTheQuoteColor() {
     QCOMPARE(chg.count(), 1);
     QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
     QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));
+}
+
+// An ordinary message carries no reply keys at all. Handing QML the missing
+// variant lets it through as undefined, which a string property in the delegate
+// renders as the word "undefined" - so every bubble grew a quote.
+void TestChatModel::replyRolesAreAlwaysStrings() {
+    ChatModel m;
+    m.applyBatch(msgs(R"([{"timestamp":100,"content":{"type":"text","body":"hi"}}])"));
+    const QVariant body = m.data(m.index(0), ChatModel::ReplyBodyRole);
+    const QVariant author = m.data(m.index(0), ChatModel::ReplyAuthorRole);
+    QCOMPARE(body.typeId(), QMetaType::QString);
+    QCOMPARE(author.typeId(), QMetaType::QString);
+    QVERIFY(body.toString().isEmpty());
+    QVERIFY(author.toString().isEmpty());
 }
 
 // goto_result's anchor decides the work: one already displayed only needs
