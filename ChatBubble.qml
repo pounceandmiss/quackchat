@@ -22,6 +22,13 @@ Item {
     property string replyBody: ""
     property string replyAuthor: ""
     readonly property bool isReply: replyBody !== ""
+    // The message's attachments, each already merged with the state of its
+    // transfer by ChatModel. Empty for a plain message.
+    property var attachments: []
+    // Open what is already on disk; load what is not (a held-back autofetch, a
+    // failed fetch, or a file nobody has asked for yet).
+    signal attachmentOpenRequested(int idx)
+    signal attachmentLoadRequested(int idx)
     property string time: ""
     property bool outgoing: false
     // pending | failed | sent | delivered | read, only drawn for our own
@@ -64,6 +71,22 @@ Item {
     property bool highlighted: false
 
     readonly property real maxBubbleWidth: Math.min(parent ? parent.width * 0.72 : 320, 480)
+
+    // Byte counts as the chip shows them. tacky knows the size of an outgoing
+    // file up front; for an incoming one it only emerges as the transfer's
+    // Content-Length, so either may be the one that is known.
+    function fmtSize(n) {
+        if (!n || n <= 0)
+            return ""
+        const units = ["B", "KB", "MB", "GB"]
+        let v = n
+        let i = 0
+        while (v >= 1024 && i < units.length - 1) {
+            v /= 1024
+            i++
+        }
+        return (i === 0 ? v : v.toFixed(1)) + " " + units[i]
+    }
 
     // How far the whole row slides right to make room for the checkbox
     property real selShift: selectionMode ? 40 : 0
@@ -451,12 +474,151 @@ Item {
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                 }
 
+                // The attachments, above the caption. An image shows the
+                // thumbnail tacky derived for it; everything else - a plain
+                // file, an image still coming, one the autofetch policy held
+                // back - shows a chip naming it.
+                Repeater {
+                    model: root.attachments
+                    delegate: ColumnLayout {
+                        id: att
+                        required property int index
+                        required property var modelData
+
+                        readonly property bool isImage: att.modelData.type === "image"
+                        readonly property bool hasThumb: att.modelData.thumbpath !== ""
+                        readonly property bool busy: att.modelData.state === "active"
+                        readonly property bool broke: att.modelData.state === "failed"
+                        readonly property string hint: {
+                            if (att.busy)
+                                return "Downloading…"
+                            if (att.broke)
+                                return att.modelData.error
+                            if (att.isImage && !att.hasThumb)
+                                return "Tap to load"
+                            return root.fmtSize(att.modelData.size > 0
+                                                ? att.modelData.size
+                                                : att.modelData.total)
+                        }
+
+                        // Same rule as the Tk client's: a shown thumbnail means
+                        // the file is on disk, so a tap opens it; anything else
+                        // has to be fetched first.
+                        function activate() {
+                            if (att.broke || (att.isImage && !att.hasThumb))
+                                root.attachmentLoadRequested(att.index)
+                            else
+                                root.attachmentOpenRequested(att.index)
+                        }
+
+                        spacing: 3
+                        Layout.maximumWidth: root.maxBubbleWidth
+                        Layout.bottomMargin: 3
+
+                        Image {
+                            id: thumb
+                            objectName: "attachmentThumb"
+                            visible: att.isImage && att.hasThumb
+                            // The thumbnail path is derived from the URL alone,
+                            // so a re-fetched image reuses it - a cached pixmap
+                            // would keep showing the old one.
+                            cache: false
+                            source: att.hasThumb ? "file:" + att.modelData.thumbpath : ""
+                            fillMode: Image.PreserveAspectFit
+                            readonly property real drawWidth:
+                                Math.min(thumb.implicitWidth, root.maxBubbleWidth)
+                            Layout.preferredWidth: thumb.drawWidth
+                            Layout.preferredHeight: thumb.implicitWidth > 0
+                                ? thumb.drawWidth * thumb.implicitHeight / thumb.implicitWidth
+                                : 0
+                            TapHandler {
+                                enabled: !root.selectionMode
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                onTapped: att.activate()
+                            }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        }
+
+                        Rectangle {
+                            id: chip
+                            objectName: "attachmentChip"
+                            visible: !thumb.visible
+                            Layout.preferredWidth: Math.min(chipRow.implicitWidth + 20,
+                                                            root.maxBubbleWidth)
+                            Layout.preferredHeight: 44
+                            radius: 10
+                            color: Theme.field
+
+                            RowLayout {
+                                id: chipRow
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 10
+                                spacing: 8
+                                Text {
+                                    text: att.isImage ? "🖼" : "📎"
+                                    font.pixelSize: 17
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Text {
+                                        Layout.fillWidth: true
+                                        // Never the url: an aesgcm:// fragment
+                                        // carries the media key.
+                                        text: att.modelData.name
+                                        color: Theme.textPrimary
+                                        font.pixelSize: 13
+                                        elide: Text.ElideMiddle
+                                    }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        visible: att.hint !== ""
+                                        text: att.hint
+                                        color: att.broke ? Theme.negative : Theme.textDim
+                                        font.pixelSize: 11
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                            TapHandler {
+                                enabled: !root.selectionMode
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
+                                onTapped: att.activate()
+                            }
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        }
+
+                        // Under whichever of the two is showing, so an image
+                        // being re-fetched keeps its old thumbnail meanwhile.
+                        Rectangle {
+                            objectName: "attachmentProgress"
+                            visible: att.busy && att.modelData.total > 0
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 3
+                            radius: 1.5
+                            color: Theme.hairline
+                            Rectangle {
+                                width: parent.width * Math.min(1,
+                                    att.modelData.loaded / att.modelData.total)
+                                height: parent.height
+                                radius: parent.radius
+                                color: Theme.accent
+                            }
+                        }
+                    }
+                }
+
                 TextEdit {
                     id: bodyText
                     objectName: "bubbleText"
                     readonly property bool rich: root.markup !== ""
                     text: bodyText.rich ? root.markup : root.text
                     textFormat: bodyText.rich ? TextEdit.RichText : TextEdit.PlainText
+                    // A bare share has no caption (tacky blanks a body that is
+                    // just the url), and an empty line under the image reads as
+                    // a gap in the bubble.
+                    visible: text !== ""
                     color: Theme.textPrimary
                     font.pixelSize: 15
                     wrapMode: TextEdit.Wrap

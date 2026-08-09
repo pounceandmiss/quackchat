@@ -166,6 +166,12 @@ Page {
             highlightFade.restart()
             Qt.callLater(page.scrollToHighlight)
         }
+        // The model resolved an attachment to a file on disk; handing it to the
+        // desktop is the one part of opening it that has to happen up here.
+        function onAttachmentResolved(path) {
+            if (path !== "")
+                Qt.openUrlExternally("file://" + path)
+        }
     }
     function scrollToHighlight() {
         const row = chatModel.rowOfTimestamp(page.highlightTs)
@@ -453,6 +459,12 @@ Page {
                 required property string failReason
                 required property var timestamp
                 required property var reactions
+                required property var attachments
+                required property bool hasMedia
+                // A share with no caption still has to copy and select as
+                // something; its filename is what the user sees.
+                readonly property string label: wrap.hasMedia && wrap.body === ""
+                    ? wrap.attachments[0].name : wrap.body
                 width: feed.width
                 height: bubble.height
                 ChatBubble {
@@ -464,6 +476,9 @@ Page {
                     // Rooms have many voices; a 1:1 has only the two, already
                     // named by the header and the bubble side.
                     showAuthor: page.chatGroupchat && !wrap.outgoing
+                    attachments: wrap.attachments
+                    onAttachmentOpenRequested: (idx) => chatModel.openAttachment(wrap.timestamp, idx)
+                    onAttachmentLoadRequested: (idx) => chatModel.loadAttachment(wrap.timestamp, idx)
                     replyBody: wrap.replyBody
                     replyAuthor: page.selfOrAuthorName(wrap.replyAuthor)
                     highlighted: page.highlightTs === wrap.timestamp
@@ -482,9 +497,9 @@ Page {
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     reactions: wrap.reactions
-                    onToggleRequested: page.toggle(wrap.timestamp, wrap.body)
-                    onCopyRequested: page.copyText(wrap.body)
-                    onReplyRequested: page.startReply(wrap.timestamp, wrap.body, wrap.outgoing)
+                    onToggleRequested: page.toggle(wrap.timestamp, wrap.label)
+                    onCopyRequested: page.copyText(wrap.label)
+                    onReplyRequested: page.startReply(wrap.timestamp, wrap.label, wrap.outgoing)
                     onReactRequested: (emoji) => chatModel.react(wrap.timestamp, emoji)
                 }
             }

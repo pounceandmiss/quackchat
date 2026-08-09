@@ -1,12 +1,15 @@
 // Loads the app QML headless with the real registered types. Binding errors
 // (ReferenceError etc.) only surface as warnings, so collect and fail on them.
 #include <QtTest>
+#include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQmlError>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSignalSpy>
+#include <QTemporaryDir>
 
 #include "AccountSettings.h"
 #include "AppController.h"
@@ -88,6 +91,131 @@ private slots:
                                           Q_RETURN_ARG(QVariant, ret),
                                           Q_ARG(QVariant, QVariant(QString()))));
         QVERIFY2(ret.value<QObject *>() != nullptr, "newShell returned no window");
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // The bubble decides, from the attachment alone, whether a tap opens the
+    // file or has to fetch it first - the same rule the Tk client draws on.
+    void drawsAttachments() {
+        QStringList warnings;
+        QQmlEngine e;
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        // A real file on disk: the thumbnail's size is the decoded image's.
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString thumbPath = dir.filePath("a_320.png");
+        QImage png(24, 12, QImage::Format_RGB32);
+        png.fill(Qt::red);
+        QVERIFY(png.save(thumbPath));
+
+        QQuickWindow win;
+        win.resize(500, 400);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ChatBubble");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+
+        // As ChatModel hands them over: what the message said, merged with the
+        // state of the transfer.
+        auto attachment = [](const QString &type, const QString &name,
+                             const QString &thumb, const QString &state) {
+            return QVariantMap{{"url", "https://h/" + name}, {"type", type},
+                               {"name", name},              {"size", 2048},
+                               {"mime", ""},                {"state", state},
+                               {"loaded", 0},               {"total", 0},
+                               {"localpath", ""},           {"thumbpath", thumb},
+                               {"error", ""}};
+        };
+        // Width up front: the bubble sizes itself off its parent, and one built
+        // parentless would fall back to measuring its own content instead.
+        auto bubbleWith = [&](const QVariantMap &att) {
+            auto *item = qobject_cast<QQuickItem *>(comp.createWithInitialProperties(
+                {{"attachments", QVariantList{att}},
+                 {"text", ""},
+                 {"width", win.width()}}));
+            if (item)
+                item->setParentItem(win.contentItem());
+            return item;
+        };
+        auto tap = [&](QQuickItem *target) {
+            const QPoint p = win.contentItem()
+                                 ->mapFromItem(target, QPointF(target->width() / 2,
+                                                               target->height() / 2))
+                                 .toPoint();
+            QTest::mouseClick(&win, Qt::LeftButton, Qt::NoModifier, p);
+        };
+
+        {   // A downloaded image draws its thumbnail, and a tap opens it.
+            QScopedPointer<QQuickItem> b(
+                bubbleWith(attachment("image", "a.png", thumbPath, "done")));
+            QVERIFY(!b.isNull());
+            QQuickItem *thumb = findItem(b.data(), "attachmentThumb");
+            QQuickItem *chip = findItem(b.data(), "attachmentChip");
+            QVERIFY(thumb);
+            QVERIFY(chip);
+            QVERIFY(thumb->isVisible());
+            QVERIFY(!chip->isVisible());
+            QTRY_VERIFY(thumb->width() > 0);
+            QCOMPARE(thumb->height() / thumb->width(), 0.5); // 24x12, kept
+
+            QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
+            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+            tap(thumb);
+            QCOMPARE(opened.count(), 1);
+            QCOMPARE(opened.first().at(0).toInt(), 0);
+            QCOMPARE(loaded.count(), 0);
+        }
+
+        {   // One nobody has fetched yet is a chip, and a tap fetches it.
+            QScopedPointer<QQuickItem> b(
+                bubbleWith(attachment("image", "b.png", "", "")));
+            QVERIFY(!b.isNull());
+            QQuickItem *chip = findItem(b.data(), "attachmentChip");
+            QVERIFY(chip);
+            QVERIFY(chip->isVisible());
+            QVERIFY(!findItem(b.data(), "attachmentThumb")->isVisible());
+
+            QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
+            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+            tap(chip);
+            QCOMPARE(loaded.count(), 1);
+            QCOMPARE(opened.count(), 0);
+        }
+
+        {   // A plain file has no thumbnail to wait for: its tap opens, which
+            // downloads first if it has to.
+            QScopedPointer<QQuickItem> b(
+                bubbleWith(attachment("file", "doc.pdf", "", "")));
+            QVERIFY(!b.isNull());
+            QQuickItem *chip = findItem(b.data(), "attachmentChip");
+            QVERIFY(chip);
+            QVERIFY(chip->isVisible());
+
+            QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
+            tap(chip);
+            QCOMPARE(opened.count(), 1);
+
+            QVariant size;
+            QVERIFY(QMetaObject::invokeMethod(b.data(), "fmtSize",
+                                              Q_RETURN_ARG(QVariant, size),
+                                              Q_ARG(QVariant, 2048)));
+            QCOMPARE(size.toString(), QString("2.0 KB"));
+        }
+
+        {   // A failed transfer retries rather than opening nothing.
+            QScopedPointer<QQuickItem> b(
+                bubbleWith(attachment("file", "doc.pdf", "", "failed")));
+            QVERIFY(!b.isNull());
+            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+            tap(findItem(b.data(), "attachmentChip"));
+            QCOMPARE(loaded.count(), 1);
+        }
 
         assertNoQmlErrors(warnings);
     }
