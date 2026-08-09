@@ -46,6 +46,7 @@ private slots:
     void markupRoleReadsTheContentUnion();
     void markupRoleFollowsTheQuoteColor();
     void replyRolesAreAlwaysStrings();
+    void remoteStatusTracksTheFarEnd();
     void anchorOnScreenKeepsTheWindow();
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
@@ -353,6 +354,32 @@ void TestChatModel::markupRoleFollowsTheQuoteColor() {
     QCOMPARE(chg.count(), 1);
     QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
     QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));
+}
+
+// The two hops are separate fields and separate roles; <Status> can move
+// either without touching the other.
+void TestChatModel::remoteStatusTracksTheFarEnd() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300,"server_status":"pending",
+                           "remote_status":"none"}])"));
+    QCOMPARE(m.data(m.index(0), ChatModel::RemoteStatusRole).toString(), QString("none"));
+
+    feedEvent(m, R"(["event","message","Status",
+        {"acc":"me@h","jid":"a@h","timestamp":300,"server_status":""}])");
+    QCOMPARE(m.data(m.index(0), ChatModel::ServerStatusRole).toString(), QString());
+    QCOMPARE(m.data(m.index(0), ChatModel::RemoteStatusRole).toString(), QString("none"));
+
+    feedEvent(m, R"(["event","message","Status",
+        {"acc":"me@h","jid":"a@h","timestamp":300,"remote_status":"read"}])");
+    QCOMPARE(m.data(m.index(0), ChatModel::RemoteStatusRole).toString(), QString("read"));
+    QCOMPARE(m.data(m.index(0), ChatModel::ServerStatusRole).toString(), QString());
+
+    // Same undefined trap as the reply roles: a row without the key must read
+    // as an empty string, not as a missing variant.
+    m.applyBatch(msgs(R"([{"timestamp":100}])"));
+    QCOMPARE(m.data(m.index(1), ChatModel::RemoteStatusRole).typeId(), QMetaType::QString);
 }
 
 // An ordinary message carries no reply keys at all. Handing QML the missing

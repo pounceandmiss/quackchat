@@ -41,7 +41,8 @@ public:
         BodyRole,        // text body or media caption, from the content union
         MarkupRole,      // BodyRole as rich text; empty when it needs none
         OutgoingRole,
-        ServerStatusRole,
+        ServerStatusRole, // the hop to our own server
+        RemoteStatusRole, // and the hop after it: none/delivered/read
         FromRole,
         RetractedRole,   // tombstone: render the deleted-message placeholder
         ReplyBodyRole,   // one-line preview of the message this one answers

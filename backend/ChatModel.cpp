@@ -41,7 +41,10 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case BodyRole:         return bodyOf(m);
     case MarkupRole:       return markupOf(m, m_quoteColor);
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
-    case ServerStatusRole: return m.value(QStringLiteral("server_status"));
+    case ServerStatusRole:
+        return m.value(QStringLiteral("server_status")).toString();
+    case RemoteStatusRole:
+        return m.value(QStringLiteral("remote_status")).toString();
     case FromRole:         return m.value(QStringLiteral("from_jid"));
     case RetractedRole:    return m.value(QStringLiteral("retracted"));
     // Coerced, not passed through: these keys are absent on an ordinary
@@ -62,6 +65,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {MarkupRole, "markup"},
         {OutgoingRole, "outgoing"},
         {ServerStatusRole, "serverStatus"},
+        {RemoteStatusRole, "remoteStatus"},
         {FromRole, "from"},
         {RetractedRole, "retracted"},
         {ReplyBodyRole, "replyBody"},

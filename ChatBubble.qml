@@ -20,8 +20,10 @@ Item {
     readonly property bool isReply: replyBody !== ""
     property string time: ""
     property bool outgoing: false
-    // "sent" (one tick) or "read" (two), only shown for outgoing messages
-    property string status: "read"
+    // pending | failed | sent | delivered | read, only drawn for our own
+    // messages. See ChatPage.fmtStatus for how the two backend fields fold
+    // into these.
+    property string status: "sent"
 
     property bool selected: false
     property bool selectionMode: false
@@ -369,9 +371,13 @@ Item {
                         font.pixelSize: 11
                     }
                     Text {
+                        objectName: "statusTick"
                         visible: root.outgoing
-                        text: root.status === "sent" ? "✓" : "✓✓"
-                        color: root.status === "read" ? Theme.positive : Theme.textDim
+                        text: root.status === "pending" ? "◌"
+                            : root.status === "failed" ? "✕"
+                            : root.status === "sent" ? "✓" : "✓✓"
+                        color: root.status === "failed" ? Theme.negative
+                             : root.status === "read" ? Theme.positive : Theme.textDim
                         font.pixelSize: 11
                         font.bold: true
                     }

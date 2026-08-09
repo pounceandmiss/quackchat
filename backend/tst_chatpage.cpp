@@ -147,6 +147,7 @@ private slots:
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
     void plainMessageDrawsNoQuote();
+    void ticksFollowBothHops();
 };
 
 void TestChatPage::initTestCase() {
@@ -495,6 +496,43 @@ void TestChatPage::plainMessageDrawsNoQuote() {
     QQuickItem *quote = findItem(chat.row(0), "replyQuote");
     QVERIFY(quote);
     QVERIFY(!quote->isVisible());
+}
+
+// The old rule read server_status alone and called anything the server had
+// "read", so an unsent message claimed the peer had read it.
+void TestChatPage::ticksFollowBothHops() {
+    const Chat chat = open("quiet@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kQuiet);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    struct Case { const char *server; const char *remote; const char *want; };
+    const Case cases[] = {
+        {"pending", "none", "pending"},
+        {"uploading", "none", "pending"},
+        {"failed", "none", "failed"},
+        {"", "none", "sent"},
+        {"", "delivered", "delivered"},
+        {"", "read", "read"},
+        // The far end cannot be ahead of our own server, but if it says so the
+        // unsent state still wins - that is the axis the user is waiting on.
+        {"pending", "read", "pending"},
+    };
+    for (const Case &c : cases) {
+        QVariant out;
+        QVERIFY(QMetaObject::invokeMethod(page, "fmtStatus", Q_RETURN_ARG(QVariant, out),
+                                          Q_ARG(QVariant, QString(c.server)),
+                                          Q_ARG(QVariant, QString(c.remote))));
+        QCOMPARE(out.toString(), QString(c.want));
+    }
+
+    // Nothing is connected here, so these really are unsent, and the bubble
+    // has to say so rather than showing a read tick.
+    QVERIFY(chat.row(0));
+    QQuickItem *tick = findItem(chat.row(0), "statusTick");
+    QVERIFY(tick);
+    QCOMPARE(tick->property("text").toString(), QString("◌"));
 }
 
 QTEST_MAIN(TestChatPage)

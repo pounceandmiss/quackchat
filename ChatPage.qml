@@ -148,9 +148,17 @@ Page {
         const d = new Date(ts / 1000) // tacky timestamps are microseconds
         return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)
     }
-    function fmtStatus(s) {
-        // server_status: "" (server has it) | pending | uploading | failed
-        return s === "" ? "read" : "sent"
+    // Two independent hops: server_status covers the one to our own server,
+    // remote_status what the far end then did. A message still on its way to
+    // the server has nothing to say about the peer, so that comes first.
+    function fmtStatus(server, remote) {
+        if (server === "failed")
+            return "failed"
+        if (server !== "")
+            return "pending" // pending or uploading
+        if (remote === "read")
+            return "read"
+        return remote === "delivered" ? "delivered" : "sent"
     }
     function sendCurrent() {
         const t = input.text.trim()
@@ -373,6 +381,7 @@ Page {
                 required property string replyAuthor
                 required property bool outgoing
                 required property string serverStatus
+                required property string remoteStatus
                 required property var timestamp
                 width: feed.width
                 height: bubble.height
@@ -387,7 +396,7 @@ Page {
                     onQuoteTapped: chatModel.gotoReplyTarget(wrap.timestamp)
                     outgoing: wrap.outgoing
                     time: page.fmtTime(wrap.timestamp)
-                    status: page.fmtStatus(wrap.serverStatus)
+                    status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     reaction: page.reactionFor(wrap.timestamp)
