@@ -42,6 +42,8 @@ public:
 
 signals:
     void runningChanged();
+    // Every request/notify, whether or not a backend is running to receive it.
+    void sent(const QString &module, const QString &method, const QVariant &args);
     void result(int token, const QVariant &data);
     void error(int token, const QString &message);
     void event(const QString &module, const QString &name, const QVariant &args);

@@ -54,6 +54,9 @@ void TackyBackend::stop() {
 
 void TackyBackend::sendArray(const QString &module, const QString &method,
                              const QVariant &args, bool withToken, int token) {
+    // Ahead of the guard, so a model's outbound calls stay observable in the
+    // tests, which never start an interpreter.
+    emit sent(module, method, args.isValid() ? args : QVariantMap());
     if (!m_client)
         return;
     QJsonArray arr;
