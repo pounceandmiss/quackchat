@@ -58,7 +58,7 @@ private slots:
     void attachmentsRoleReadsTheContentUnion();
     void fileUpdateMergesIntoTheRow();
     void fileUpdateFansOutToEveryRowSharingTheUrl();
-    void autofetchBlockedIsNotAFailure();
+    void transferStatesReachTheViewIntact();
     void fileEventsFilterByAcc();
     void imageRowsAskForTheirThumbnails();
     void openAttachmentResolvesThroughTheBackend();
@@ -767,20 +767,20 @@ void TestChatModel::fileUpdateFansOutToEveryRowSharingTheUrl() {
 
 // The policy holding an image back is a decision, not an error: the view shows
 // a tap-to-load chip, and must not be handed a failure to complain about.
-void TestChatModel::autofetchBlockedIsNotAFailure() {
+// The states reach the view as tacky sent them. `idle` - held back, capped or
+// cancelled - is the neutral end and carries no error to show; only a real
+// failure does, and that is what the chip offers a retry on.
+void TestChatModel::transferStatesReachTheViewIntact() {
     ChatModel m;
     m.setAccount("me@h");
     m.applyBatch(msgs(kMediaRow));
 
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"failed","url":"https://h/a.png","error":"autofetch-blocked"}])");
-    QCOMPARE(att0(m).value("state").toString(), QString("blocked"));
+        "state":"idle","url":"https://h/a.png","error":""}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("idle"));
+    QVERIFY(att0(m).value("error").toString().isEmpty());
+    QVERIFY(att0(m).value("thumburl").toUrl().isEmpty());
 
-    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"failed","url":"https://h/a.png","error":"autofetch-too-large"}])");
-    QCOMPARE(att0(m).value("state").toString(), QString("blocked"));
-
-    // A real failure still reads as one.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
         "state":"failed","url":"https://h/a.png","error":"http error"}])");
     QCOMPARE(att0(m).value("state").toString(), QString("failed"));
@@ -843,7 +843,7 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
 
     // Tapping a held-back image asks again, this time ungated.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"failed","url":"https://h/a.png","error":"autofetch-blocked"}])");
+        "state":"idle","url":"https://h/a.png","error":""}])");
     sent.clear();
     m.loadAttachment(300, 0);
     QCOMPARE(sent.count(), 1);

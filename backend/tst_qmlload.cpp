@@ -220,6 +220,23 @@ private slots:
             QCOMPARE(size.toString(), QString("2.0 KB"));
         }
 
+        // An image tacky held back, capped or cancelled ends `idle`: nothing on
+        // disk and no error to report, so it draws the same tap-to-load chip as
+        // one nobody has asked for.
+        {
+            QScopedPointer<QQuickItem> b(
+                bubbleWith(attachment("image", "d.png", "", "idle")));
+            QVERIFY(!b.isNull());
+            QQuickItem *chip = findItem(b.data(), "attachmentChip");
+            QVERIFY(chip);
+            QVERIFY(chip->isVisible());
+            QVERIFY(!findItem(b.data(), "attachmentProgress")->isVisible());
+
+            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+            tap(chip);
+            QCOMPARE(loaded.count(), 1);
+        }
+
         // A failed transfer retries rather than opening nothing.
         {
             QScopedPointer<QQuickItem> b(

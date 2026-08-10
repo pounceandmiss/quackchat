@@ -483,14 +483,19 @@ Item {
                         required property int index
                         required property var modelData
 
+                        // What is on disk is what these read, so the neutral
+                        // ends - never fetched, and the `idle` tacky reports
+                        // for one it held back, capped or cancelled - need no
+                        // case of their own. Only `failed` has something extra
+                        // to say.
                         readonly property bool isImage: att.modelData.type === "image"
                         readonly property bool hasThumb: att.modelData.thumburl != ""
                         readonly property bool busy: att.modelData.state === "active"
-                        readonly property bool broke: att.modelData.state === "failed"
+                        readonly property bool failed: att.modelData.state === "failed"
                         readonly property string hint: {
                             if (att.busy)
                                 return "Downloading…"
-                            if (att.broke)
+                            if (att.failed)
                                 return att.modelData.error
                             if (att.isImage && !att.hasThumb)
                                 return "Tap to load"
@@ -506,7 +511,7 @@ Item {
                         // the file is on disk, so a tap opens it; anything else
                         // has to be fetched first.
                         function activate() {
-                            if (att.broke || (att.isImage && !att.hasThumb))
+                            if (att.failed || (att.isImage && !att.hasThumb))
                                 root.attachmentLoadRequested(att.index)
                             else
                                 root.attachmentOpenRequested(att.index)
@@ -576,7 +581,7 @@ Item {
                                         Layout.fillWidth: true
                                         visible: att.hint !== ""
                                         text: att.hint
-                                        color: att.broke ? Theme.negative : Theme.textDim
+                                        color: att.failed ? Theme.negative : Theme.textDim
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
                                     }

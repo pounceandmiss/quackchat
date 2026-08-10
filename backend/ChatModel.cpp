@@ -501,6 +501,10 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
 // Downloads are keyed and coalesced by url: the event's id is the file module's
 // own counter, and one transfer serves every message quoting that url. Uploads
 // key on id == the message timestamp; nothing sends yet, so they are ignored.
+//
+// The state goes through as it arrives. `idle` is the neutral end - held back
+// by the autofetch policy, over its size cap, or cancelled - and reads the same
+// to the view as a transfer that never ran, which is exactly what it is.
 void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
     if (name != QLatin1String("Update") ||
         a.value(QStringLiteral("direction")).toString() != QLatin1String("download"))
@@ -518,11 +522,6 @@ void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
                   {QStringLiteral("thumburl"),
                    thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
                   {QStringLiteral("error"), a.value(QStringLiteral("error"))}};
-    // An image the autofetch policy held back is a decision, not a failure: the
-    // attachment keeps a tap-to-load chip rather than showing an error.
-    if (x.value(QStringLiteral("state")).toString() == QLatin1String("failed") &&
-        a.value(QStringLiteral("error")).toString().startsWith(QLatin1String("autofetch-")))
-        x.insert(QStringLiteral("state"), QStringLiteral("blocked"));
     m_xfer.insert(url, x);
     redrawRowsUsing(url);
 }
