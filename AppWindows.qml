@@ -13,10 +13,13 @@ QtObject {
     readonly property var _windows: []
     // account -> its open settings window, so a second request raises it.
     readonly property var _settingsWindows: ({})
+    // account|jid -> its open key window, for the same reason.
+    readonly property var _keysWindows: ({})
 
     property Component _shellComp: Component { ShellWindow {} }
     property Component _chatComp: Component { ChatWindow {} }
     property Component _settingsComp: Component { AccountSettingsWindow {} }
+    property Component _keysComp: Component { OmemoKeysWindow {} }
 
     function _track(w) {
         if (!w)
@@ -33,6 +36,9 @@ QtObject {
         for (const acc in mgr._settingsWindows)
             if (mgr._settingsWindows[acc] === w)
                 delete mgr._settingsWindows[acc]
+        for (const key in mgr._keysWindows)
+            if (mgr._keysWindows[key] === w)
+                delete mgr._keysWindows[key]
         w.destroy()
     }
 
@@ -63,6 +69,25 @@ QtObject {
         const w = _track(mgr._settingsComp.createObject(null, { account: account }))
         if (w)
             mgr._settingsWindows[account] = w
+        return w
+    }
+
+    // One contact's OMEMO keys. Trust is written as it is picked, so two
+    // windows on the same contact would argue over what is on screen.
+    function omemoKeys(account, jid, name) {
+        if (!account || !jid)
+            return null
+        const key = account + "|" + jid
+        const open = mgr._keysWindows[key]
+        if (open) {
+            open.raise()
+            open.requestActivate()
+            return open
+        }
+        const w = _track(mgr._keysComp.createObject(null,
+            { account: account, jid: jid, name: name || "" }))
+        if (w)
+            mgr._keysWindows[key] = w
         return w
     }
 }

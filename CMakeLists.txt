@@ -98,11 +98,14 @@ qt_add_qml_module(quack
         ShellWindow.qml
         ChatWindow.qml
         AccountSettingsWindow.qml
+        OmemoKeysWindow.qml
         AppShell.qml
         AccountRail.qml
         AddAccountSheet.qml
         AccountSettingsPage.qml
         TrustPicker.qml
+        OmemoKeysPage.qml
+        Fingerprint.qml
         ConversationsPage.qml
         ChatPage.qml
         ChatBubble.qml
@@ -120,6 +123,7 @@ qt_add_qml_module(quack
         backend/AccountsModel.cpp backend/AccountsModel.h
         backend/AccountSettings.cpp backend/AccountSettings.h
         backend/OmemoDevicesModel.cpp backend/OmemoDevicesModel.h
+        backend/OmemoChat.cpp backend/OmemoChat.h
         backend/AvatarController.cpp backend/AvatarController.h
         backend/AvatarSink.h)
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
@@ -140,7 +144,8 @@ if(NOT ANDROID)
 enable_testing()
 
 foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
-          tst_accountsmodel tst_omemodevices tst_accountsettings tst_integration)
+          tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
+          tst_integration)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})

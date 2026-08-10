@@ -152,6 +152,13 @@ private slots:
     void tappingAQuoteJumpsToItsTarget();
     void plainMessageDrawsNoQuote();
     void ticksFollowBothHops();
+    void padlockFollowsTheRowStamp();
+    void exposedMessagesFollowTheChatsLock();
+    void composerLockIsHiddenInRooms();
+    void resendGatingFollowsTheRow();
+    void onlyAFailedEncryptionOffersThePlaintextWayOut();
+    void togglingTheComposerLockChangesWhatIsSent();
+    void keysOpenFromTheComposerLock();
     void reactionChipsShowTheBackendSet();
     void senderNamesComeFromAuthorGet();
 };
@@ -187,6 +194,32 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "room@example.com"},
                                          {"body", "who said that"}});
+
+    // clear@ turns OMEMO off before its send, so it is the one chat whose rows
+    // come back unstamped - every other send here is encrypted by default.
+    m_app->backend()->notify("omemo", "setEnabled",
+                             QVariantMap{{"acc", kAcc},
+                                         {"jid", "clear@example.com"},
+                                         {"value", 0}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "clear@example.com"},
+                                         {"body", "in the open"}});
+
+    // mixed@ holds the combination that gets remarked on: a message sent while
+    // encryption was off, in a chat that has since been set to encrypt.
+    m_app->backend()->notify("omemo", "setEnabled",
+                             QVariantMap{{"acc", kAcc},
+                                         {"jid", "mixed@example.com"},
+                                         {"value", 0}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "mixed@example.com"},
+                                         {"body", "sent before the lock went on"}});
+    m_app->backend()->notify("omemo", "setEnabled",
+                             QVariantMap{{"acc", kAcc},
+                                         {"jid", "mixed@example.com"},
+                                         {"value", 1}});
 
     // jump@ gets the target, then more than a page on top of it, then a reply
     // to the target - so the jump has somewhere to travel.
@@ -552,6 +585,230 @@ void TestChatPage::ticksFollowBothHops() {
 
 // Reactions used to live in the view and go nowhere. They are the backend's
 // set now, so the chips have to come back from it.
+// A 1:1 chat encrypts by default, so an ordinary send is padlocked without the
+// user doing anything; the badge has to come off only where the row really is
+// in the open. Nothing is connected, so neither row got out - which is the
+// point: the padlock reports how the message is carried, not how far it got.
+void TestChatPage::padlockFollowsTheRowStamp() {
+    const Chat encrypted = open("quiet@example.com");
+    QVERIFY(encrypted.feed);
+    QTRY_COMPARE(encrypted.count(), kQuiet);
+    QVERIFY(encrypted.row(0));
+    QQuickItem *lock = findItem(encrypted.row(0), "lockBadge");
+    QVERIFY(lock);
+    QCOMPARE(lock->property("text").toString(), QString("🔒"));
+
+    const Chat clear = open("clear@example.com");
+    QVERIFY(clear.feed);
+    QTRY_COMPARE(clear.count(), 1);
+    QVERIFY(clear.row(0));
+    QQuickItem *openLock = findItem(clear.row(0), "lockBadge");
+    QVERIFY(openLock);
+    QCOMPARE(openLock->property("text").toString(), QString("🔓"));
+
+    // A chat with encryption turned off got what it asked for, so its messages
+    // look like any others - the badge is the only difference.
+    QQuickItem *encryptedBody = findItem(encrypted.row(0), "bubbleBody");
+    QQuickItem *clearBody = findItem(clear.row(0), "bubbleBody");
+    QVERIFY(encryptedBody);
+    QVERIFY(clearBody);
+    QVERIFY(!clearBody->property("flagged").toBool());
+    QCOMPARE(clearBody->property("toColor"), encryptedBody->property("toColor"));
+}
+
+// The same cleartext message is only worth remarking on while the chat is set
+// to encrypt, so the marking follows the switch rather than the message.
+void TestChatPage::exposedMessagesFollowTheChatsLock() {
+    const Chat chat = open("mixed@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    QQuickItem *body = findItem(chat.row(0), "bubbleBody");
+    QVERIFY(body);
+    QTRY_VERIFY(body->property("flagged").toBool());
+    QVERIFY(body->property("toColor") != body->property("base"));
+    // Settled after the wash has crossed it: a flat fill of the new colour,
+    // with the gradient gone. Left on the bubble it would read as a permanent
+    // two-tone ramp instead of a colour change.
+    QTRY_COMPARE(body->property("sweep").toReal(), 1.0);
+    QCOMPARE(body->property("color"), body->property("toColor"));
+    QVERIFY(!body->property("gradient").value<QObject *>());
+    QQuickItem *wash = findItem(chat.row(0), "bubbleWash");
+    QVERIFY(wash);
+    QVERIFY(!wash->property("visible").toBool());
+    // The tail is painted separately, so it has its own way of being left
+    // behind on the old colour.
+    QQuickItem *tail = findItem(chat.row(0), "bubbleTail");
+    QVERIFY(tail);
+    QCOMPARE(tail->property("fill"), body->property("color"));
+
+    // Turning the chat's padlock off makes it ordinary again, and the colour
+    // travels rather than jumping.
+    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
+    QVERIFY(lock);
+    QTest::mouseClick(chat.win(), Qt::LeftButton, Qt::NoModifier,
+                      lock->mapToScene(QPointF(lock->width() / 2, lock->height() / 2)).toPoint());
+    QTRY_VERIFY(!body->property("flagged").toBool());
+    QTRY_COMPARE(body->property("toColor"), body->property("base"));
+    QTRY_COMPARE(body->property("sweep").toReal(), 1.0);
+    QCOMPARE(body->property("color"), body->property("base"));
+    QVERIFY(!wash->property("visible").toBool());
+    QCOMPARE(tail->property("fill"), body->property("color"));
+}
+
+// A room's messages go out in the clear whatever the switch says, so it has
+// nothing to offer there.
+void TestChatPage::composerLockIsHiddenInRooms() {
+    const Chat oneToOne = open("quiet@example.com");
+    QVERIFY(oneToOne.win());
+    auto *lock = oneToOne.win()->findChild<QQuickItem *>("omemoToggle");
+    QVERIFY(lock);
+    QVERIFY(lock->property("visible").toBool());
+
+    const Chat room = open("room@example.com", true);
+    QVERIFY(room.win());
+    auto *roomLock = room.win()->findChild<QQuickItem *>("omemoToggle");
+    QVERIFY(roomLock);
+    QVERIFY(!roomLock->property("visible").toBool());
+}
+
+void TestChatPage::resendGatingFollowsTheRow() {
+    const Chat chat = open("quiet@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kQuiet);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    struct Case {
+        bool outgoing; const char *status; const char *enc; const char *why;
+        bool retry; bool plain;
+    };
+    const Case cases[] = {
+        // The encryption refused: both ways out, and the plaintext one is the
+        // only one that can actually work.
+        {true, "failed", "omemo", "encrypt", true, true},
+        // The message got out of the encryption and fell over after; sending it
+        // in the clear would give up privacy for nothing.
+        {true, "failed", "omemo", "delivery", true, false},
+        {true, "failed", "", "delivery", true, false},
+        // Still on its way, or already gone: nothing to send again.
+        {true, "pending", "omemo", "", false, false},
+        {true, "sent", "omemo", "", false, false},
+        // A stale reason left by an earlier failure, on a row that is now fine.
+        {true, "sent", "omemo", "encrypt", false, false},
+        // Not ours to send.
+        {false, "failed", "omemo", "encrypt", false, false},
+    };
+    for (const Case &c : cases) {
+        QVariant retry, plain;
+        QVERIFY(QMetaObject::invokeMethod(page, "canRetry", Q_RETURN_ARG(QVariant, retry),
+                                          Q_ARG(QVariant, c.outgoing),
+                                          Q_ARG(QVariant, QString(c.status))));
+        QVERIFY(QMetaObject::invokeMethod(page, "canResendPlain", Q_RETURN_ARG(QVariant, plain),
+                                          Q_ARG(QVariant, c.outgoing),
+                                          Q_ARG(QVariant, QString(c.status)),
+                                          Q_ARG(QVariant, QString(c.enc)),
+                                          Q_ARG(QVariant, QString(c.why))));
+        QCOMPARE(retry.toBool(), c.retry);
+        QCOMPARE(plain.toBool(), c.plain);
+    }
+}
+
+// The entries are drawn from those folds, and an entry that is not offered must
+// leave no gap where it would have been.
+void TestChatPage::onlyAFailedEncryptionOffersThePlaintextWayOut() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = nullptr;
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
+        menu = at->findChild<QObject *>("bubbleMenu");
+    QVERIFY(menu);
+
+    auto *retry = menu->findChild<QQuickItem *>("retryEntry");
+    auto *plain = menu->findChild<QQuickItem *>("resendPlainEntry");
+    QVERIFY(retry);
+    QVERIFY(plain);
+    // An entry that is not on offer takes up none of the menu, whether or not
+    // the menu is open - the view only draws what has a height.
+    QCOMPARE(retry->height(), 0.0);
+    QCOMPARE(plain->height(), 0.0);
+
+    const qlonglong ts =
+        chat.model()->data(chat.model()->index(0), ChatModel::TimestampRole).toLongLong();
+    chat.model()->applyFields(ts, QVariantMap{{"server_status", "failed"},
+                                              {"fail_reason", "encrypt"}});
+    QTRY_VERIFY(plain->height() > 0.0);
+    QVERIFY(retry->height() > 0.0);
+
+    // The encryption was never the problem for a delivery failure, so sending
+    // it in the clear would give up privacy for nothing.
+    chat.model()->applyFields(ts, QVariantMap{{"fail_reason", "delivery"}});
+    QTRY_COMPARE(plain->height(), 0.0);
+    QVERIFY(retry->height() > 0.0);
+}
+
+// The whole path in one go: the padlock in the composer, through tacky's stored
+// per-chat setting, to how the next message is actually stamped - and only the
+// next one, since the messages already sent keep the terms they went out under.
+void TestChatPage::togglingTheComposerLockChangesWhatIsSent() {
+    const Chat chat = open("toggle@example.com");
+    QVERIFY(chat.feed);
+    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
+    QVERIFY(lock);
+
+    chat.model()->send("under the lock");
+    QTRY_COMPARE(chat.count(), 1);
+    QCOMPARE(chat.model()->data(chat.model()->index(0), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+
+    const QPointF centre = lock->mapToScene(QPointF(lock->width() / 2, lock->height() / 2));
+    QTest::mouseClick(chat.win(), Qt::LeftButton, Qt::NoModifier, centre.toPoint());
+
+    chat.model()->send("in the open");
+    QTRY_COMPARE(chat.count(), 2);
+    QCOMPARE(chat.model()->data(chat.model()->index(0), ChatModel::EncryptionRole).toString(),
+             QString());
+    QCOMPARE(chat.model()->data(chat.model()->index(1), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+}
+
+// The contact's keys hang off the padlock, since that is the control that says
+// whether they are being used. A room has neither.
+void TestChatPage::keysOpenFromTheComposerLock() {
+    const Chat chat = open("quiet@example.com");
+    QVERIFY(chat.win());
+    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
+    QVERIFY(lock);
+    auto *menu = lock->findChild<QObject *>("lockMenu");
+    QVERIFY(menu);
+    QVERIFY(!menu->property("opened").toBool());
+
+    const QPointF centre = lock->mapToScene(QPointF(lock->width() / 2, lock->height() / 2));
+    QTest::mouseClick(chat.win(), Qt::RightButton, {}, centre.toPoint());
+    QTRY_VERIFY(menu->property("opened").toBool());
+    QVERIFY(lock->findChild<QQuickItem *>("keysEntry"));
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QVariant window;
+    QVERIFY(QMetaObject::invokeMethod(page, "openKeys", Q_RETURN_ARG(QVariant, window)));
+    auto *keys = qobject_cast<QQuickWindow *>(window.value<QObject *>());
+    QVERIFY(keys); // a window on desktop; the mobile branch opens a sheet
+    QCOMPARE(keys->property("jid").toString(), QString("quiet@example.com"));
+    QVERIFY(QMetaObject::invokeMethod(keys, "close"));
+    QCoreApplication::processEvents();
+
+    // Nothing to show for a room, and nothing to open.
+    const Chat room = open("room@example.com", true);
+    auto *roomPage = room.win()->findChild<QObject *>("chatPane");
+    QVERIFY(roomPage);
+    QVariant none;
+    QVERIFY(QMetaObject::invokeMethod(roomPage, "openKeys", Q_RETURN_ARG(QVariant, none)));
+    QVERIFY(!none.value<QObject *>());
+}
+
 void TestChatPage::reactionChipsShowTheBackendSet() {
     const Chat chat = open("react@example.com");
     QVERIFY(chat.feed);

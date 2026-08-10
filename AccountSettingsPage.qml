@@ -47,28 +47,9 @@ Page {
 
     background: Rectangle { color: Theme.background }
 
-    // 8-char groups, the shape fingerprints are compared in.
-    function fingerprintGroups(hex) {
-        const clean = (hex || "").replace(/\s+/g, "")
-        let groups = []
-        for (let i = 0; i < clean.length; i += 8)
-            groups.push(clean.substr(i, 8))
-        return groups
-    }
-
-    // The fewest rows the width allows, then evened out across them: a stub
-    // last row makes two keys harder to compare line by line.
-    function fingerprintColumns(available, groupWidth, gap, groups) {
-        if (groups <= 0 || groupWidth <= 0)
-            return 1
-        const fits = Math.max(1, Math.floor((available + gap) / (groupWidth + gap)))
-        const rows = Math.ceil(groups / Math.min(fits, groups))
-        return Math.ceil(groups / rows)
-    }
-
     // QML has no clipboard of its own; a TextEdit's copy() is the way to one.
-    function copyFingerprint(hex) {
-        clipboard.text = page.fingerprintGroups(hex).join(" ")
+    function copyFingerprint(spaced) {
+        clipboard.text = spaced
         clipboard.selectAll()
         clipboard.copy()
         clipboard.deselect()
@@ -116,58 +97,6 @@ Page {
             anchors.margins: 14
             spacing: 10
         }
-    }
-
-    // A key, its caption, and click-to-copy. The groups sit in equal columns
-    // across the full width, so a key reads down as well as across.
-    component Fingerprint: ColumnLayout {
-        id: fp
-        property string hex: ""
-        property string note: ""
-        spacing: 2
-
-        readonly property int groupSize: 13
-        readonly property int groupGap: 10
-        readonly property var groups: page.fingerprintGroups(fp.hex)
-
-        TextMetrics {
-            id: groupMetrics
-            font.family: "monospace"
-            font.pixelSize: fp.groupSize
-            text: "00000000"
-        }
-
-        Grid {
-            id: grid
-            objectName: "fingerprintGroups"
-            Layout.fillWidth: true
-            columns: page.fingerprintColumns(fp.width, groupMetrics.width,
-                                             fp.groupGap, fp.groups.length)
-            columnSpacing: fp.groupGap
-            rowSpacing: 2
-            readonly property real cellWidth:
-                (fp.width - grid.columnSpacing * (grid.columns - 1)) / grid.columns
-
-            Repeater {
-                model: fp.groups
-                delegate: Text {
-                    required property string modelData
-                    objectName: "fingerprintGroup"
-                    width: grid.cellWidth
-                    text: modelData
-                    color: Theme.textPrimary
-                    font.family: "monospace"
-                    font.pixelSize: fp.groupSize
-                }
-            }
-        }
-        RowLayout {
-            spacing: 8
-            Caption { text: "OMEMO fingerprint" ; font.bold: true }
-            Caption { text: fp.note; visible: fp.note !== "" }
-        }
-        HoverHandler { cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: page.copyFingerprint(fp.hex) }
     }
 
     header: Rectangle {
@@ -328,6 +257,7 @@ Page {
                     visible: page.devices !== null && page.devices.ownFingerprint !== ""
                     hex: page.devices ? page.devices.ownFingerprint : ""
                     note: "this device"
+                    onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                 }
 
                 // The OMEMO store is built when the account first connects, so
@@ -405,6 +335,7 @@ Page {
                             Layout.fillWidth: true
                             hex: deviceRow.fingerprint
                             note: deviceRow.active ? "" : "(inactive)"
+                            onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                         }
 
                         // The backend pins a rotated key, so there is nothing

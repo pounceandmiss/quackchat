@@ -43,6 +43,8 @@ Item {
     // step instead: message selection first, then the open chat in the
     // stacked layout. Returns false when there's nothing left to pop.
     function handleBack() {
+        if (chatPage.closeKeys())
+            return true
         if (chatPage.selectionMode) {
             chatPage.clearSelection()
             return true

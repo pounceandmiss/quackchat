@@ -29,6 +29,21 @@ Item {
     // into these.
     property string status: "sent"
 
+    // Whether this message was handled by OMEMO. Independent of `status`: the
+    // padlock says how the message was carried, the tick says how far it got,
+    // so a failed encrypted message shows both rather than hiding one. A
+    // message tacky could not decrypt is encrypted too - its body is the
+    // placeholder, and the padlock is honest about where it came from.
+    property bool encrypted: false
+    // Whether the chat this message sits in is set to encrypt, which is what
+    // decides if an unencrypted one is worth pointing out.
+    property bool chatEncrypting: false
+
+    // Both already folded by the page, as `status` is: the bubble draws the
+    // choices, it does not work out which ones apply.
+    property bool canRetry: false
+    property bool canResendPlain: false
+
     property bool selected: false
     property bool selectionMode: false
 
@@ -40,6 +55,8 @@ Item {
     signal copyRequested()
     signal replyRequested()
     signal reactRequested(string emoji)
+    signal retryRequested()
+    signal resendPlainRequested()
     // Tapping the quote jumps to the message it previews.
     signal quoteTapped()
 
@@ -125,6 +142,26 @@ Item {
         MenuEntry { text: "Reply";  onTriggered: root.replyRequested() }
         MenuEntry { text: "Copy";   onTriggered: root.copyRequested() }
         MenuEntry { text: "Select"; onTriggered: root.toggleRequested() }
+        // Only offered on a message that needs them. The height goes with the
+        // condition rather than with `visible`, which the menu drives itself:
+        // an entry left at full height would hold a blank slot in the column.
+        MenuEntry {
+            objectName: "retryEntry"
+            text: "Retry"
+            visible: root.canRetry
+            height: root.canRetry ? 40 : 0
+            onTriggered: root.retryRequested()
+        }
+        MenuEntry {
+            objectName: "resendPlainEntry"
+            text: "Send without encryption"
+            // A downgrade to warn about, not a deletion to fear; the tick has
+            // the negative colour already.
+            labelColor: Theme.warning
+            visible: root.canResendPlain
+            height: root.canResendPlain ? 40 : 0
+            onTriggered: root.resendPlainRequested()
+        }
     }
 
     // A Popup so it floats in the window overlay above the bubble, never
@@ -243,7 +280,35 @@ Item {
 
         Rectangle {
             id: bubble
-            color: root.outgoing ? Theme.bubbleOut : Theme.bubbleIn
+            objectName: "bubbleBody"
+            // A message in the clear is only worth remarking on while the chat
+            // is set to encrypt - the same message in a chat with encryption
+            // turned off is exactly what was asked for, and looks ordinary.
+            readonly property color base: root.outgoing ? Theme.bubbleOut : Theme.bubbleIn
+            readonly property color exposed: Qt.tint(bubble.base,
+                                                     Qt.rgba(Theme.warning.r, Theme.warning.g,
+                                                             Theme.warning.b, 0.55))
+            readonly property bool flagged: !root.encrypted && root.chatEncrypting
+            readonly property color toColor: bubble.flagged ? bubble.exposed : bubble.base
+            readonly property color fromColor: bubble.flagged ? bubble.base : bubble.exposed
+
+            // 0 while the new colour is still crossing, 1 once it has arrived.
+            property real sweep: 1
+            onFlaggedChanged: sweepAnim.restart()
+            NumberAnimation {
+                id: sweepAnim
+                target: bubble
+                property: "sweep"
+                from: 0
+                to: 1
+                duration: 420
+                easing.type: Easing.InOutCubic
+            }
+
+            // A flat fill either side of the change. The gradient belongs to
+            // the wash below and goes with it - left on the bubble it would
+            // settle as a permanent two-tone ramp rather than a colour.
+            color: sweepAnim.running ? bubble.fromColor : bubble.toColor
             radius: 14
             anchors.right: root.outgoing ? parent.right : undefined
             anchors.left:  root.outgoing ? undefined : parent.left
@@ -262,16 +327,43 @@ Item {
                 z: -1
             }
 
+            // The new colour crossing the bubble from the left, over the old
+            // one underneath. Only around while it is moving, so what is left
+            // afterwards is the flat fill and not this. Its trailing edge fades
+            // by alpha alone - fading towards a colour would tint the middle of
+            // the sweep with whatever that colour was.
+            Rectangle {
+                id: wash
+                objectName: "bubbleWash"
+                anchors.fill: parent
+                radius: parent.radius
+                visible: sweepAnim.running
+                readonly property color faded: Qt.rgba(bubble.toColor.r, bubble.toColor.g,
+                                                       bubble.toColor.b, 0)
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: bubble.toColor }
+                    GradientStop { position: bubble.sweep; color: bubble.toColor }
+                    GradientStop { position: Math.min(1, bubble.sweep + 0.18); color: wash.faded }
+                    GradientStop { position: 1; color: wash.faded }
+                }
+            }
+
             // Little tail on the bottom corner
             Canvas {
+                id: tail
+                objectName: "bubbleTail"
                 width: 12; height: 14
                 anchors.bottom: parent.bottom
                 anchors.right: root.outgoing ? parent.right : undefined
                 anchors.left:  root.outgoing ? undefined : parent.left
                 anchors.rightMargin: root.outgoing ? -5 : 0
                 anchors.leftMargin:  root.outgoing ? 0 : -5
-                // Repaint when the bubble color changes (theme swap)
-                property color fill: root.outgoing ? Theme.bubbleOut : Theme.bubbleIn
+                // Crossfaded over the same span as the wash rather than taking
+                // the bubble's settled colour, which would snap at the end
+                // while the fill beside it was still moving.
+                property color fill: bubble.toColor
+                Behavior on fill { ColorAnimation { duration: 420 } }
                 onFillChanged: requestPaint()
                 onPaint: {
                     var ctx = getContext("2d");
@@ -380,6 +472,16 @@ Item {
                 RowLayout {
                     Layout.alignment: Qt.AlignRight
                     spacing: 4
+                    // Ahead of the time, so it keeps its place on an incoming
+                    // message, where the tick beside it is not drawn. Bigger
+                    // than the text around it because the colour form of the
+                    // glyph is detailed enough to smudge at footnote size.
+                    Text {
+                        objectName: "lockBadge"
+                        Layout.alignment: Qt.AlignVCenter
+                        text: root.encrypted ? "🔒" : "🔓"
+                        font.pixelSize: 16
+                    }
                     Text {
                         text: root.time
                         color: Theme.textDim

@@ -46,6 +46,10 @@ private slots:
     void markupRoleReadsTheContentUnion();
     void markupRoleFollowsTheQuoteColor();
     void replyRolesAreAlwaysStrings();
+    void encryptionRolesAreAlwaysStrings();
+    void statusCarriesTheFailureReason();
+    void plaintextResendClearsTheStamp();
+    void partialStatusLeavesTheFailureReason();
     void remoteStatusTracksTheFarEnd();
     void reactionsComeFromTheAggregatedMap();
     void anchorOnScreenKeepsTheWindow();
@@ -425,6 +429,65 @@ void TestChatModel::replyRolesAreAlwaysStrings() {
     QCOMPARE(author.typeId(), QMetaType::QString);
     QVERIFY(body.toString().isEmpty());
     QVERIFY(author.toString().isEmpty());
+}
+
+// Same undefined trap as the reply roles, and the same fix: a cleartext row
+// carries neither key, and a bubble reading them must see empty strings.
+void TestChatModel::encryptionRolesAreAlwaysStrings() {
+    ChatModel m;
+    m.applyBatch(msgs(R"([{"timestamp":100,"content":{"type":"text","body":"hi"}}])"));
+    const QVariant enc = m.data(m.index(0), ChatModel::EncryptionRole);
+    const QVariant why = m.data(m.index(0), ChatModel::FailReasonRole);
+    QCOMPARE(enc.typeId(), QMetaType::QString);
+    QCOMPARE(why.typeId(), QMetaType::QString);
+    QVERIFY(enc.toString().isEmpty());
+    QVERIFY(why.toString().isEmpty());
+}
+
+// An encryption that never came off fails the row outright rather than going
+// out in clear, and says so in fail_reason - which is what offers the user a
+// plaintext resend instead of a plain retry.
+void TestChatModel::statusCarriesTheFailureReason() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300,"is_outgoing":true,
+        "encryption":"omemo","server_status":"pending"}])"));
+    feedEvent(m, R"(["event","message","Status",{"acc":"me@h","jid":"a@h",
+        "timestamp":300,"server_status":"failed","fail_reason":"encrypt"}])");
+    QCOMPARE(m.data(m.index(0), ChatModel::ServerStatusRole).toString(), QString("failed"));
+    QCOMPARE(m.data(m.index(0), ChatModel::FailReasonRole).toString(), QString("encrypt"));
+    QCOMPARE(m.data(m.index(0), ChatModel::EncryptionRole).toString(), QString("omemo"));
+}
+
+// A plaintext resend rewrites the row's stamp, and the padlock has to come off
+// with it - a message drawn as encrypted that went out in clear is the worst
+// thing this feature can do. The backend reports the new stamp on <Status>.
+void TestChatModel::plaintextResendClearsTheStamp() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300,"is_outgoing":true,
+        "encryption":"omemo","server_status":"failed","fail_reason":"encrypt"}])"));
+    feedEvent(m, R"(["event","message","Status",{"acc":"me@h","jid":"a@h",
+        "timestamp":300,"server_status":"pending","fail_reason":"","encryption":""}])");
+    QCOMPARE(m.data(m.index(0), ChatModel::EncryptionRole).toString(), QString());
+    QCOMPARE(m.data(m.index(0), ChatModel::FailReasonRole).toString(), QString());
+}
+
+// <Status> carries only what changed, and an upload failure names no reason at
+// all - so a stale fail_reason outlives the failure it described. Anything
+// gating on it has to read the status alongside it.
+void TestChatModel::partialStatusLeavesTheFailureReason() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300,"is_outgoing":true,
+        "server_status":"failed","fail_reason":"encrypt"}])"));
+    feedEvent(m, R"(["event","message","Status",
+        {"acc":"me@h","jid":"a@h","timestamp":300,"server_status":""}])");
+    QCOMPARE(m.data(m.index(0), ChatModel::ServerStatusRole).toString(), QString());
+    QCOMPARE(m.data(m.index(0), ChatModel::FailReasonRole).toString(), QString("encrypt"));
 }
 
 // goto_result's anchor decides the work: one already displayed only needs

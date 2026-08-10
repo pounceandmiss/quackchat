@@ -41,6 +41,49 @@ Page {
         }
     }
 
+    // Their keys, hosted the way this app hosts every other page: a window
+    // where there are windows, a full-screen sheet where there are not. The
+    // page is instantiated from both the shell and a pop-out, so neither of
+    // them has to know which.
+    function openKeys() {
+        if (!page.hasChat || page.chatGroupchat)
+            return null
+        if (Theme.mobile) {
+            keysSheet.open()
+            return null
+        }
+        return AppWindows.omemoKeys(page.account, page.chatJid, page.chatName)
+    }
+
+    // Answers whether it had anything to close, so the Android back chain knows
+    // whether the press was spent here.
+    function closeKeys() {
+        if (!keysSheet.opened)
+            return false
+        keysSheet.close()
+        return true
+    }
+
+    Dialog {
+        id: keysSheet
+        objectName: "keysSheet"
+        parent: Overlay.overlay
+        modal: true
+        padding: 0
+        x: 0
+        y: 0
+        width: parent ? parent.width : 0
+        height: parent ? parent.height : 0
+
+        OmemoKeysPage {
+            anchors.fill: parent
+            account: page.account
+            jid: page.chatJid
+            name: page.chatName
+            onDone: keysSheet.close()
+        }
+    }
+
     // Hidden helper that places copied message text on the system clipboard.
     TextEdit { id: clip; visible: false }
 
@@ -53,6 +96,14 @@ Page {
         // The palette's literal, since the markup wants a CSS color and the
         // typed accessor would hand over a QColor.
         quoteColor: Theme.p.quote
+    }
+
+    OmemoChat {
+        id: omemo
+        backend: App.backend
+        account: page.account
+        jid: page.chatJid
+        groupchat: page.chatGroupchat
     }
 
     // ChatModel has no "selected" role, so selection lives here, keyed by each
@@ -157,6 +208,23 @@ Page {
         if (remote === "read")
             return "read"
         return remote === "delivered" ? "delivered" : "sent"
+    }
+
+    // Only our own messages can be sent again, and only the ones that did not
+    // get out.
+    function canRetry(outgoing, status) {
+        return outgoing && status === "failed"
+    }
+
+    // The escape hatch for a message the encryption itself refused: the keys
+    // were missing or unusable and no amount of waiting will change it, so the
+    // choice is to send this one in the clear or not at all. A delivery failure
+    // has nothing to do with encryption, and a message still on its way is not
+    // stuck - both take the plain retry instead. fail_reason is read alongside
+    // the status because it outlives the failure that set it.
+    function canResendPlain(outgoing, status, encryption, failReason) {
+        return outgoing && status === "failed"
+            && encryption === "omemo" && failReason === "encrypt"
     }
     function sendCurrent() {
         const t = input.text.trim()
@@ -381,6 +449,8 @@ Page {
                 required property bool outgoing
                 required property string serverStatus
                 required property string remoteStatus
+                required property string encryption
+                required property string failReason
                 required property var timestamp
                 required property var reactions
                 width: feed.width
@@ -401,6 +471,14 @@ Page {
                     outgoing: wrap.outgoing
                     time: page.fmtTime(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)
+                    encrypted: wrap.encryption === "omemo"
+                    // A room never encrypts, so nothing in one is remarkable.
+                    chatEncrypting: omemo.available && omemo.enabled
+                    canRetry: page.canRetry(wrap.outgoing, status)
+                    canResendPlain: page.canResendPlain(wrap.outgoing, status,
+                                                        wrap.encryption, wrap.failReason)
+                    onRetryRequested: chatModel.resend(wrap.timestamp, false)
+                    onResendPlainRequested: chatModel.resend(wrap.timestamp, true)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     reactions: wrap.reactions
@@ -588,6 +666,66 @@ Page {
                 anchors.fill: parent
                 anchors.margins: 10
                 spacing: 10
+                // Beside the box you type in, because it says how what you are
+                // typing will go out. Not an IconButton: that is a ToolButton,
+                // and its own press handling would swallow the long press.
+                Item {
+                    objectName: "omemoToggle"
+                    visible: omemo.available && page.hasChat
+                    Layout.preferredWidth: visible ? 32 : 0
+                    Layout.fillHeight: true
+                    Text {
+                        anchors.centerIn: parent
+                        // As on the bubbles: the colour form of the glyph, so
+                        // the shape carries the state rather than a tint.
+                        text: omemo.enabled ? "🔒" : "🔓"
+                        opacity: omemo.enabled ? 1 : 0.55
+                        font.pixelSize: 20
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        onTapped: omemo.enabled = !omemo.enabled
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        onTapped: lockMenu.popup()
+                    }
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton
+                        onLongPressed: lockMenu.popup()
+                    }
+
+                    // The keys live behind the control that says whether they
+                    // are being used - the same pairing the chat menu has.
+                    Menu {
+                        id: lockMenu
+                        objectName: "lockMenu"
+                        width: 170
+                        background: Rectangle {
+                            color: Theme.surface
+                            radius: 10
+                            border.color: Theme.hairline
+                        }
+                        MenuItem {
+                            id: keysEntry
+                            objectName: "keysEntry"
+                            height: 40
+                            text: "OMEMO keys…"
+                            contentItem: Text {
+                                text: keysEntry.text
+                                color: Theme.textPrimary
+                                font.pixelSize: 14
+                                verticalAlignment: Text.AlignVCenter
+                                leftPadding: 8
+                            }
+                            background: Rectangle {
+                                color: keysEntry.highlighted ? Theme.menuHover : "transparent"
+                                radius: 6
+                            }
+                            onTriggered: page.openKeys()
+                        }
+                    }
+                }
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true

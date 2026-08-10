@@ -48,6 +48,8 @@ public:
         ReactionsRole,   // aggregated map: emoji -> {reactors, mine}
         ReplyBodyRole,   // one-line preview of the message this one answers
         ReplyAuthorRole, // and who wrote it; both empty when this is no reply
+        EncryptionRole,  // "omemo" when the row is OMEMO, "" for cleartext
+        FailReasonRole,  // why a failed row failed: encrypt, delivery, or ""
         RawRole,
     };
     Q_ENUM(Role)
@@ -89,6 +91,9 @@ public:
     Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
     // Toggles one emoji in our own set for that message, per XEP-0444; the
     // same call again takes it back.
+    // Another go at a message that did not get out. plaintext drops this one
+    // row's encryption; the chat's own switch is left alone.
+    Q_INVOKABLE void resend(qlonglong ts, bool plaintext = false);
     Q_INVOKABLE void react(qlonglong ts, const QString &emoji);
     Q_INVOKABLE void reactClear(qlonglong ts);
     Q_INVOKABLE void cullOld(int count);          // view dropped oldest rows

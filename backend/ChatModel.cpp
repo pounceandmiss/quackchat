@@ -54,6 +54,11 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case ReplyBodyRole:    return m.value(QStringLiteral("reply_body")).toString();
     case ReplyAuthorRole:
         return m.value(QStringLiteral("reply_author_jid")).toString();
+    // Intent, not outcome: a row that was meant to go out encrypted keeps this
+    // even when the encryption never came off, which is what tells a failure
+    // "could not encrypt" apart from "could not deliver".
+    case EncryptionRole:   return m.value(QStringLiteral("encryption")).toString();
+    case FailReasonRole:   return m.value(QStringLiteral("fail_reason")).toString();
     case RawRole:          return m;
     default:               return {};
     }
@@ -72,6 +77,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {ReactionsRole, "reactions"},
         {ReplyBodyRole, "replyBody"},
         {ReplyAuthorRole, "replyAuthor"},
+        {EncryptionRole, "encryption"},
+        {FailReasonRole, "failReason"},
         {RawRole, "raw"},
     };
 }
@@ -304,6 +311,16 @@ void ChatModel::send(const QString &body, qlonglong replyToTs) {
 
 // The aggregated map comes back as a <Reactions> event, so neither of these
 // touches the row: they ask, and the backend answers with the whole set.
+void ChatModel::resend(qlonglong ts, bool plaintext) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("resend"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts},
+                                  {QStringLiteral("plaintext"), plaintext ? 1 : 0}});
+}
+
 void ChatModel::react(qlonglong ts, const QString &emoji) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty() || emoji.isEmpty())
         return;

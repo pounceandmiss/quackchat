@@ -10,6 +10,7 @@
 
 #include "AccountSettings.h"
 #include "AppController.h"
+#include "OmemoDevicesModel.h"
 
 class TestQmlLoad : public QObject {
     Q_OBJECT
@@ -229,6 +230,91 @@ private slots:
         // AppWindows holds this one, so it would otherwise outlive the engine's
         // singletons and re-evaluate its bindings against them on the way down.
         // QQmlApplicationEngine drops its windows first.
+        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
+        QCoreApplication::processEvents();
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // The same devices model as the account's own panel, pointed at a contact
+    // instead: every device they have is listed, and none of it is ours.
+    void loadsOmemoKeysWindow() {
+        QStringList warnings;
+        QQmlEngine e;
+        e.singletonInstance<AppController *>("Quack", "App");
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQmlComponent comp(&e, "Quack", "OmemoKeysWindow");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> win(
+            comp.createWithInitialProperties({{"account", "me@example.com"},
+                                              {"jid", "friend@example.com"},
+                                              {"name", "Friend"}}));
+        QVERIFY(!win.isNull());
+        auto *w = qobject_cast<QQuickWindow *>(win.data());
+        QVERIFY(w);
+        w->grabWindow();
+        QCoreApplication::processEvents();
+
+        // Two models: the contact's devices, and this account's own key for the
+        // other half of a comparison.
+        const auto models = w->findChildren<OmemoDevicesModel *>();
+        QCOMPARE(models.size(), 2);
+        OmemoDevicesModel *devices = nullptr;
+        OmemoDevicesModel *own = nullptr;
+        for (OmemoDevicesModel *m : models)
+            (m->jid() == QLatin1String("friend@example.com") ? devices : own) = m;
+        QVERIFY(devices);
+        QVERIFY(own);
+        QCOMPARE(own->jid(), QString("me@example.com"));
+
+        own->applyOwnFingerprint(QString(64, QChar('c')));
+        QCoreApplication::processEvents();
+        QQuickItem *ownFp = findItem(w->contentItem(), "ownFingerprint");
+        QVERIFY(ownFp);
+        QVERIFY(ownFp->property("visible").toBool());
+
+        QObject *notice = w->findChild<QObject *>("noKeysNotice");
+        QVERIFY(notice);
+        QVERIFY(notice->property("visible").toBool()); // nothing known yet
+
+        devices->applyTrustList({device(7, "trusted"), device(8, "undecided"),
+                                 device(9, "untrusted")});
+        QCoreApplication::processEvents();
+        QObject *list = w->findChild<QObject *>("deviceList");
+        QVERIFY(list);
+        // Every one of theirs, including the id our own account happens to use:
+        // the exclusion is about our own device, and this is not our account.
+        QCOMPARE(list->property("count").toInt(), 3);
+        QVERIFY(!notice->property("visible").toBool());
+        QVERIFY(findItem(w->contentItem(), "devicePicker"));
+        QObject *setAll = w->findChild<QObject *>("setAllRow");
+        QVERIFY(setAll);
+        QVERIFY(setAll->property("visible").toBool());
+
+        // Blind trust is account-wide, so it stays on the account's page - a
+        // per-contact panel is the wrong place to turn it off for everyone.
+        QVERIFY(!findItem(w->contentItem(), "blindTrustBox"));
+
+        // One window per contact: a second view of the same trust state would
+        // argue with the first over what is on screen.
+        auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
+        QVERIFY(mgr);
+        QVariant first, again;
+        QVERIFY(QMetaObject::invokeMethod(mgr, "omemoKeys", Q_RETURN_ARG(QVariant, first),
+                                          Q_ARG(QVariant, QVariant("me@example.com")),
+                                          Q_ARG(QVariant, QVariant("friend@example.com")),
+                                          Q_ARG(QVariant, QVariant("Friend"))));
+        QVERIFY(first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(mgr, "omemoKeys", Q_RETURN_ARG(QVariant, again),
+                                          Q_ARG(QVariant, QVariant("me@example.com")),
+                                          Q_ARG(QVariant, QVariant("friend@example.com")),
+                                          Q_ARG(QVariant, QVariant("Friend"))));
+        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
+
         QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
         QCoreApplication::processEvents();
 

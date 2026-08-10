@@ -31,6 +31,10 @@ private slots:
     void markupFollowsTackysStylingSpans();
     // Replies are XEP-0461: the backend owns the reference and the quote.
     void replySendCarriesTheTargetAndComesBackResolved();
+    // A 1:1 encrypts unless the chat says otherwise, and the row says which.
+    void sendsAreStampedOmemoByDefault();
+    // Sending one message in the clear rewrites that row's stamp, and only it.
+    void plaintextResendClearsTheStamp();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -164,6 +168,78 @@ void TestIntegration::replySendCarriesTheTargetAndComesBackResolved() {
     // A plain send stays plain, so the bubble knows not to draw a quote.
     QVERIFY(chat.data(chat.index(1), ChatModel::ReplyBodyRole).toString().isEmpty());
     QVERIFY(chat.data(chat.index(1), ChatModel::ReplyAuthorRole).toString().isEmpty());
+
+    backend.stop();
+}
+
+// The default nobody sets: a 1:1 is encrypted, and turning the chat's switch
+// off is what puts a message in the clear. Nothing is connected here, so these
+// are stamped but unsent - which is the distinction the padlock draws.
+void TestIntegration::sendsAreStampedOmemoByDefault() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+
+    backend.notify("message", "send",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"chat", "friend@example.com"},
+                               {"body", "under the lock"}});
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 1, 5000);
+    QCOMPARE(chat.data(chat.index(0), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+    QCOMPARE(chat.data(chat.index(0), ChatModel::ServerStatusRole).toString(),
+             QString("pending"));
+    QVERIFY(chat.data(chat.index(0), ChatModel::FailReasonRole).toString().isEmpty());
+
+    backend.notify("omemo", "setEnabled",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"jid", "friend@example.com"},
+                               {"value", 0}});
+    backend.notify("message", "send",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"chat", "friend@example.com"},
+                               {"body", "in the open"}});
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 2, 5000);
+    QVERIFY(chat.data(chat.index(0), ChatModel::EncryptionRole).toString().isEmpty());
+    // The switch decides the next message, not the ones already sent.
+    QCOMPARE(chat.data(chat.index(1), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+
+    backend.stop();
+}
+
+// The downgrade has to reach the row on screen: a message drawn as encrypted
+// that went out in the clear is the worst this can do. The backend reports the
+// new stamp on <Status>, which is what takes the padlock off.
+void TestIntegration::plaintextResendClearsTheStamp() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+
+    backend.notify("message", "send",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"chat", "friend@example.com"},
+                               {"body", "let me out"}});
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 1, 5000);
+    QCOMPARE(chat.data(chat.index(0), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+
+    const qlonglong ts =
+        chat.data(chat.index(0), ChatModel::TimestampRole).toLongLong();
+    chat.resend(ts, true);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        chat.data(chat.index(0), ChatModel::EncryptionRole).toString().isEmpty(), 5000);
+    QCOMPARE(chat.rowCount(), 1); // rewritten in place, not sent again
 
     backend.stop();
 }
