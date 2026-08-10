@@ -546,17 +546,17 @@ Item {
                         }
 
                         Rectangle {
-                            id: chip
+                            id: attChip
                             objectName: "attachmentChip"
                             visible: !thumb.visible
-                            Layout.preferredWidth: Math.min(chipRow.implicitWidth + 20,
+                            Layout.preferredWidth: Math.min(attChipRow.implicitWidth + 20,
                                                             root.maxBubbleWidth)
                             Layout.preferredHeight: 44
                             radius: 10
                             color: Theme.field
 
                             RowLayout {
-                                id: chipRow
+                                id: attChipRow
                                 anchors.fill: parent
                                 anchors.leftMargin: 10
                                 anchors.rightMargin: 10
