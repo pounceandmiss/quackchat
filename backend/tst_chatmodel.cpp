@@ -60,7 +60,7 @@ private slots:
     void fileUpdateFansOutToEveryRowSharingTheUrl();
     void autofetchBlockedIsNotAFailure();
     void fileEventsFilterByAcc();
-    void imageRowsAskForTheirThumbnailOnce();
+    void imageRowsAskForTheirThumbnails();
     void openAttachmentResolvesThroughTheBackend();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
@@ -689,7 +689,6 @@ void TestChatModel::attachmentsRoleReadsTheContentUnion() {
     m.applyBatch(msgs(kMediaRow));
     m.applyBatch(msgs(R"([{"timestamp":50,"content":{"type":"text","body":"hi"}}])"));
 
-    QVERIFY(m.data(m.index(0), ChatModel::HasMediaRole).toBool());
     const QVariantMap a = att0(m);
     QCOMPARE(a.value("url").toString(), QString("https://h/a.png"));
     QCOMPARE(a.value("type").toString(), QString("image"));
@@ -697,14 +696,13 @@ void TestChatModel::attachmentsRoleReadsTheContentUnion() {
     // Nothing has happened to it yet, but every key the delegate binds to is
     // present: a missing one would reach QML as undefined.
     QCOMPARE(a.value("state").toString(), QString());
-    QCOMPARE(a.value("thumbpath").toString(), QString());
+    QVERIFY(a.value("thumburl").toUrl().isEmpty());
     QCOMPARE(a.value("total").toInt(), 0);
 
     // A text row is an empty list, not an invalid variant.
     const QVariant text = m.data(m.index(1), ChatModel::AttachmentsRole);
     QCOMPARE(text.typeId(), QMetaType::QVariantList);
     QVERIFY(text.toList().isEmpty());
-    QVERIFY(!m.data(m.index(1), ChatModel::HasMediaRole).toBool());
 
     // A tombstone keeps no attachments either, same as it keeps no body.
     m.applyRetracted(100);
@@ -724,8 +722,8 @@ void TestChatModel::fileUpdateMergesIntoTheRow() {
 
     const QVariantMap a = att0(m);
     QCOMPARE(a.value("state").toString(), QString("done"));
-    QCOMPARE(a.value("thumbpath").toString(), QString("/cache/a_320.png"));
-    // The view binds to a url, which only the model can build correctly.
+    // The thumbnail reaches the view as a url, which the path it arrived as
+    // cannot safely be turned into up there.
     QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a_320.png"));
     QCOMPARE(a.value("localpath").toString(), QString("/data/a.png"));
     QCOMPARE(a.value("total").toInt(), 1234);
@@ -762,9 +760,9 @@ void TestChatModel::fileUpdateFansOutToEveryRowSharingTheUrl() {
         "state":"done","url":"https://h/a.png","thumbpath":"/cache/a.png"}])");
 
     QCOMPARE(chg.count(), 2);
-    QCOMPARE(att0(m, 0).value("thumbpath").toString(), QString("/cache/a.png"));
-    QCOMPARE(att0(m, 1).value("thumbpath").toString(), QString("/cache/a.png"));
-    QCOMPARE(att0(m, 2).value("thumbpath").toString(), QString());
+    QCOMPARE(att0(m, 0).value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
+    QCOMPARE(att0(m, 1).value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
+    QVERIFY(att0(m, 2).value("thumburl").toUrl().isEmpty());
 }
 
 // The policy holding an image back is a decision, not an error: the view shows
@@ -796,11 +794,13 @@ void TestChatModel::fileEventsFilterByAcc() {
 
     feedEvent(m, R"(["event","file","Update",{"acc":"other@h","direction":"download",
         "state":"done","url":"https://h/a.png","thumbpath":"/cache/a.png"}])");
-    QCOMPARE(att0(m).value("thumbpath").toString(), QString());
+    QVERIFY(att0(m).value("thumburl").toUrl().isEmpty());
 }
 
-// tacky coalesces downloads by url, so asking twice for one is noise on the wire.
-void TestChatModel::imageRowsAskForTheirThumbnailOnce() {
+// The fetch is what makes a thumbnail exist, and its arguments are what submit
+// it to the autofetch policy - so the whole of the row's inline image hangs on
+// getting this call right.
+void TestChatModel::imageRowsAskForTheirThumbnails() {
     TackyBackend backend;
     ChatModel m;
     m.setBackend(&backend);
@@ -827,17 +827,19 @@ void TestChatModel::imageRowsAskForTheirThumbnailOnce() {
     for (const QList<QVariant> &call : sent)
         if (call.at(0).toString() == "file" && call.at(1).toString() == "download")
             downloads.append(call.at(2));
-    // The repeated url is asked for once, and the plain file not at all: only
-    // images have a thumbnail to derive.
-    QCOMPARE(downloads.size(), 2);
+    // One per image row, the plain file not at all: only an image has a
+    // thumbnail to derive. The two rows sharing a url both ask, and the file
+    // module joins them into the one transfer.
+    QCOMPARE(downloads.size(), 3);
 
     const QVariantMap first = downloads.at(0).toMap();
     QCOMPARE(first.value("url").toString(), QString("https://h/a.png"));
     QCOMPARE(first.value("acc").toString(), QString("me@h"));
     QCOMPARE(first.value("from").toString(), QString("her@h"));
     QCOMPARE(first.value("auto").toInt(), 1);
+    QCOMPARE(downloads.at(1).toMap().value("url").toString(), QString("https://h/a.png"));
     // Our own send is exempt from the policy.
-    QCOMPARE(downloads.at(1).toMap().value("auto").toInt(), 0);
+    QCOMPARE(downloads.at(2).toMap().value("auto").toInt(), 0);
 
     // Tapping a held-back image asks again, this time ungated.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",

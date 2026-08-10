@@ -460,10 +460,9 @@ Page {
                 required property var timestamp
                 required property var reactions
                 required property var attachments
-                required property bool hasMedia
                 // A share with no caption still has to copy and select as
                 // something; its filename is what the user sees.
-                readonly property string label: wrap.hasMedia && wrap.body === ""
+                readonly property string label: wrap.body === "" && wrap.attachments.length > 0
                     ? wrap.attachments[0].name : wrap.body
                 width: feed.width
                 height: bubble.height

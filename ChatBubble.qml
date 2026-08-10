@@ -484,7 +484,7 @@ Item {
                         required property var modelData
 
                         readonly property bool isImage: att.modelData.type === "image"
-                        readonly property bool hasThumb: att.modelData.thumbpath !== ""
+                        readonly property bool hasThumb: att.modelData.thumburl != ""
                         readonly property bool busy: att.modelData.state === "active"
                         readonly property bool broke: att.modelData.state === "failed"
                         readonly property string hint: {

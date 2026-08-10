@@ -36,7 +36,6 @@ static QVariantMap idleTransfer() {
             {QStringLiteral("loaded"), 0},
             {QStringLiteral("total"), 0},
             {QStringLiteral("localpath"), QString()},
-            {QStringLiteral("thumbpath"), QString()},
             {QStringLiteral("thumburl"), QUrl()},
             {QStringLiteral("error"), QString()}};
 }
@@ -87,7 +86,6 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case BodyRole:         return bodyOf(m);
     case MarkupRole:       return markupOf(m, m_quoteColor);
     case AttachmentsRole:  return attachmentsOf(m);
-    case HasMediaRole:     return !attachmentsOf(m).isEmpty();
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
     case ServerStatusRole:
         return m.value(QStringLiteral("server_status")).toString();
@@ -118,7 +116,6 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {BodyRole, "body"},
         {MarkupRole, "markup"},
         {AttachmentsRole, "attachments"},
-        {HasMediaRole, "hasMedia"},
         {OutgoingRole, "outgoing"},
         {ServerStatusRole, "serverStatus"},
         {RemoteStatusRole, "remoteStatus"},
@@ -251,7 +248,6 @@ void ChatModel::reload() {
     // The transfers belonged to the rows we just dropped. A re-request for one
     // of their urls is answered from tacky's cache, so nothing is lost.
     m_xfer.clear();
-    m_fetched.clear();
     m_pendingOpen.clear();
     setAtTail(true);
     // Any open bracket belonged to the previous chat; the new one's own
@@ -517,9 +513,8 @@ void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
                   {QStringLiteral("loaded"), a.value(QStringLiteral("loaded"))},
                   {QStringLiteral("total"), a.value(QStringLiteral("total"))},
                   {QStringLiteral("localpath"), a.value(QStringLiteral("localpath"))},
-                  {QStringLiteral("thumbpath"), thumb},
-                  // The view needs a URL, and building one by hand from a path
-                  // loses to the first '#' or '?' in it.
+                  // Kept as a url, not the path it arrived as: the view needs
+                  // one, and building it by hand loses to a '#' in a path.
                   {QStringLiteral("thumburl"),
                    thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
                   {QStringLiteral("error"), a.value(QStringLiteral("error"))}};
@@ -559,10 +554,13 @@ void ChatModel::fetchThumbs(const QVariantMap &msg) {
         if (a.value(QStringLiteral("type")).toString() != QLatin1String("image"))
             continue;
         const QString url = a.value(QStringLiteral("url")).toString();
-        if (url.isEmpty() || m_fetched.contains(url))
+        if (url.isEmpty())
             continue;
-        m_fetched.insert(url);
         // Fire-and-forget: progress and the thumbnail arrive as file <Update>.
+        // Asked for unconditionally: the file module joins an in-flight
+        // download of the same url and serves a finished one from disk, so
+        // keeping our own record of what we have asked for would only be a
+        // second, staler copy of that.
         m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
                           QVariantMap{{QStringLiteral("acc"), m_account},
                                       {QStringLiteral("url"), url},
@@ -579,7 +577,6 @@ void ChatModel::loadAttachment(qlonglong ts, int idx) {
     const QString url = a.value(QStringLiteral("url")).toString();
     if (url.isEmpty() || !m_backend || m_account.isEmpty())
         return;
-    m_fetched.insert(url);
     m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
                       QVariantMap{{QStringLiteral("acc"), m_account},
                                   {QStringLiteral("url"), url}});

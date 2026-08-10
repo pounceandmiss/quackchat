@@ -138,7 +138,6 @@ private slots:
                 {"loaded", 0},
                 {"total", 0},
                 {"localpath", ""},
-                {"thumbpath", thumb},
                 {"thumburl", thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
                 {"error", ""}};
         };

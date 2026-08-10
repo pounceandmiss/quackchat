@@ -43,7 +43,6 @@ public:
         MarkupRole,      // BodyRole as rich text; empty when it needs none
         AttachmentsRole, // the union's attachment list, each merged with the
                          // state of its transfer; empty for a text message
-        HasMediaRole,    // this row carries attachments, caption or not
         OutgoingRole,
         ServerStatusRole, // the hop to our own server
         RemoteStatusRole, // and the hop after it: none/delivered/read
@@ -178,10 +177,9 @@ private:
     QSet<QString> m_inflight;
 
     // Transfer state, which lives beside the rows rather than in them: one
-    // download serves every message quoting the same URL. Both are dropped on
-    // reload - tacky answers a repeat request from its own cache.
+    // download serves every message quoting the same URL. Dropped on reload -
+    // tacky answers a repeat request from its own cache.
     QHash<QString, QVariantMap> m_xfer;   // url -> transfer fields
-    QSet<QString> m_fetched;              // urls already asked for
     QHash<int, QString> m_pendingOpen;    // token -> url, for openAttachment
 };
 
