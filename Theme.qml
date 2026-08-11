@@ -20,6 +20,7 @@ QtObject {
             background:  "#f7f1e6",   // app / chat wallpaper
             background2: "#efe6d2",   // wallpaper gradient end
             surface:     "#ffffff",   // header + input bar
+            rail:        "#ebe0c8",   // account rail / drawer, a step off surface
             field:       "#f2ead9",   // message input pill
             hairline:    "#e7ddc8",   // thin dividers
             bubbleIn:    "#ffffff",   // incoming bubble
@@ -42,6 +43,7 @@ QtObject {
             background:  "#eef3f1",
             background2: "#e2ebe7",
             surface:     "#ffffff",
+            rail:        "#dde8e3",
             field:       "#eaf1ee",
             hairline:    "#d9e4df",
             bubbleIn:    "#ffffff",
@@ -64,6 +66,7 @@ QtObject {
             background:  "#eef2f7",
             background2: "#e2e9f2",
             surface:     "#ffffff",
+            rail:        "#dde6f0",
             field:       "#e9eef5",
             hairline:    "#d7e0ec",
             bubbleIn:    "#ffffff",
@@ -86,6 +89,7 @@ QtObject {
             background:  "#faf1f2",
             background2: "#f3e3e6",
             surface:     "#ffffff",
+            rail:        "#f0dde1",
             field:       "#f6e9eb",
             hairline:    "#ecd8dc",
             bubbleIn:    "#ffffff",
@@ -108,6 +112,7 @@ QtObject {
             background:  "#f1f3ee",
             background2: "#e6ebe0",
             surface:     "#ffffff",
+            rail:        "#e2e8da",
             field:       "#edf0e8",
             hairline:    "#dde3d5",
             bubbleIn:    "#ffffff",
@@ -130,6 +135,7 @@ QtObject {
             background:  "#ededed",
             background2: "#e6e6e6",
             surface:     "#f7f7f7",
+            rail:        "#e0e0e0",
             field:       "#ffffff",
             hairline:    "#d9d9d9",
             bubbleIn:    "#ffffff",
@@ -152,6 +158,7 @@ QtObject {
             background:  "#eceff1",
             background2: "#e2e7ea",
             surface:     "#ffffff",
+            rail:        "#dde3e7",
             field:       "#eceff1",
             hairline:    "#dbe0e3",
             bubbleIn:    "#ffffff",
@@ -174,6 +181,7 @@ QtObject {
             background:  "#0e1621",
             background2: "#0b111a",
             surface:     "#17212b",
+            rail:        "#0a121b",
             field:       "#242f3d",
             hairline:    "#0a0f16",
             bubbleIn:    "#1e2b38",
@@ -196,6 +204,7 @@ QtObject {
             background:  "#1c1322",
             background2: "#150e1a",
             surface:     "#271a30",
+            rail:        "#150e1a",
             field:       "#33243d",
             hairline:    "#100a15",
             bubbleIn:    "#33243d",
@@ -221,6 +230,7 @@ QtObject {
     readonly property color background:  p.background
     readonly property color background2: p.background2
     readonly property color surface:     p.surface
+    readonly property color rail:        p.rail
     readonly property color field:       p.field
     readonly property color hairline:    p.hairline
     readonly property color bubbleIn:    p.bubbleIn
