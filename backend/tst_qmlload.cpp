@@ -1377,6 +1377,61 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Joining a room is a bookmark write with autojoin set - that is what keeps
+    // tacky rejoining it - and the typed nick and password have to ride along.
+    void joinRoomWritesABookmark() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(480, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QObject *sheet = page->findChild<QObject *>("joinRoomSheet");
+        QVERIFY(sheet);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+        // The service box is a guess at where this server keeps its rooms.
+        QCOMPARE(sheet->findChild<QObject *>("joinRoomService")->property("text").toString(),
+                 QString("conference.example.com"));
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        sheet->findChild<QObject *>("joinRoomJid")
+            ->setProperty("text", "Room@Conference.Example.com");
+        sheet->findChild<QObject *>("joinRoomNick")->setProperty("text", "romeo");
+        sheet->findChild<QObject *>("joinRoomPassword")->setProperty("text", "s3cret");
+        QVERIFY(QMetaObject::invokeMethod(sheet, "accept"));
+
+        QCOMPARE(sent.count(), 1);
+        QCOMPARE(sent.at(0).at(0).toString(), QString("bookmarks"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("item"));
+        const QVariantMap args = sent.at(0).at(2).toMap();
+        QCOMPARE(args.value("jid").toString(),
+                 QString("room@conference.example.com"));
+        QCOMPARE(args.value("nick").toString(), QString("romeo"));
+        QCOMPARE(args.value("password").toString(), QString("s3cret"));
+        QCOMPARE(args.value("autojoin").toInt(), 1);
+
+        assertNoQmlErrors(warnings);
+    }
+
     // Joining from the menu has to reach the backend as a bookmark write, and a
     // remove has to wait for the confirmation rather than fire on the click.
     void rowMenuEditsReachTheBackend() {

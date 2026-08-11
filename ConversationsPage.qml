@@ -156,6 +156,12 @@ Page {
             onTriggered: newChatSheet.open()
         }
         OverflowEntry {
+            objectName: "joinRoomEntry"
+            text: "Join room…"
+            enabled: page.account !== ""
+            onTriggered: joinRoomSheet.open()
+        }
+        OverflowEntry {
             text: "New window"
             shortcutHint: "Ctrl+N"
             // Single-window platforms: hide, with height 0 so the menu's
@@ -334,6 +340,17 @@ Page {
             if (addToContacts && page.chatList)
                 page.chatList.addContact(jid, name)
             page.openChat(jid, name, false)
+        }
+    }
+
+    // Joining is a bookmark write; the room's row arrives from the chatlist
+    // event it causes, carrying the ?join suffix that opens it as a group chat.
+    JoinRoomSheet {
+        id: joinRoomSheet
+        account: page.account
+        onJoinRoom: (jid, nick, password) => {
+            if (page.chatList)
+                page.chatList.joinRoom(jid, nick, password)
         }
     }
 
