@@ -12,6 +12,7 @@
 // leg as having no timeout. Every assertion is about pages the local store can
 // satisfy alone.
 #include <QtTest>
+#include <QGuiApplication>
 #include <QSignalSpy>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -135,6 +136,29 @@ class TestChatPage : public QObject {
     // its chance to.
     static void settle() { QTest::qWait(400); }
 
+    // The XML viewer is its own top-level window, so it is reached through the
+    // application rather than down any one chat window's tree. Matched on the
+    // window and not the page inside it: the mobile sheet hosts that same page
+    // off whichever chat window declared it.
+    static QQuickWindow *xmlViewerWindow() {
+        const QWindowList windows = QGuiApplication::topLevelWindows();
+        for (QWindow *w : windows)
+            if (w->objectName() == QLatin1String("messageXmlWindow"))
+                return qobject_cast<QQuickWindow *>(w);
+        return nullptr;
+    }
+
+    static QObject *xmlViewer() {
+        QQuickWindow *win = xmlViewerWindow();
+        return win ? win->findChild<QObject *>("messageXmlPage") : nullptr;
+    }
+
+    static void closeXmlViewer() {
+        if (QQuickWindow *win = xmlViewerWindow())
+            win->close();
+        QTRY_VERIFY(xmlViewerWindow() == nullptr);
+    }
+
 private slots:
     void initTestCase();
     void cleanupTestCase();
@@ -157,6 +181,7 @@ private slots:
     void composerLockIsHiddenInRooms();
     void resendGatingFollowsTheRow();
     void onlyAFailedEncryptionOffersThePlaintextWayOut();
+    void viewXmlShowsTheStanzaTheRowCameWith();
     void togglingTheComposerLockChangesWhatIsSent();
     void keysOpenFromTheComposerLock();
     void reactionChipsShowTheBackendSet();
@@ -194,6 +219,10 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "room@example.com"},
                                          {"body", "who said that"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "xml@example.com"},
+                                         {"body", "look at my stanza"}});
 
     // clear@ turns OMEMO off before its send, so it is the one chat whose rows
     // come back unstamped - every other send here is encrypted by default.
@@ -751,6 +780,72 @@ void TestChatPage::onlyAFailedEncryptionOffersThePlaintextWayOut() {
     chat.model()->applyFields(ts, QVariantMap{{"fail_reason", "delivery"}});
     QTRY_COMPARE(plain->height(), 0.0);
     QVERIFY(retry->height() > 0.0);
+}
+
+// The menu hands over the stanza the row is carrying, laid out. This runs on a
+// desktop, so the menu opens a window; the sheet that hosts the same page on
+// mobile is driven directly at the end, Theme.mobile not being forceable here.
+void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
+    const Chat chat = open("xml@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    // Nothing here reaches a server, so the seeded row was never wired and has
+    // no stanza. Patching one in is the only way to give it one, and the row is
+    // where the viewer reads it from either way.
+    model->applyFields(
+        ts, QVariantMap{{"raw_xml",
+                         "<message to='xml@example.com'><body>look</body></message>"}});
+    const QString laidOut = QStringLiteral("<message to=\"xml@example.com\">\n"
+                                           "  <body>look</body>\n"
+                                           "</message>");
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = nullptr;
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
+        menu = at->findChild<QObject *>("bubbleMenu");
+    QVERIFY(menu);
+    auto *entry = menu->findChild<QQuickItem *>("viewXmlEntry");
+    QVERIFY(entry);
+    QVERIFY(entry->height() > 0.0);
+
+    // The menu's owner is the bubble, so emitting from there is the same trip
+    // the entry makes: bubble signal -> page -> model -> window.
+    QVERIFY(QMetaObject::invokeMethod(menu->parent(), "viewXmlRequested"));
+    QTRY_VERIFY(xmlViewer() != nullptr);
+
+    QObject *viewer = xmlViewer();
+    QCOMPARE(viewer->property("xml").toString(), laidOut);
+    auto *shown = viewer->findChild<QQuickItem *>("xmlText");
+    QVERIFY(shown);
+    QCOMPARE(shown->property("text").toString(), laidOut);
+
+    // A row with nothing recorded says so, rather than opening on a blank box.
+    closeXmlViewer();
+    model->applyFields(ts, QVariantMap{{"raw_xml", QString()}});
+    QVERIFY(QMetaObject::invokeMethod(menu->parent(), "viewXmlRequested"));
+    QTRY_VERIFY(xmlViewer() != nullptr);
+    auto *empty = xmlViewer()->findChild<QQuickItem *>("xmlText");
+    QVERIFY(empty);
+    QVERIFY(empty->property("text").toString().contains("No stanza"));
+    closeXmlViewer();
+
+    // The mobile host is the same page full-screen, so it renders the same way.
+    auto *sheet = chat.win()->findChild<QObject *>("xmlSheet");
+    QVERIFY(sheet);
+    QVERIFY(!sheet->property("opened").toBool());
+    sheet->setProperty("xml", laidOut);
+    QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+    QTRY_VERIFY(sheet->property("opened").toBool());
+    auto *inSheet = chat.win()->findChild<QQuickItem *>("xmlText");
+    QVERIFY(inSheet);
+    QCOMPARE(inSheet->property("text").toString(), laidOut);
+    QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
 }
 
 // The whole path in one go: the padlock in the composer, through tacky's stored

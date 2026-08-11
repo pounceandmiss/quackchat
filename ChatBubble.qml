@@ -64,6 +64,7 @@ Item {
     signal reactRequested(string emoji)
     signal retryRequested()
     signal resendPlainRequested()
+    signal viewXmlRequested()
     // Tapping the quote jumps to the message it previews.
     signal quoteTapped()
 
@@ -182,6 +183,13 @@ Item {
             visible: root.canResendPlain
             height: root.canResendPlain ? 40 : 0
             onTriggered: root.resendPlainRequested()
+        }
+        // Ungated, unlike the two above: a message with nothing recorded is
+        // itself an answer the viewer is there to give.
+        MenuEntry {
+            objectName: "viewXmlEntry"
+            text: "View XML"
+            onTriggered: root.viewXmlRequested()
         }
     }
 

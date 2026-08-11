@@ -98,6 +98,10 @@ public:
     // resolve comes back empty and leaves the window alone.
     Q_INVOKABLE void gotoReplyTarget(qlonglong ts);
     Q_INVOKABLE int rowOfTimestamp(qlonglong ts) const { return indexOfTs(ts); }
+    // The stanza tacky recorded for a message, laid out for the viewer. Empty
+    // for a row that never had one built, an outgoing message still waiting on
+    // a connection being the usual case.
+    Q_INVOKABLE QString rawXml(qlonglong ts) const;
     Q_INVOKABLE void resetToBottom();
     // Advance our read watermark to the newest row. tacky has no "the user is
     // looking at this chat" call - this is the gate that stops notify <Notify>

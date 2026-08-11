@@ -5,6 +5,7 @@
 
 #include "ChatModel.h"
 #include "MessageMarkup.h"
+#include "MessageXml.h"
 #include "TackyBackend.h"
 
 static void feedEvent(ChatModel &m, const QByteArray &json) {
@@ -81,6 +82,9 @@ private slots:
     void catchupBracketMatching();
     void catchupReconcileRepages();
     void catchupReconcileReloadsEmptyWindow();
+    void rawXmlComesStraightOffTheRow();
+    void xmlIsLaidOutOneElementPerLine();
+    void unparseableXmlIsShownAsItIs();
 };
 
 void TestChatModel::ordersNewestFirst() {
@@ -1050,6 +1054,64 @@ void TestChatModel::openAttachmentResolvesThroughTheBackend() {
     m.openAttachment(100, 4);
     m.openAttachment(999, 0);
     QCOMPARE(opened.count(), 0);
+}
+
+// tacky ships the stanza with the message, so the viewer needs no round trip -
+// and a row without one answers plainly empty rather than failing.
+void TestChatModel::rawXmlComesStraightOffTheRow() {
+    ChatModel m;
+    m.applyBatch(msgs(R"([
+        {"timestamp":100,"raw_xml":"<message to='a@h'><body>hi</body></message>"},
+        {"timestamp":200,"raw_xml":""},
+        {"timestamp":300}
+    ])"));
+    QCOMPARE(m.rawXml(100), QString("<message to=\"a@h\">\n  <body>hi</body>\n</message>"));
+    // Never wired, so nothing was ever built for it.
+    QCOMPARE(m.rawXml(200), QString());
+    // And a row whose map carries no such key at all.
+    QCOMPARE(m.rawXml(300), QString());
+    QCOMPARE(m.rawXml(999), QString());
+}
+
+// tacky stores the stanza on one line, unreadable at message length. Past the
+// indenting, what matters is that an element holding only text keeps that text
+// where it stood: that text is the body, and moving it rewrites the message.
+void TestChatModel::xmlIsLaidOutOneElementPerLine() {
+    const QString out = formatMessageXml(QStringLiteral(
+        "<message xmlns='jabber:client' to='a@h' type='chat'>"
+        "<body>hello there</body>"
+        "<active xmlns='http://jabber.org/protocol/chatstates'/>"
+        "<reply xmlns='urn:xmpp:reply:0' to='b@h' id='q'/>"
+        "</message>"));
+    QCOMPARE(out, QString("<message xmlns=\"jabber:client\" to=\"a@h\" type=\"chat\">\n"
+                          "  <body>hello there</body>\n"
+                          "  <active xmlns=\"http://jabber.org/protocol/chatstates\"/>\n"
+                          "  <reply xmlns=\"urn:xmpp:reply:0\" to=\"b@h\" id=\"q\"/>\n"
+                          "</message>"));
+
+    // Escapes survive as escapes; a body reading `&lt;` in the record has to
+    // still read `&lt;` here, or the viewer is misreporting the stanza.
+    QCOMPARE(formatMessageXml(QStringLiteral("<message><body>a &lt; b &amp; c</body></message>")),
+             QString("<message>\n  <body>a &lt; b &amp; c</body>\n</message>"));
+
+    // Prefixes are shown, never resolved into names of Qt's own invention.
+    QCOMPARE(formatMessageXml(QStringLiteral(
+                 "<x:message xmlns:x='jabber:client'><x:body>hi</x:body></x:message>")),
+             QString("<x:message xmlns:x=\"jabber:client\">\n"
+                     "  <x:body>hi</x:body>\n"
+                     "</x:message>"));
+
+    // Nothing to lay out is not an error; it is what the empty state renders.
+    QCOMPARE(formatMessageXml(QString()), QString());
+}
+
+// The stanza is a debug record, so it can be anything at all. Refusing to draw
+// what will not parse would hide the very case worth looking at.
+void TestChatModel::unparseableXmlIsShownAsItIs() {
+    const QString truncated = QStringLiteral("<message to='a@h'><body>cut off");
+    QCOMPARE(formatMessageXml(truncated), truncated);
+    const QString notXml = QStringLiteral("nothing like a stanza");
+    QCOMPARE(formatMessageXml(notXml), notXml);
 }
 
 QTEST_MAIN(TestChatModel)

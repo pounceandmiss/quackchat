@@ -22,6 +22,7 @@ QtObject {
     property Component _chatComp: Component { ChatWindow {} }
     property Component _settingsComp: Component { AccountSettingsWindow {} }
     property Component _keysComp: Component { OmemoKeysWindow {} }
+    property Component _xmlComp: Component { MessageXmlWindow {} }
 
     // Call windows are not spawned on demand - they follow App.calls, which is
     // the only record of what is in flight.
@@ -164,5 +165,11 @@ QtObject {
         if (w)
             mgr._keysWindows[key] = w
         return w
+    }
+
+    // One message's stanza. Read-only, so unlike the two above there is nothing
+    // for a second window to argue over - any number can be open at once.
+    function messageXml(xml) {
+        return _track(mgr._xmlComp.createObject(null, { xml: xml || "" }))
     }
 }

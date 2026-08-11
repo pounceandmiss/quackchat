@@ -76,6 +76,8 @@ Item {
             railDrawer.close()
             return true
         }
+        if (chatPage.closeXml())
+            return true
         if (chatPage.closeKeys())
             return true
         if (chatPage.closeSearch())

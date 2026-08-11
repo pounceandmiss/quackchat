@@ -1,6 +1,7 @@
 #include "ChatModel.h"
 
 #include "MessageMarkup.h"
+#include "MessageXml.h"
 #include "TackyBackend.h"
 
 ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
@@ -80,6 +81,17 @@ QVariantMap ChatModel::attachmentAt(qlonglong ts, int idx) const {
     if (idx < 0 || idx >= atts.size())
         return {};
     return atts.at(idx).toMap();
+}
+
+// Every message tacky sends carries its stanza, so this reads the row rather
+// than asking the backend a second time. Laid out on the way past, as
+// MarkupRole hands over a body the view can draw as it stands.
+QString ChatModel::rawXml(qlonglong ts) const {
+    const int row = indexOfTs(ts);
+    if (row < 0)
+        return {};
+    return formatMessageXml(
+        m_msgs.at(row).value(QStringLiteral("raw_xml")).toString());
 }
 
 int ChatModel::rowCount(const QModelIndex &parent) const {

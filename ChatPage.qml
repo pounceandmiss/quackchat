@@ -84,6 +84,48 @@ Page {
         }
     }
 
+    // One message's stanza, hosted the two ways openKeys hosts the keys page.
+    // The text is handed over rather than bound, so the viewer keeps showing
+    // the row as it stood when it was asked for.
+    function viewXml(ts) {
+        const xml = chatModel.rawXml(ts)
+        if (Theme.mobile) {
+            xmlSheet.xml = xml
+            xmlSheet.open()
+            return null
+        }
+        return AppWindows.messageXml(xml)
+    }
+
+    // Same contract as closeKeys.
+    function closeXml() {
+        if (!xmlSheet.opened)
+            return false
+        xmlSheet.close()
+        return true
+    }
+
+    Dialog {
+        id: xmlSheet
+        objectName: "xmlSheet"
+        parent: Overlay.overlay
+        modal: true
+        padding: 0
+        x: 0
+        y: 0
+        width: parent ? parent.width : 0
+        height: parent ? parent.height : 0
+
+        // "" for a message that never had a stanza built.
+        property alias xml: xmlPage.xml
+
+        MessageXmlPage {
+            id: xmlPage
+            anchors.fill: parent
+            onDone: xmlSheet.close()
+        }
+    }
+
     // Hidden helper that places copied message text on the system clipboard.
     TextEdit { id: clip; visible: false }
 
@@ -832,6 +874,7 @@ Page {
                     onCopyRequested: page.copyText(wrap.label)
                     onReplyRequested: page.startReply(wrap.timestamp, wrap.label, wrap.outgoing)
                     onReactRequested: (emoji) => chatModel.react(wrap.timestamp, emoji)
+                    onViewXmlRequested: page.viewXml(wrap.timestamp)
                 }
             }
 

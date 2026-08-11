@@ -112,12 +112,14 @@ qt_add_qml_module(quack
         ChatWindow.qml
         AccountSettingsWindow.qml
         OmemoKeysWindow.qml
+        MessageXmlWindow.qml
         AppShell.qml
         AccountRail.qml
         AddAccountSheet.qml
         AccountSettingsPage.qml
         TrustPicker.qml
         OmemoKeysPage.qml
+        MessageXmlPage.qml
         Fingerprint.qml
         ConversationsPage.qml
         SearchPage.qml
@@ -141,6 +143,7 @@ qt_add_qml_module(quack
         backend/SocketTransport.cpp backend/SocketTransport.h
         backend/ChatModel.cpp backend/ChatModel.h
         backend/MessageMarkup.cpp backend/MessageMarkup.h
+        backend/MessageXml.cpp backend/MessageXml.h
         backend/AuthorNames.cpp backend/AuthorNames.h
         backend/ChatListModel.cpp backend/ChatListModel.h
         backend/SearchModel.cpp backend/SearchModel.h
