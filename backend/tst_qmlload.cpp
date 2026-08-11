@@ -2,6 +2,8 @@
 // (ReferenceError etc.) only surface as warnings, so collect and fail on them.
 #include <QtTest>
 #include <QImage>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -14,6 +16,7 @@
 #include "AccountSettings.h"
 #include "AppController.h"
 #include "OmemoDevicesModel.h"
+#include "SearchModel.h"
 
 class TestQmlLoad : public QObject {
     Q_OBJECT
@@ -92,6 +95,147 @@ private slots:
                                           Q_ARG(QVariant, QVariant(QString()))));
         QVERIFY2(ret.value<QObject *>() != nullptr, "newShell returned no window");
 
+        assertNoQmlErrors(warnings);
+    }
+
+    // Results are drawn from several chats at once, each of which brings its
+    // own name cache - the part of the page that only runs with rows in it.
+    void drawsSearchResults() {
+        QStringList warnings;
+        QQmlEngine e;
+        e.singletonInstance<AppController *>("Quack", "App");
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "SearchPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        auto *model = page->findChild<SearchModel *>();
+        QVERIFY(model);
+        model->setQuery("pizza");
+        model->search(); // the backend is unstarted, so nothing answers it
+        model->applyResult(
+            QJsonDocument::fromJson(R"({"messages":[
+                {"timestamp":400,"chat_jid":"a@example.com","from_jid":"a@example.com",
+                 "is_outgoing":false,"content":{"type":"text","body":"pizza tonight?"}},
+                {"timestamp":300,"chat_jid":"room@muc?join","from_jid":"room@muc/bo",
+                 "is_outgoing":false,"content":{"type":"text","body":"cold pizza"}}],
+                "complete":true,"last":"300 a@example.com"})")
+                .object()
+                .toVariantMap(),
+            false);
+
+        QQuickItem *list = findItem(win.contentItem(), "searchResults");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 2);
+        // One name cache per chat the results touch, built as they arrive.
+        QTRY_COMPARE(page->property("authorsByChat").toMap().size(), 2);
+        win.grabWindow(); // force the delegates to lay out and bind
+        QCoreApplication::processEvents();
+        assertNoQmlErrors(warnings);
+    }
+
+    // Searching inside a chat walks the hits in the feed instead of listing
+    // them, so the step - and what the counter says about it - is the feature.
+    void walksHitsInsideTheChat() {
+        QStringList warnings;
+        QQmlEngine e;
+        e.singletonInstance<AppController *>("Quack", "App");
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(420, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ChatPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"chatJid", "friend@example.com"},
+             {"chatName", "Friend"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QVERIFY(QMetaObject::invokeMethod(page, "openSearch"));
+        QVERIFY(page->property("searchMode").toBool());
+        auto *model = page->findChild<SearchModel *>();
+        QVERIFY(model);
+
+        QQuickItem *field = findItem(win.contentItem(), "chatSearchField");
+        QVERIFY(field);
+        // Typing is the whole of it - nothing here presses Enter.
+        field->setProperty("text", "pizza");
+        QTRY_VERIFY_WITH_TIMEOUT(model->searching(), 3000);
+        model->applyResult(QJsonDocument::fromJson(R"({"messages":[
+            {"timestamp":300,"chat_jid":"friend@example.com"},
+            {"timestamp":200,"chat_jid":"friend@example.com"},
+            {"timestamp":100,"chat_jid":"friend@example.com"}],
+            "complete":true,"last":"100"})")
+                               .object()
+                               .toVariantMap(),
+                           false);
+
+        // The newest hit is where it lands, and the counter counts from one.
+        QTRY_COMPARE(page->property("hitIndex").toInt(), 0);
+        QQuickItem *counter = findItem(win.contentItem(), "hitCounter");
+        QVERIFY(counter);
+        QCOMPARE(counter->property("text").toString(), QString("1/3"));
+
+        // Return walks towards older messages, which is down the newest-first
+        // list; shifted, it walks back up. Moving the counter is half of it -
+        // the step is only real if the feed is told to go there.
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QTest::keyClick(&win, Qt::Key_Return);
+        QCOMPARE(page->property("hitIndex").toInt(), 1);
+        QCOMPARE(counter->property("text").toString(), QString("2/3"));
+        QVariantMap jump;
+        for (const QList<QVariant> &call : sent)
+            if (call.at(0).toString() == "message" && call.at(1).toString() == "goto")
+                jump = call.at(2).toMap();
+        QCOMPARE(jump.value("date").toLongLong(), 200);
+        // Local, so the step lands now rather than after a MAM round trip that
+        // the next keypress would cancel anyway.
+        QCOMPARE(jump.value("source").toString(), QString("local"));
+        QTest::keyClick(&win, Qt::Key_Return, Qt::ShiftModifier);
+        QCOMPARE(page->property("hitIndex").toInt(), 0);
+        // Nothing newer than the newest.
+        QTest::keyClick(&win, Qt::Key_Return, Qt::ShiftModifier);
+        QCOMPARE(page->property("hitIndex").toInt(), 0);
+
+        QVariant closed;
+        QVERIFY(QMetaObject::invokeMethod(page, "closeSearch",
+                                          Q_RETURN_ARG(QVariant, closed)));
+        QVERIFY(closed.toBool());
+        QVERIFY(!page->property("searchMode").toBool());
+        QCOMPARE(model->count(), 0);
+
+        win.grabWindow();
+        QCoreApplication::processEvents();
         assertNoQmlErrors(warnings);
     }
 

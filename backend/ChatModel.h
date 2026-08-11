@@ -35,6 +35,8 @@ class ChatModel : public QAbstractListModel {
     // CSS color for quoted runs in MarkupRole. A QString rather than a QColor:
     // it goes straight into the markup, and QColor would pull QtGui in here.
     Q_PROPERTY(QString quoteColor READ quoteColor WRITE setQuoteColor NOTIFY quoteColorChanged)
+    // And for the run a search matched, marked by highlightMatches().
+    Q_PROPERTY(QString matchColor READ matchColor WRITE setMatchColor NOTIFY matchColorChanged)
 
 public:
     enum Role {
@@ -74,11 +76,18 @@ public:
                m_inflight.contains(QStringLiteral("init"));
     }
     QString quoteColor() const { return m_quoteColor; }
+    QString matchColor() const { return m_matchColor; }
     void setBackend(TackyBackend *backend);
     void setAccount(const QString &acc);
     void setChat(const QString &chat);
     void setGroupchat(bool v);
     void setQuoteColor(const QString &css);
+    void setMatchColor(const QString &css);
+
+    // Mark where a search matched inside one message, so the row shows which
+    // characters were found and not merely that it was. `ranges` is tacky's
+    // own content.matches; an empty one, or ts 0, takes the mark away.
+    Q_INVOKABLE void highlightMatches(qlonglong ts, const QVariantList &ranges);
 
     Q_INVOKABLE void loadInitial();               // newest page (no cursor)
     Q_INVOKABLE void loadOlder();                 // page below the oldest row
@@ -130,6 +139,7 @@ signals:
     void catchupBusyChanged();
     void loadingOlderChanged();
     void quoteColorChanged();
+    void matchColorChanged();
     // A history request finished; dir is init/old/new/goto/catchup and added is
     // the net rows inserted. The view pages off this to fill an under-tall
     // viewport, and stops when added == 0 (archive exhausted).
@@ -157,6 +167,7 @@ private:
     qlonglong newestTs() const;
     void handleFileUpdate(const QString &name, const QVariantMap &a);
     QVariantList attachmentsOf(const QVariantMap &m) const;
+    QVariantList marksOn(const QVariantMap &m) const;
     QVariantMap attachmentAt(qlonglong ts, int idx) const;
     void fetchThumbs(const QVariantMap &msg);
     void redrawRowsUsing(const QString &url);
@@ -167,6 +178,11 @@ private:
     bool m_groupchat = false;
     // Until QML binds the palette's, and what the Tk client uses verbatim.
     QString m_quoteColor = QStringLiteral("green");
+    QString m_matchColor = QStringLiteral("yellow");
+    // The one message carrying a search mark, and where in it. Beside the rows
+    // rather than in them: it belongs to the search, not to the message.
+    qlonglong m_matchTs = 0;
+    QVariantList m_matchRanges;
     bool m_atTail = true;       // an empty window is vacuously at tail
     bool m_catchupBusy = false;
     qlonglong m_tailTs = 0;     // newest real-message ts, from message <Tail>

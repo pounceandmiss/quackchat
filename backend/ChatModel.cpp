@@ -19,13 +19,22 @@ static QString bodyOf(const QVariantMap &m) {
 // The spans index into whichever string bodyOf returned, so both come from the
 // same content variant. A retraction empties that body, and an empty body needs
 // no markup, so the tombstone falls out without a case of its own.
-static QString markupOf(const QVariantMap &m, const QString &quoteColor) {
-    return messageMarkup(bodyOf(m),
-                         m.value(QStringLiteral("content"))
+//
+// A search mark is one more span over the same string, in the same units, so it
+// joins the styling rather than competing with it.
+static QString markupOf(const QVariantMap &m, const QString &quoteColor,
+                        const QString &matchColor,
+                        const QVariantList &matches) {
+    QVariantList spans = m.value(QStringLiteral("content"))
                              .toMap()
                              .value(QStringLiteral("formatting"))
-                             .toList(),
-                         quoteColor);
+                             .toList();
+    for (const QVariant &v : matches) {
+        QVariantMap span = v.toMap();
+        span.insert(QStringLiteral("type"), QStringLiteral("match"));
+        spans.append(span);
+    }
+    return messageMarkup(bodyOf(m), spans, quoteColor, matchColor);
 }
 
 // An attachment nothing has happened to yet. Spelled out rather than left
@@ -84,7 +93,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     switch (role) {
     case TimestampRole:    return m.value(QStringLiteral("timestamp"));
     case BodyRole:         return bodyOf(m);
-    case MarkupRole:       return markupOf(m, m_quoteColor);
+    case MarkupRole:       return markupOf(m, m_quoteColor, m_matchColor, marksOn(m));
     case AttachmentsRole:  return attachmentsOf(m);
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
     case ServerStatusRole:
@@ -233,6 +242,36 @@ void ChatModel::setQuoteColor(const QString &css) {
         emit dataChanged(index(0), index(m_msgs.size() - 1), {MarkupRole});
 }
 
+// The search marks one message at a time; every other row draws without them.
+QVariantList ChatModel::marksOn(const QVariantMap &m) const {
+    return m.value(QStringLiteral("timestamp")).toLongLong() == m_matchTs
+               ? m_matchRanges
+               : QVariantList();
+}
+
+void ChatModel::setMatchColor(const QString &css) {
+    if (m_matchColor == css)
+        return;
+    m_matchColor = css;
+    emit matchColorChanged();
+    const int row = indexOfTs(m_matchTs);
+    if (row >= 0)
+        emit dataChanged(index(row), index(row), {MarkupRole});
+}
+
+// Only one message wears the mark, so moving it repaints where it was as well
+// as where it goes - and a row off the window simply has nothing to repaint.
+void ChatModel::highlightMatches(qlonglong ts, const QVariantList &ranges) {
+    const int was = indexOfTs(m_matchTs);
+    m_matchTs = ranges.isEmpty() ? 0 : ts;
+    m_matchRanges = ranges;
+    const int now = indexOfTs(m_matchTs);
+    if (was >= 0)
+        emit dataChanged(index(was), index(was), {MarkupRole});
+    if (now >= 0 && now != was)
+        emit dataChanged(index(now), index(now), {MarkupRole});
+}
+
 // atTail stays true: an empty window is vacuously at tail, and a live event
 // arriving before the initial page lands gets deduped by it.
 void ChatModel::reload() {
@@ -302,6 +341,10 @@ void ChatModel::issueGoto(const QString &method, const QVariantMap &args) {
     cancelDir(QStringLiteral("old"));
     cancelDir(QStringLiteral("new"));
     cancelDir(QStringLiteral("catchup"));
+    // A jump made straight after a chat switch races that chat's opening page:
+    // both are out, and whichever lands second owns the window. The jump is the
+    // more recent instruction, so the newest page gives way to it.
+    cancelDir(QStringLiteral("init"));
     QVariantMap a = args;
     a.insert(QStringLiteral("acc"), m_account);
     a.insert(QStringLiteral("chat"), m_chat);

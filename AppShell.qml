@@ -31,13 +31,36 @@ Item {
         function onCountChanged() { shell.ensureAccount() }
     }
 
+    // The account-wide search stands in for the conversations list rather than
+    // opening beside it, so it works the same in the wide and stacked layouts.
+    // Searching inside one chat happens in the chat's own header.
+    property bool searching: false
+
     function closeChat() {
         currentChatJid = ""
         currentChatName = ""
         currentChatGroupchat = false
     }
 
-    onCurrentAccountChanged: closeChat()
+    function openSearch() {
+        searching = true
+        searchPane.focusInput()
+    }
+
+    // Where Ctrl+F lands: an open conversation is what you are most likely
+    // looking through, and the whole account is what you mean when there is
+    // none.
+    function startFind() {
+        if (currentChatJid !== "")
+            chatPage.openSearch()
+        else
+            openSearch()
+    }
+
+    onCurrentAccountChanged: {
+        closeChat()
+        searching = false
+    }
 
     // Android's system back arrives as a close request. Unwind one navigation
     // step instead: message selection first, then the open chat in the
@@ -45,8 +68,16 @@ Item {
     function handleBack() {
         if (chatPage.closeKeys())
             return true
+        if (chatPage.closeSearch())
+            return true
         if (chatPage.selectionMode) {
             chatPage.clearSelection()
+            return true
+        }
+        // Search sits on top of the chat in the stacked layout, so it unwinds
+        // first - the order things were opened in.
+        if (searching) {
+            searching = false
             return true
         }
         if (!wide && currentChatJid !== "") {
@@ -119,7 +150,7 @@ Item {
                 SplitView.maximumWidth: shell.wide ? split.width * 0.5 : split.width
                 // Hidden (and thus excluded from the split) when a chat is open
                 // in the narrow layout; as the only visible pane it auto-fills.
-                visible: shell.wide || shell.currentChatJid === ""
+                visible: !shell.searching && (shell.wide || shell.currentChatJid === "")
                 account: shell.currentAccount
                 onOpenChat: (jid, name, groupchat) => {
                     shell.currentChatJid = jid
@@ -130,13 +161,42 @@ Item {
                     if (!Theme.mobile)
                         AppWindows.popOut(shell.currentAccount, jid, name, groupchat)
                 }
+                onStartSearch: shell.openSearch()
+            }
+
+            SearchPage {
+                id: searchPane
+                SplitView.preferredWidth: 320
+                SplitView.minimumWidth: 220
+                SplitView.maximumWidth: shell.wide ? split.width * 0.5 : split.width
+                // Stacked, it takes the column from the open chat; side by side
+                // it takes it from the conversations list.
+                visible: shell.searching
+                account: shell.currentAccount
+                onClosed: shell.searching = false
+                // The hit names its own chat, which need not be the open one.
+                // Whether that chat is a room is the chat list's answer, not a
+                // reading of the JID.
+                onOpenHit: (jid, ts, matches) => {
+                    if (jid !== shell.currentChatJid) {
+                        const entry = App.chatListFor(shell.currentAccount).entryFor(jid)
+                        shell.currentChatJid = jid
+                        shell.currentChatName = entry.name !== undefined ? entry.name : ""
+                        shell.currentChatGroupchat = entry.groupchat === true
+                    }
+                    chatPage.jumpTo(ts, matches)
+                    // Stacked, the results are covering the message they point
+                    // at; side by side both are on screen and the list stays.
+                    if (!shell.wide)
+                        shell.searching = false
+                }
             }
 
             ChatPage {
                 id: chatPage
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 280
-                visible: shell.wide || shell.currentChatJid !== ""
+                visible: shell.wide || (shell.currentChatJid !== "" && !shell.searching)
                 account: shell.currentAccount
                 chatJid: shell.currentChatJid
                 chatName: shell.currentChatName

@@ -38,6 +38,14 @@ QHash<int, QByteArray> ChatListModel::roleNames() const {
     return r;
 }
 
+// One chat's entry, for the views that hold a JID with no row of this model to
+// bind to - a search hit naming its own chat, say. Empty when the list has
+// never heard of it, which the caller reads as an unnamed 1:1.
+QVariantMap ChatListModel::entryFor(const QString &jid) const {
+    const int i = indexOfJid(jid);
+    return i < 0 ? QVariantMap() : m_items.at(i);
+}
+
 void ChatListModel::setAccount(const QString &acc) {
     if (m_account == acc)
         return;

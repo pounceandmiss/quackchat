@@ -46,6 +46,9 @@ public:
     // (Re)load the whole list for the current account.
     Q_INVOKABLE void refresh();
 
+    // The chat_entry for one JID, or an empty map when there is no such chat.
+    Q_INVOKABLE QVariantMap entryFor(const QString &jid) const;
+
     // Routing and transforms are public so tests can drive them with canned data.
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);

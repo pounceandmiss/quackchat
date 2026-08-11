@@ -55,6 +55,8 @@ private slots:
     void anchorOnScreenKeepsTheWindow();
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
+    void gotoOutrunsTheOpeningPage();
+    void searchMarkJoinsTheStylingSpans();
     void attachmentsRoleReadsTheContentUnion();
     void fileUpdateMergesIntoTheRow();
     void fileUpdateFansOutToEveryRowSharingTheUrl();
@@ -516,6 +518,69 @@ void TestChatModel::anchorOnScreenKeepsTheWindow() {
     QCOMPARE(anchored.first().at(0).toLongLong(), 100LL);
     QCOMPARE(m.rowCount(), 2);       // untouched
     QVERIFY(m.atTail());
+}
+
+// Opening a chat and jumping into it happen in one go when a search hit is
+// clicked: the chat switch fires the newest page, the jump follows immediately.
+// Both are out at once, and the later instruction has to win.
+void TestChatModel::gotoOutrunsTheOpeningPage() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");    // the opening page is token 1, still in flight
+    m.gotoTimestamp(20); // token 2
+
+    QSignalSpy anchored(&m, &ChatModel::anchored);
+    m.handleResult(1, msgs(R"([{"timestamp":900},{"timestamp":800}])"));
+    QCOMPARE(m.rowCount(), 0); // cancelled: that page is no longer wanted
+    QVERIFY(!m.loadingOlder());
+
+    m.handleResult(2, QJsonDocument::fromJson(R"({
+        "anchor":20,"messages":[{"timestamp":10},{"timestamp":20}]})")
+                          .object().toVariantMap());
+    QCOMPARE(anchored.first().at(0).toLongLong(), 20LL);
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(m.data(m.index(0), ChatModel::TimestampRole).toLongLong(), 20LL);
+}
+
+// Where a search matched is one more span over the same string, so it draws
+// through the styling rather than replacing it - and it is the search's, not
+// the message's, so it moves and clears without the row changing.
+void TestChatModel::searchMarkJoinsTheStylingSpans() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.setQuoteColor(kQuote);
+    m.setMatchColor("#ff0");
+    m.handleResult(1, msgs(R"([
+        {"timestamp":200,"content":{"type":"text","body":"hello there",
+         "formatting":[{"type":"bold","offset":0,"length":5}]}},
+        {"timestamp":100,"content":{"type":"text","body":"hello again"}}])"));
+    QCOMPARE(m.data(m.index(0), ChatModel::MarkupRole).toString(),
+             QString("<b>hello</b> there"));
+
+    QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
+    m.highlightMatches(200, spans(R"([{"offset":6,"length":5}])"));
+    QCOMPARE(m.data(m.index(0), ChatModel::MarkupRole).toString(),
+             QString("<b>hello</b> <span style=\"background-color:#ff0\">there</span>"));
+    QCOMPARE(chg.count(), 1);
+    // The other rows say nothing about a search they were not found by.
+    QCOMPARE(m.data(m.index(1), ChatModel::MarkupRole).toString(), QString());
+
+    // Stepping to the next hit unmarks the one behind it.
+    m.highlightMatches(100, spans(R"([{"offset":0,"length":5}])"));
+    QCOMPARE(m.data(m.index(0), ChatModel::MarkupRole).toString(),
+             QString("<b>hello</b> there"));
+    QVERIFY(m.data(m.index(1), ChatModel::MarkupRole).toString().contains("background-color"));
+
+    // And closing the search takes it away without touching the styling.
+    m.highlightMatches(0, {});
+    QCOMPARE(m.data(m.index(1), ChatModel::MarkupRole).toString(), QString());
+    QCOMPARE(m.data(m.index(0), ChatModel::MarkupRole).toString(),
+             QString("<b>hello</b> there"));
 }
 
 void TestChatModel::anchorOffScreenReplacesTheWindow() {

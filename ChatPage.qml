@@ -93,9 +93,10 @@ Page {
         account: page.account
         chat: page.chatJid
         groupchat: page.chatGroupchat
-        // The palette's literal, since the markup wants a CSS color and the
-        // typed accessor would hand over a QColor.
+        // The palette's literals, since the markup wants CSS colors and the
+        // typed accessors would hand over QColors.
         quoteColor: Theme.p.quote
+        matchColor: Theme.p.selection
     }
 
     OmemoChat {
@@ -173,6 +174,143 @@ Page {
                 Qt.openUrlExternally(url)
         }
     }
+    // Land on a message this window may never have shown, carrying tacky's own
+    // content.matches so the row can mark which characters were found. `local`
+    // because the target is in the store by definition - matching happens
+    // there, and the archive's hits are written on the way through. `remote`
+    // would put a MAM fetch in front of every step, and in a busy room each
+    // keypress cancels the last one's before it lands.
+    function jumpTo(ts, matches) {
+        if (!ts)
+            return
+        chatModel.highlightMatches(ts, matches)
+        chatModel.gotoTimestamp(ts, "local")
+    }
+
+    // Finding a message in this conversation. The hits are walked one at a time
+    // in the feed itself rather than listed elsewhere, so the conversation
+    // around a hit stays on screen.
+    property bool searchMode: false
+    // Which hit the feed is showing, -1 before the first result lands.
+    property int hitIndex: -1
+    // Set while a step is waiting on the page that will contain its target.
+    property bool hitPending: false
+    // Whether this chat's searches also ask its archive. Off by default: it is
+    // a round trip per search, and the store already holds every OMEMO message,
+    // which reaches the server encrypted and can be matched nowhere else.
+    property bool searchServer: false
+
+    readonly property bool hasOlderHit: hitIndex + 1 < chatSearch.count
+                                        || !chatSearch.complete
+    readonly property bool hasNewerHit: hitIndex > 0
+
+    SearchModel {
+        id: chatSearch
+        backend: App.backend
+        account: page.account
+        // Named only while the bar is up: naming a chat asks its archive
+        // whether it can search, which is not a question a chat that is merely
+        // open needs answered.
+        chat: page.searchMode ? page.chatJid : ""
+        query: searchInput.text
+    }
+
+    // Long enough that a burst of typing is one search, short enough that a
+    // pause answers straight away.
+    Timer {
+        id: searchDebounce
+        interval: 250
+        onTriggered: page.runSearch(page.searchServer)
+    }
+
+    function openSearch() {
+        if (!page.hasChat)
+            return
+        page.clearSelection()
+        page.searchMode = true
+        searchInput.forceActiveFocus()
+        searchInput.selectAll()
+    }
+
+    // Answers whether it had anything to close, so the back chain knows whether
+    // the press was spent here.
+    function closeSearch() {
+        if (!page.searchMode)
+            return false
+        page.searchMode = false
+        page.dropHits()
+        return true
+    }
+
+    function dropHits() {
+        searchDebounce.stop()
+        page.hitIndex = -1
+        page.hitPending = false
+        chatSearch.clear()
+        chatModel.highlightMatches(0, [])
+    }
+
+    // The model drops includeServer where the archive advertises no full-text
+    // field, so this is what was asked for rather than what will happen.
+    function runSearch(includeServer) {
+        searchDebounce.stop()
+        chatSearch.alsoRemote = includeServer
+        page.hitIndex = -1
+        // The first result to land is the one to show, and that is the same
+        // step every later one takes.
+        page.hitPending = true
+        chatSearch.search()
+    }
+
+    function showHit(i) {
+        page.hitIndex = i
+        page.jumpTo(chatSearch.timestampAt(i), chatSearch.matchesAt(i))
+    }
+
+    // Older is further from the tail, which is further down the result list -
+    // the store returns them newest first. Stepping past the last loaded hit
+    // pages for more rather than stopping at the page boundary.
+    function olderHit() {
+        if (page.hitIndex + 1 < chatSearch.count) {
+            page.showHit(page.hitIndex + 1)
+            return
+        }
+        if (!chatSearch.complete) {
+            page.hitPending = true
+            chatSearch.loadMore()
+        }
+    }
+    function newerHit() {
+        if (page.hitIndex > 0)
+            page.showHit(page.hitIndex - 1)
+    }
+
+    // Return steps through the hits, shifted the other way. Pressed before the
+    // pause has elapsed it searches instead, so the first press after typing is
+    // never swallowed.
+    function stepFromKey(event) {
+        event.accepted = true
+        if (searchDebounce.running) {
+            page.runSearch(page.searchServer)
+        } else if (event.modifiers & Qt.ShiftModifier) {
+            page.newerHit()
+        } else {
+            page.olderHit()
+        }
+    }
+
+    Connections {
+        target: chatSearch
+        // Both the first page and every page after it land here: whatever was
+        // waiting for a hit to exist takes the next one along.
+        function onCountChanged() {
+            if (!page.hitPending || chatSearch.count <= page.hitIndex + 1)
+                return
+            page.hitPending = false
+            page.showHit(page.hitIndex + 1)
+        }
+    }
+
     function scrollToHighlight() {
         const row = chatModel.rowOfTimestamp(page.highlightTs)
         if (row >= 0)
@@ -250,7 +388,7 @@ Page {
             anchors.leftMargin: 6
             anchors.rightMargin: 14
             spacing: 10
-            visible: !page.selectionMode
+            visible: !page.selectionMode && !page.searchMode
             IconButton {
                 text: "‹"
                 font.pixelSize: 28
@@ -287,6 +425,14 @@ Page {
                 }
             }
             IconButton {
+                objectName: "chatSearchButton"
+                text: "🔍"
+                font.pixelSize: 16
+                glyphColor: Theme.textDim
+                visible: page.hasChat
+                onClicked: page.openSearch()
+            }
+            IconButton {
                 text: "⧉"
                 glyphColor: Theme.textDim
                 visible: page.canPopOut && page.hasChat
@@ -316,6 +462,110 @@ Page {
                 font.pixelSize: 20
                 glyphColor: Theme.accentDeep
                 onClicked: page.copySelected()
+            }
+        }
+
+        // The search bar takes the header rather than opening a pane, so the
+        // conversation the hits sit in stays where it was.
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 6
+            anchors.rightMargin: 8
+            spacing: 4
+            visible: page.searchMode
+            IconButton {
+                text: "✕"
+                onClicked: page.closeSearch()
+            }
+            TextField {
+                id: searchInput
+                objectName: "chatSearchField"
+                Layout.fillWidth: true
+                placeholderText: "Search this chat"
+                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+                onTextChanged: {
+                    if (searchInput.text === "")
+                        page.dropHits()
+                    else
+                        searchDebounce.restart()
+                }
+                // Ahead of the field's own handling, so Return steps rather
+                // than accepting.
+                Keys.onReturnPressed: (event) => page.stepFromKey(event)
+                Keys.onEnterPressed: (event) => page.stepFromKey(event)
+                Keys.onEscapePressed: page.closeSearch()
+            }
+            // Named rather than drawn: no glyph says "search the server's copy
+            // too" without a legend, and this is a switch a user meets once.
+            // Only where the archive advertises a full-text field; anywhere
+            // else the ask would come back unsupported.
+            Button {
+                objectName: "serverLeg"
+                visible: chatSearch.remoteAvailable
+                implicitHeight: 28
+                leftPadding: 10
+                rightPadding: 10
+                // The page holds the state, so this is not `checkable` - a
+                // button with its own checked state as well would leave two
+                // answers to the same question.
+                onClicked: {
+                    page.searchServer = !page.searchServer
+                    if (searchInput.text !== "")
+                        page.runSearch(page.searchServer)
+                }
+                contentItem: Text {
+                    text: "Server"
+                    color: page.searchServer ? Theme.onAccent : Theme.textDim
+                    font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+                background: Rectangle {
+                    radius: height / 2
+                    color: page.searchServer ? Theme.accentDeep : "transparent"
+                    border.width: 1
+                    border.color: page.searchServer ? Theme.accentDeep : Theme.hairline
+                }
+            }
+            Text {
+                objectName: "hitCounter"
+                Layout.minimumWidth: 44
+                horizontalAlignment: Text.AlignHCenter
+                color: Theme.textDim
+                font.pixelSize: 12
+                text: {
+                    if (chatSearch.searching && chatSearch.count === 0)
+                        return "…"
+                    if (chatSearch.failed)
+                        return "!"
+                    if (!chatSearch.searched)
+                        return ""
+                    if (chatSearch.count === 0)
+                        return "none"
+                    // A trailing + where there are pages left: the total is only
+                    // what has been fetched so far, not what the archive holds.
+                    return (page.hitIndex + 1) + "/" + chatSearch.count
+                           + (chatSearch.complete ? "" : "+")
+                }
+            }
+            // Triangles rather than chevrons: ⌃ and ⌄ are drawn at the top and
+            // the bottom of their own em box, so a pair of them never lines up
+            // however the buttons are centred.
+            IconButton {
+                objectName: "olderHit"
+                text: "▲"
+                font.pixelSize: 11
+                enabled: chatSearch.searched && page.hasOlderHit
+                opacity: enabled ? 1 : 0.35
+                onClicked: page.olderHit()
+            }
+            IconButton {
+                objectName: "newerHit"
+                text: "▼"
+                font.pixelSize: 11
+                enabled: page.hasNewerHit
+                opacity: enabled ? 1 : 0.35
+                onClicked: page.newerHit()
             }
         }
 

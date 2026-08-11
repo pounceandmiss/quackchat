@@ -7,6 +7,7 @@
 #include "ChatListModel.h"
 #include "ChatModel.h"
 #include "MessageMarkup.h"
+#include "SearchModel.h"
 #include "TackyBackend.h"
 
 namespace {
@@ -35,6 +36,9 @@ private slots:
     void sendsAreStampedOmemoByDefault();
     // Sending one message in the clear rewrites that row's stamp, and only it.
     void plaintextResendClearsTheStamp();
+    // Search against the real store: arg names, cursor and result shape are
+    // tacky's, and only a round trip proves we speak them.
+    void searchFindsWhatWasStored();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -240,6 +244,62 @@ void TestIntegration::plaintextResendClearsTheStamp() {
     QTRY_VERIFY_WITH_TIMEOUT(
         chat.data(chat.index(0), ChatModel::EncryptionRole).toString().isEmpty(), 5000);
     QCOMPARE(chat.rowCount(), 1); // rewritten in place, not sent again
+
+    backend.stop();
+}
+
+// A chat window seeds the store, then the search reads it back through the same
+// backend. The store's matching is tacky's own - what this covers is that the
+// request we build reaches it and the result we unpack is the one it sent.
+void TestIntegration::searchFindsWhatWasStored() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+
+    for (const QString &body : {QStringLiteral("pizza tonight?"),
+                                QStringLiteral("sure, see you then")})
+        backend.notify("message", "send",
+                       QVariantMap{{"acc", "me@example.com"},
+                                   {"chat", "friend@example.com"},
+                                   {"body", body}});
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 2, 5000);
+
+    SearchModel search;
+    search.setBackend(&backend);
+    search.setAccount("me@example.com");
+    search.setChat("friend@example.com");
+    search.setQuery("pizza");
+    search.search();
+
+    QTRY_VERIFY_WITH_TIMEOUT(search.rowCount() == 1, 5000);
+    QCOMPARE(search.data(search.index(0), SearchModel::BodyRole).toString(),
+             QString("pizza tonight?"));
+    QCOMPARE(search.data(search.index(0), SearchModel::ChatJidRole).toString(),
+             QString("friend@example.com"));
+    // Where it matched is tacky's answer, in tacky's units, over tacky's own
+    // rendering of the body. A fixture cannot catch the two sides counting
+    // differently; only the round trip can.
+    QCOMPARE(search.data(search.index(0), SearchModel::SnippetRole).toString(),
+             QString("<b>pizza</b> tonight?"));
+    // One page held everything, so there is nothing behind it to ask for.
+    QVERIFY(search.complete());
+    QVERIFY(!search.failed());
+
+    // The same query from the whole account finds it too, and its cursor is the
+    // pair form - which only round-trips if we never took it apart.
+    SearchModel wide;
+    wide.setBackend(&backend);
+    wide.setAccount("me@example.com");
+    wide.setQuery("pizza");
+    wide.search();
+    QTRY_VERIFY_WITH_TIMEOUT(wide.rowCount() == 1, 5000);
+    QCOMPARE(wide.data(wide.index(0), SearchModel::ChatJidRole).toString(),
+             QString("friend@example.com"));
 
     backend.stop();
 }

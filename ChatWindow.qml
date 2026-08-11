@@ -21,8 +21,11 @@ ApplicationWindow {
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
+    // The search bar lives in the chat's own header, so a pop-out has one too.
+    Shortcut { sequences: [StandardKey.Find]; onActivated: pane.openSearch() }
 
     ChatPage {
+        id: pane
         anchors.fill: parent
         // Same safe-area padding as ShellWindow (zeros on desktop).
         anchors.topMargin: SafeArea.margins.top

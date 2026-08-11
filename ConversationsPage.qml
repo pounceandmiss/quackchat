@@ -13,6 +13,7 @@ Page {
     property string account: ""
     signal openChat(string jid, string name, bool groupchat)
     signal popOutChat(string jid, string name, bool groupchat)
+    signal startSearch()
     background: Rectangle { color: Theme.surface }
 
     header: Rectangle {
@@ -40,6 +41,15 @@ Page {
                     font.pixelSize: 11
                     elide: Text.ElideRight
                 }
+            }
+            IconButton {
+                objectName: "searchButton"
+                text: "🔍"
+                font.pixelSize: 16
+                glyphColor: Theme.textDim
+                enabled: page.account !== ""
+                opacity: enabled ? 1 : 0.4
+                onClicked: page.startSearch()
             }
             IconButton {
                 id: overflowBtn

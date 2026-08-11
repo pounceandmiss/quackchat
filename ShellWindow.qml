@@ -21,6 +21,9 @@ ApplicationWindow {
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
     Shortcut { sequence: "Ctrl+N"; onActivated: AppWindows.newShell() }
+    // `sequences`, not `sequence`: the standard key stands for more than one
+    // combination, and binding the singular takes only the first of them.
+    Shortcut { sequences: [StandardKey.Find]; onActivated: shell.startFind() }
 
     // Android delivers the system back button/gesture as a window close
     // request; step the stacked navigation back instead of quitting while
