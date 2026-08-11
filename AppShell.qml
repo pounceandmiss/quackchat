@@ -5,9 +5,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quack
 
-// Wide window: rail | list | chat side by side. Narrow: collapses to the
-// rail plus one column that shows the list, or the open chat with a back
-// button. One instance per window.
+// Wide window: rail | list | chat side by side. Narrow: one column showing the
+// list, or the open chat with a back button, with the rail moved into a pull-out
+// drawer - 64px of permanent chrome is a sixth of a phone's width.
+// One instance per window.
 Item {
     id: shell
     objectName: "appShell"
@@ -62,10 +63,19 @@ Item {
         searching = false
     }
 
+    // Back over the breakpoint the rail is in the layout again, which would
+    // leave the drawer holding a second copy of it.
+    onWideChanged: if (wide) railDrawer.close()
+
     // Android's system back arrives as a close request. Unwind one navigation
     // step instead: message selection first, then the open chat in the
     // stacked layout. Returns false when there's nothing left to pop.
     function handleBack() {
+        // Covers the shell while open, so it unwinds before anything under it.
+        if (railDrawer.opened) {
+            railDrawer.close()
+            return true
+        }
         if (chatPage.closeKeys())
             return true
         if (chatPage.closeSearch())
@@ -94,9 +104,8 @@ Item {
         AccountRail {
             Layout.fillHeight: true
             Layout.preferredWidth: 64
-            // In the narrow layout an open chat takes the full window; the
-            // rail steps aside and returns via the chat's back button.
-            visible: shell.wide || shell.currentChatJid === ""
+            // Narrow, the same rail is in the drawer instead.
+            visible: shell.wide
             currentAccount: shell.currentAccount
             onSelectAccount: (jid) => shell.currentAccount = jid
         }
@@ -152,6 +161,10 @@ Item {
                 // in the narrow layout; as the only visible pane it auto-fills.
                 visible: !shell.searching && (shell.wide || shell.currentChatJid === "")
                 account: shell.currentAccount
+                // The list is the only pane the rail is missing from that can
+                // still reach it, so its header carries the way in.
+                showAccounts: !shell.wide
+                onOpenAccounts: railDrawer.open()
                 onOpenChat: (jid, name, groupchat) => {
                     shell.currentChatJid = jid
                     shell.currentChatName = name
@@ -210,6 +223,48 @@ Item {
                                       shell.currentChatGroupchat)
                     shell.closeChat()
                 }
+            }
+        }
+    }
+
+    // The narrow layout's rail. A Drawer parents to the window overlay, so it
+    // covers the whole window rather than the shell's inset area; the rail reads
+    // the safe margins back for itself.
+    Drawer {
+        id: railDrawer
+        objectName: "accountDrawer"
+        edge: Qt.LeftEdge
+        // Leaves a strip of the list showing, so it reads as a layer over the
+        // shell rather than a screen navigated to; capped for wider windows.
+        width: Math.min(shell.width - 56, 320)
+        // A Drawer sizes to its content, and this rail is built from anchors, so
+        // it reports no implicit height: without this it opens zero-height, with
+        // the ＋ button spilling out and nothing else drawn. `parent` is the
+        // window overlay.
+        height: parent ? parent.height : 0
+        padding: 0
+        // Draggable only where the rail would otherwise be: wide it is in the
+        // layout already, and over an open chat the left edge belongs to going
+        // back to the list.
+        interactive: !shell.wide && shell.currentChatJid === ""
+        background: Rectangle {
+            // Matches the rail filling it, so the slide shows no seam.
+            color: Theme.rail
+            Rectangle {
+                anchors.right: parent.right
+                width: 1; height: parent.height
+                color: Theme.hairline
+            }
+        }
+
+        AccountRail {
+            anchors.fill: parent
+            expanded: true
+            currentAccount: shell.currentAccount
+            // It covers the list the pick was made for, so it closes behind you.
+            onSelectAccount: (jid) => {
+                shell.currentAccount = jid
+                railDrawer.close()
             }
         }
     }

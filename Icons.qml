@@ -54,6 +54,8 @@ QtObject {
         "M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
     readonly property string add:
         "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"
+    readonly property string menu:
+        "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"
 
     // The handset pair every dialer draws: upright to answer, tipped over to
     // hang up. These two came in with the call windows and keep the older

@@ -48,6 +48,20 @@ class TestQmlLoad : public QObject {
         return nullptr;
     }
 
+    // Every item under `root` named `name`, for the repeated parts of a list.
+    static QList<QQuickItem *> findItems(QQuickItem *root, const QString &name) {
+        QList<QQuickItem *> out;
+        if (!root)
+            return out;
+        const auto children = root->childItems();
+        for (QQuickItem *child : children) {
+            if (child->objectName() == name)
+                out << child;
+            out << findItems(child, name);
+        }
+        return out;
+    }
+
     // Call windows are built for every row but shown one at a time, so what is
     // on screen is the only question worth asking. topLevelWindows() counts the
     // hidden ones too.
@@ -830,6 +844,171 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Narrow, the account rail is not a column but a pull-out drawer: 64px of
+    // permanent chrome is a sixth of a phone's width. The list header's ☰ is
+    // the way in, back is the way out, and widening past the breakpoint puts
+    // the rail back in the layout with nothing left for the drawer to show.
+    void narrowLayoutMovesTheAccountRailIntoADrawer() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        app->accounts()->applyList({"me@example.com", "alt@example.com"});
+        // Both signed in: a disabled account says so instead of saying what
+        // its connection is doing, which is not what is under test here.
+        app->accounts()->applyEnabledList({"me@example.com", "alt@example.com"});
+        app->accounts()->setConnState("me@example.com", "connected");
+        app->accounts()->setConnState("alt@example.com", "conn-error");
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(shell);
+        shell->setParentItem(win.contentItem());
+        QVERIFY(!shell->property("wide").toBool());
+
+        // The inline rail is out of the layout, and the list header has picked
+        // up the only way back to it.
+        QQuickItem *inlineRail = findItem(shell, "accountRail");
+        QVERIFY(inlineRail);
+        QVERIFY(!inlineRail->isVisible());
+        QQuickItem *hamburger = findItem(shell, "accountsButton");
+        QVERIFY(hamburger);
+        QVERIFY(hamburger->isVisible());
+
+        // A Drawer hangs off the window overlay rather than the shell's own
+        // items, so it is the QObject tree that finds it.
+        auto *drawer = shell->findChild<QObject *>("accountDrawer");
+        QVERIFY(drawer);
+        QVERIFY(!drawer->property("opened").toBool());
+
+        const QPoint tap = win.contentItem()
+                               ->mapFromItem(hamburger,
+                                             QPointF(hamburger->width() / 2,
+                                                     hamburger->height() / 2))
+                               .toPoint();
+        QTest::mouseClick(&win, Qt::LeftButton, Qt::NoModifier, tap);
+        QTRY_VERIFY2(drawer->property("opened").toBool(),
+                     "the header button did not pull the drawer out");
+
+        // The same component at its expanded density.
+        auto *drawerRail = drawer->findChild<QQuickItem *>("accountRail");
+        QVERIFY(drawerRail);
+        QVERIFY(drawerRail->property("expanded").toBool());
+        QVERIFY2(drawerRail->width() > 200,
+                 qPrintable(QString("drawer rail is only %1 wide")
+                                .arg(drawerRail->width())));
+        QVERIFY(!inlineRail->property("expanded").toBool());
+
+        // A Drawer sizes to its content, and this rail is built from anchors, so
+        // it offers no implicit height. Left alone the drawer opens zero-height:
+        // the list collapses, the column overflows it, and the ＋ button is the
+        // only thing drawn - over nothing, the background having no height
+        // either. Model counts read correct straight through that, so geometry
+        // is what has to be asserted.
+        QCOMPARE(drawerRail->height(), qreal(win.height()));
+        QQuickItem *rows = drawerRail->findChild<QQuickItem *>("accountRailList");
+        QVERIFY(rows);
+        QVERIFY2(rows->height() > 0, "the account rows collapsed to nothing");
+        QQuickItem *addBtn = drawerRail->findChild<QQuickItem *>("addAccountButton");
+        QVERIFY(addBtn);
+        QVERIFY2(addBtn->y() + addBtn->height() <= drawerRail->height(),
+                 qPrintable(QString("＋ spills out: ends at %1, rail is %2 tall")
+                                .arg(addBtn->y() + addBtn->height())
+                                .arg(drawerRail->height())));
+        // Both rows are laid out, not collapsed onto each other at the origin.
+        const auto rowJids = findItems(drawerRail, "accountRowJid");
+        QCOMPARE(rowJids.size(), 2);
+        for (QQuickItem *jid : rowJids) {
+            QVERIFY(jid->height() > 0);
+            QVERIFY(jid->width() > 0);
+        }
+        const qreal firstY = rowJids.at(0)->mapToItem(drawerRail, QPointF(0, 0)).y();
+        const qreal secondY = rowJids.at(1)->mapToItem(drawerRail, QPointF(0, 0)).y();
+        QVERIFY(qAbs(secondY - firstY) >= rowJids.at(0)->height());
+
+        QStringList states;
+        const auto stateItems = findItems(drawerRail, "accountRowState");
+        for (QQuickItem *item : stateItems)
+            states << item->property("text").toString();
+        std::sort(states.begin(), states.end());
+        // In words, not just the dot's colour, which is red for both a rejected
+        // password and an unreachable server.
+        QCOMPARE(states, QStringList({"connected", "connection failed"}));
+
+        // Android's back closes the drawer before it touches the navigation
+        // underneath it.
+        QVariant popped;
+        QVERIFY(QMetaObject::invokeMethod(shell, "handleBack",
+                                          Q_RETURN_ARG(QVariant, popped)));
+        QVERIFY(popped.toBool());
+        QTRY_VERIFY(!drawer->property("opened").toBool());
+
+        // Picking an account is the whole errand, so it closes behind you.
+        QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
+        QTRY_VERIFY(drawer->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(drawerRail, "selectAccount",
+                                          Q_ARG(QString, QString("alt@example.com"))));
+        QCOMPARE(shell->property("currentAccount").toString(),
+                 QString("alt@example.com"));
+        QTRY_VERIFY(!drawer->property("opened").toBool());
+
+        // The header button is not the only way in; a drag from the left edge
+        // pulls it out too. Whether Android's own edge gesture lets that touch
+        // through before claiming it for Back is a system question no offscreen
+        // test can answer - this pins the Qt half only.
+        QVERIFY(drawer->property("interactive").toBool());
+        QTest::mousePress(&win, Qt::LeftButton, Qt::NoModifier, QPoint(2, 400));
+        for (int x = 10; x <= 260; x += 10)
+            QTest::mouseMove(&win, QPoint(x, 400));
+        QTest::mouseRelease(&win, Qt::LeftButton, Qt::NoModifier, QPoint(260, 400));
+        QTRY_VERIFY2(drawer->property("opened").toBool(),
+                     "an edge drag did not pull the drawer out");
+        QVERIFY(QMetaObject::invokeMethod(drawer, "close"));
+        QTRY_VERIFY(!drawer->property("opened").toBool());
+
+        // Over an open chat that edge belongs to going back to the list, not to
+        // a rail the chat has no room for.
+        shell->setProperty("currentChatJid", "friend@example.com");
+        QVERIFY(!drawer->property("interactive").toBool());
+        QVERIFY(QMetaObject::invokeMethod(shell, "closeChat"));
+
+        // Wide, the rail is a column again and the header's way in goes with it.
+        shell->setWidth(1000);
+        QTRY_VERIFY(shell->property("wide").toBool());
+        QVERIFY(inlineRail->isVisible());
+        QVERIFY(!hamburger->isVisible());
+
+        // Growing while it is open leaves two copies of the rail on screen,
+        // so the drawer has to let go on the way past the breakpoint.
+        shell->setWidth(400);
+        QTRY_VERIFY(!shell->property("wide").toBool());
+        QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
+        QTRY_VERIFY(drawer->property("opened").toBool());
+        shell->setWidth(1000);
+        QTRY_VERIFY2(!drawer->property("opened").toBool(),
+                     "the drawer stayed out after the rail came back inline");
+
+        win.grabWindow();
+        QCoreApplication::processEvents();
+        assertNoQmlErrors(warnings);
+    }
+
     // Every colour in the active palette has to reach the property named after
     // it, and the failure is silent: a QML property whose name starts with "on"
     // followed by a capital reads as a signal handler, so `onAccent` never took
@@ -853,6 +1032,48 @@ private slots:
                      qPrintable(QStringLiteral("Theme.%1 is %2, palette says %3")
                                     .arg(it.key(), got.value<QColor>().name(),
                                          want.name())));
+        }
+    }
+
+    // Adding a colour means editing every palette block, and missing one only
+    // fails when somebody switches to that theme - at which point the property
+    // reads as an invalid colour and whatever it painted comes out black. So
+    // check the key sets match rather than trusting nine hand edits.
+    void everyPaletteCarriesTheSameKeys() {
+        QQmlEngine e;
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        const QVariantMap palettes = theme->property("palettes").toMap();
+        QVERIFY2(palettes.size() > 1, "expected several palettes to compare");
+
+        // QVariantMap keys come back sorted, so this compares as sets.
+        const QStringList want = palettes.first().toMap().keys();
+        QVERIFY(!want.isEmpty());
+        for (auto it = palettes.cbegin(); it != palettes.cend(); ++it) {
+            const QStringList got = it.value().toMap().keys();
+            QVERIFY2(got == want,
+                     qPrintable(QStringLiteral("palette \"%1\" has [%2], expected [%3]")
+                                    .arg(it.key(), got.join(", "), want.join(", "))));
+        }
+    }
+
+    // The rail stands beside the chat list wide, and slides over it narrow, so
+    // the two fills have to be different paint. They cannot be told apart at
+    // all if a palette hands both the same value.
+    void theRailNeverSharesAFillWithTheChatList() {
+        QQmlEngine e;
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        const QVariantMap palettes = theme->property("palettes").toMap();
+        for (auto it = palettes.cbegin(); it != palettes.cend(); ++it) {
+            const QVariantMap palette = it.value().toMap();
+            const QColor rail = QColor::fromString(palette.value("rail").toString());
+            const QColor surface = QColor::fromString(palette.value("surface").toString());
+            QVERIFY2(rail.isValid(), qPrintable(it.key() + " has no rail colour"));
+            QVERIFY2(rail != surface,
+                     qPrintable(QStringLiteral("palette \"%1\" paints the rail and the "
+                                               "chat list the same %2")
+                                    .arg(it.key(), rail.name())));
         }
     }
 

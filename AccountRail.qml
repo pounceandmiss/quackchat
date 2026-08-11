@@ -6,19 +6,34 @@ import QtQuick.Layouts
 import Quack
 
 // Discord/Element-style rail: one avatar per account, bound to App.accounts.
+//
+// Two densities from the one component: compact (the default) is the 64px strip
+// beside the conversations list, expanded is what the narrow layout's drawer
+// shows, where there is room for the JID, the connection state and a
+// per-account menu button.
 Rectangle {
     id: rail
     objectName: "accountRail"
     property string currentAccount: ""
+    property bool expanded: false
     signal selectAccount(string jid)
 
-    color: Theme.background
-    implicitWidth: 64
+    // Its own fill rather than Theme.background: beside a near-white chat list
+    // the app background is a percent or two off and the two read as one pane.
+    color: Theme.rail
+    implicitWidth: expanded ? 280 : 64
 
+    // In the drawer this spans the window, system bars included; inline it sits
+    // within the shell, which ShellWindow has already kept clear - so 0 there.
+    readonly property real topInset: SafeArea.margins.top
+    readonly property real bottomInset: SafeArea.margins.bottom
+
+    // The rail's own edge as a column; in the drawer, the drawer draws it.
     Rectangle {
         anchors.right: parent.right
         width: 1; height: parent.height
         color: Theme.hairline
+        visible: !rail.expanded
     }
 
     // Android and iOS are single-window, so there the details get a full-screen
@@ -47,6 +62,22 @@ Rectangle {
         }
     }
 
+    // The same states in words, for the expanded rows: one red dot cannot say
+    // whether the server is unreachable or the password was rejected.
+    function stateText(state, enabled) {
+        if (!enabled)
+            return "disabled"
+        switch (state) {
+        case "connected": return "connected"
+        case "auth-error": return "sign-in failed"
+        case "conn-error": return "connection failed"
+        case "waiting": return "reconnecting…"
+        case "disconnected":
+        case "": return "offline"
+        default: return state // connecting / authenticating / binding
+        }
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -58,8 +89,8 @@ Rectangle {
             Layout.fillHeight: true
             model: App.accounts
             clip: true
-            topMargin: 10
-            spacing: 8
+            topMargin: 10 + rail.topInset
+            spacing: rail.expanded ? 2 : 8
 
             delegate: Item {
                 id: cell
@@ -71,9 +102,22 @@ Rectangle {
                 readonly property string connState: cell.model.connState
                 readonly property bool acctEnabled: cell.model.enabled
                 width: ListView.view.width
-                height: 56
+                height: rail.expanded ? 64 : 56
 
                 readonly property bool current: cell.jid === rail.currentAccount
+
+                // Expanded rows have the width to take a full wash; compact has
+                // only the accent tab to mark the current account with.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 8
+                    anchors.topMargin: 2
+                    anchors.bottomMargin: 2
+                    radius: 10
+                    color: Theme.menuHover
+                    visible: rail.expanded && cell.current
+                }
 
                 // Tall accent tab for the current account, a small nub otherwise.
                 Rectangle {
@@ -90,7 +134,8 @@ Rectangle {
                 // Circle that squares off into a rounded tile while current.
                 Avatar {
                     id: badge
-                    anchors.centerIn: parent
+                    x: rail.expanded ? 16 : (cell.width - width) / 2
+                    anchors.verticalCenter: parent.verticalCenter
                     width: 44; height: 44
                     radius: cell.current ? 12 : 22
                     opacity: cell.acctEnabled ? 1.0 : 0.45
@@ -107,7 +152,51 @@ Rectangle {
                     radius: 6.5
                     color: rail.stateColor(cell.connState, cell.acctEnabled)
                     border.width: 2
-                    border.color: Theme.background
+                    // Punches the dot out of the rail it sits on, so it tracks
+                    // the rail's fill rather than the window's.
+                    border.color: Theme.rail
+                }
+
+                // Compact reaches this menu by right-click or long press, which
+                // an expanded row has the width to spell out as a button.
+                IconButton {
+                    id: moreBtn
+                    objectName: "accountRowMenuButton"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: rail.expanded
+                    text: "⋯"
+                    font.pixelSize: 20
+                    glyphColor: Theme.textDim
+                    onClicked: ctx.popup(moreBtn, 0, moreBtn.height)
+                }
+
+                ColumnLayout {
+                    anchors.left: badge.right
+                    anchors.leftMargin: 12
+                    anchors.right: moreBtn.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 1
+                    visible: rail.expanded
+
+                    Text {
+                        objectName: "accountRowJid"
+                        Layout.fillWidth: true
+                        text: cell.jid
+                        color: Theme.textPrimary
+                        font.pixelSize: 14
+                        font.bold: cell.current
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        objectName: "accountRowState"
+                        Layout.fillWidth: true
+                        text: rail.stateText(cell.connState, cell.acctEnabled)
+                        color: rail.stateColor(cell.connState, cell.acctEnabled)
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
                 }
 
                 TapHandler {
@@ -157,24 +246,49 @@ Rectangle {
             }
         }
 
+        // Expanded only: in the compact strip the ＋ is one more circle in the
+        // column, and a rule above it would read as a break in the list.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: Theme.hairline
+            visible: rail.expanded
+        }
+
         ToolButton {
             id: addBtn
+            objectName: "addAccountButton"
             Layout.fillWidth: true
-            Layout.preferredHeight: 60
+            // The inset is padding below the button, not a taller target: the
+            // circle stays centred in the 60 above it.
+            Layout.preferredHeight: 60 + rail.bottomInset
             Accessible.name: qsTr("Add account")
             onClicked: addSheet.open()
-            contentItem: Rectangle {
-                anchors.centerIn: parent
-                width: 44; height: 44
-                radius: 22
-                color: addBtn.hovered ? Theme.menuHover : Theme.field
-                border.width: 1
-                border.color: Theme.hairline
-                Glyph {
-                    anchors.centerIn: parent
-                    path: Icons.add
-                    color: Theme.accent
-                    size: 24
+            contentItem: Item {
+                Rectangle {
+                    id: plus
+                    x: rail.expanded ? 16 : (parent.width - width) / 2
+                    y: (parent.height - rail.bottomInset - height) / 2
+                    width: 44; height: 44
+                    radius: 22
+                    color: addBtn.hovered ? Theme.menuHover : Theme.field
+                    border.width: 1
+                    border.color: Theme.hairline
+                    Glyph {
+                        anchors.centerIn: parent
+                        path: Icons.add
+                        color: Theme.accent
+                        size: 24
+                    }
+                }
+                Text {
+                    anchors.left: plus.right
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: plus.verticalCenter
+                    visible: rail.expanded
+                    text: "Add account"
+                    color: Theme.textPrimary
+                    font.pixelSize: 14
                 }
             }
             background: Item {}

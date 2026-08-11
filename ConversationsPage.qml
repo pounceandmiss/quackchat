@@ -11,9 +11,13 @@ Page {
     id: page
     objectName: "conversationsPane"
     property string account: ""
+    // Set in the narrow layout, where the account rail is a drawer rather than
+    // a column of its own and this header is the way to it.
+    property bool showAccounts: false
     signal openChat(string jid, string name, bool groupchat)
     signal popOutChat(string jid, string name, bool groupchat)
     signal startSearch()
+    signal openAccounts()
     background: Rectangle { color: Theme.surface }
 
     header: Rectangle {
@@ -21,9 +25,19 @@ Page {
         color: Theme.surface
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: 16
+            // The glyph button carries its own padding, so the text lines up
+            // with the title either way.
+            anchors.leftMargin: page.showAccounts ? 4 : 16
             anchors.rightMargin: 8
             spacing: 8
+            IconButton {
+                objectName: "accountsButton"
+                iconPath: Icons.menu
+                Accessible.name: qsTr("Accounts")
+                glyphColor: Theme.textDim
+                visible: page.showAccounts
+                onClicked: page.openAccounts()
+            }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 0
