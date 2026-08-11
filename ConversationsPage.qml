@@ -277,9 +277,11 @@ Page {
             required property string name
             required property bool groupchat
             required property int unread
-            // The whole entry, for the row menu: it wants the bookmark and
-            // room-state fields too, and naming each one here would be a
-            // second copy of the entry's shape.
+            required property int unread_mentions
+            required property string room_state
+            // The whole entry, for the row menu: it wants the bookmark fields
+            // too, and naming each one here would be a second copy of the
+            // entry's shape.
             required property var raw
             width: ListView.view.width
             height: 64
@@ -297,6 +299,22 @@ Page {
             }
 
             readonly property string title: name !== "" ? name : jid
+
+            // The Tk list's room-state row styling, in this palette's terms: a
+            // room we are not in is dimmed, one on its way in is dimmed and
+            // italic, a member room we have been dropped from is warned about,
+            // and a join that failed is an error. Only rooms have a state.
+            readonly property color titleColor: {
+                if (!row.groupchat)
+                    return Theme.textPrimary
+                switch (row.room_state) {
+                case "error":        return Theme.negative
+                case "disconnected": return Theme.warning
+                case "joining":
+                case "idle":         return Theme.textDim
+                default:             return Theme.textPrimary
+                }
+            }
 
             background: Rectangle {
                 color: row.hovered ? Theme.menuHover : "transparent"
@@ -319,11 +337,15 @@ Page {
                     Layout.fillWidth: true
                     spacing: 2
                     Text {
+                        objectName: "chatRowTitle"
                         Layout.fillWidth: true
                         text: row.title
-                        color: Theme.textPrimary
+                        color: row.titleColor
                         font.pixelSize: 16
                         font.bold: true
+                        // A room mid-join, so the row reads as transient rather
+                        // than as one more dimmed idle room.
+                        font.italic: row.groupchat && row.room_state === "joining"
                         elide: Text.ElideRight
                     }
                     Text {
@@ -339,6 +361,19 @@ Page {
                     Layout.rightMargin: 14
                     text: row.groupchat ? "👥" : ""
                     font.pixelSize: 14
+                }
+
+                // Someone named you in there. The Tk list says this by bolding
+                // the row, which is no signal here - the name is already bold -
+                // so it gets a mark of its own beside the count.
+                Text {
+                    objectName: "mentionMark"
+                    Layout.rightMargin: 14
+                    visible: row.unread_mentions > 0
+                    text: "@"
+                    color: Theme.accent
+                    font.pixelSize: 16
+                    font.bold: true
                 }
 
                 // The Tk list's "Name (3)" suffix, as the badge an avatar row

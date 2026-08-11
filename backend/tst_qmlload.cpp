@@ -1213,6 +1213,104 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // A room's row says what state it is in, which is the only place a failed
+    // join or a room we have been dropped from is visible without opening it.
+    void roomRowsAreStyledByTheirState() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","last_activity":600},
+            {"jid":"ok@muc.example.com?join","name":"Joined","groupchat":true,
+             "room_state":"joined","last_activity":500,
+             "unread":4,"unread_mentions":1},
+            {"jid":"bad@muc.example.com?join","name":"Failed","groupchat":true,
+             "room_state":"error","room_reason":"forbidden","last_activity":400},
+            {"jid":"gone@muc.example.com?join","name":"Dropped","groupchat":true,
+             "room_state":"disconnected","last_activity":300},
+            {"jid":"wait@muc.example.com?join","name":"Joining","groupchat":true,
+             "room_state":"joining","last_activity":200},
+            {"jid":"idle@muc.example.com?join","name":"Idle","groupchat":true,
+             "room_state":"idle","last_activity":100}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 6);
+        win.grabWindow(); // force the delegates to lay out and bind
+
+        auto rowAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return item;
+        };
+        auto title = [&](int i) { return findItem(rowAt(i), "chatRowTitle"); };
+        auto colorOf = [&](int i) {
+            return title(i)->property("color").value<QColor>();
+        };
+        const auto themeColor = [&](const char *name) {
+            return theme->property(name).value<QColor>();
+        };
+
+        // A 1:1 chat has no room state to colour it by.
+        QCOMPARE(colorOf(0), themeColor("textPrimary"));
+        QCOMPARE(colorOf(1), themeColor("textPrimary")); // joined reads as normal
+        QCOMPARE(colorOf(2), themeColor("negative"));    // the join failed
+        QCOMPARE(colorOf(3), themeColor("warning"));     // member, but not in it
+        QCOMPARE(colorOf(4), themeColor("textDim"));     // on its way in
+        QCOMPARE(colorOf(5), themeColor("textDim"));     // never attempted
+
+        // Only the transient state is italic, so it does not just read as one
+        // more dimmed idle room.
+        QVERIFY(title(4)->property("font").value<QFont>().italic());
+        QVERIFY(!title(5)->property("font").value<QFont>().italic());
+
+        auto mention = [&](int i) { return findItem(rowAt(i), "mentionMark"); };
+        QVERIFY(mention(1)->isVisible());
+        QVERIFY(!mention(0)->isVisible());
+        // Unread without a mention is the badge alone.
+        chats->applyItem(QVariantMap{{"jid", "ok@muc.example.com?join"},
+                                     {"name", "Joined"},
+                                     {"groupchat", true},
+                                     {"room_state", "joined"},
+                                     {"last_activity", 500},
+                                     {"unread", 4},
+                                     {"unread_mentions", 0}});
+        QTRY_VERIFY(!mention(1)->isVisible());
+        QVERIFY(findItem(rowAt(1), "unreadBadge")->isVisible());
+
+        assertNoQmlErrors(warnings);
+    }
+
     // The row menu is one instance shared by every row, so which verbs it shows
     // is entirely a function of the entry it was opened for. A contact offered
     // a room's join, or a room offered a call, would both be nonsense.
