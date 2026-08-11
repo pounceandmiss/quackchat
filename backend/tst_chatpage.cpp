@@ -580,7 +580,11 @@ void TestChatPage::ticksFollowBothHops() {
     QVERIFY(chat.row(0));
     QQuickItem *tick = findItem(chat.row(0), "statusTick");
     QVERIFY(tick);
-    QCOMPARE(tick->property("text").toString(), QString("◌"));
+    // Ticks are drawn now, so the assertion is which Icons path the row picked
+    // rather than which character it typed.
+    QObject *icons = m_engine->singletonInstance<QObject *>("Quack", "Icons");
+    QVERIFY(icons);
+    QCOMPARE(tick->property("path").toString(), icons->property("schedule").toString());
 }
 
 // Reactions used to live in the view and go nowhere. They are the backend's

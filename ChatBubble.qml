@@ -231,11 +231,11 @@ Item {
                 id: moreBtn
                 width: 40; height: 40; radius: 20
                 color: moreHover.hovered ? Theme.menuHover : "transparent"
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "⋯"
+                    path: Icons.moreHoriz
                     color: Theme.textDim
-                    font.pixelSize: 20
+                    size: 20
                 }
                 HoverHandler { id: moreHover }
                 TapHandler {
@@ -268,25 +268,24 @@ Item {
         color: root.selected ? Theme.accent : "transparent"
         border.color: root.selected ? Theme.accent : Theme.textDim
         border.width: 2
-        Text {
+        Glyph {
             anchors.centerIn: parent
-            text: "✓"
+            path: Icons.check
             color: Theme.textOnAccent
-            font.pixelSize: 14
-            font.bold: true
+            size: 16
             visible: root.selected
         }
         // Hit area padded well past the 24px visual for touch.
         MouseArea { anchors.fill: parent; anchors.margins: -10; onClicked: root.toggleRequested() }
     }
 
-    Text {
+    Glyph {
         id: replyHint
         anchors.verticalCenter: parent.verticalCenter
         anchors.right: parent.right
         anchors.rightMargin: 14
-        text: "↩"
-        font.pixelSize: 22
+        path: Icons.reply
+        size: 22
         visible: root.replyPull > 0
         opacity: Math.min(1, root.replyPull / root.replyCommit)
         scale: 0.6 + 0.4 * opacity
@@ -655,16 +654,15 @@ Item {
                         color: Theme.textDim
                         font.pixelSize: 11
                     }
-                    Text {
+                    Glyph {
                         objectName: "statusTick"
                         visible: root.outgoing
-                        text: root.status === "pending" ? "◌"
-                            : root.status === "failed" ? "✕"
-                            : root.status === "sent" ? "✓" : "✓✓"
+                        path: root.status === "pending" ? Icons.schedule
+                            : root.status === "failed" ? Icons.close
+                            : root.status === "sent" ? Icons.check : Icons.doneAll
                         color: root.status === "failed" ? Theme.negative
                              : root.status === "read" ? Theme.positive : Theme.textDim
-                        font.pixelSize: 11
-                        font.bold: true
+                        size: 13
                     }
                 }
             }

@@ -108,7 +108,8 @@ Page {
             anchors.rightMargin: 8
             spacing: 4
             IconButton {
-                text: "←"
+                iconPath: Icons.arrowBack
+                Accessible.name: qsTr("Back")
                 visible: page.showClose
                 glyphColor: Theme.textDim
                 onClicked: page.done()
@@ -236,7 +237,8 @@ Page {
                     }
 
                     IconButton {
-                        text: "✎"
+                        iconPath: Icons.edit
+                        Accessible.name: qsTr("Edit your name")
                         glyphColor: page.editingNick ? Theme.accent : Theme.textDim
                         onClicked: {
                             page.editingNick = !page.editingNick

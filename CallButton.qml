@@ -7,11 +7,9 @@ import Quack
 AbstractButton {
     id: btn
 
-    // A CallIcon symbol, or "" to fall back to `glyph` - which is only for
-    // dismissing a call that is already over, a close box rather than a
-    // handset.
-    property string symbol: ""
-    property string glyph: ""
+    // The Icons path on the disc: a handset to take or drop the call, a close
+    // box to dismiss one that is already over.
+    property string iconPath: ""
     property color fill: Theme.accent
     property int diameter: 56
 
@@ -29,21 +27,11 @@ AbstractButton {
             color: btn.fill
             opacity: btn.pressed ? 0.75 : (btn.hovered ? 0.9 : 1.0)
 
-            CallIcon {
+            Glyph {
                 anchors.centerIn: parent
-                visible: btn.symbol !== ""
-                width: btn.diameter * 0.5
-                height: width
-                symbol: btn.symbol
+                path: btn.iconPath
                 color: Theme.textOnAccent
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: btn.symbol === ""
-                text: btn.glyph
-                color: Theme.textOnAccent
-                font.pixelSize: 24
+                size: btn.diameter * 0.5
             }
         }
         Text {

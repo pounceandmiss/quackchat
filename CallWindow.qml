@@ -178,7 +178,7 @@ ApplicationWindow {
             // <Outgoing> row spawns its own.
             CallButton {
                 visible: win.state === "failed"
-                symbol: "call"
+                iconPath: Icons.call
                 fill: Theme.positive
                 text: qsTr("Call again")
                 onClicked: {
@@ -188,8 +188,7 @@ ApplicationWindow {
             }
 
             CallButton {
-                symbol: win.terminal ? "" : "call-end"
-                glyph: "✕"
+                iconPath: win.terminal ? Icons.close : Icons.callEnd
                 fill: win.terminal ? Theme.textDim : Theme.negative
                 text: win.terminal ? qsTr("Close")
                                    : (win.ringingIn ? qsTr("Decline") : qsTr("Hang up"))

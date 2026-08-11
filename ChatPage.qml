@@ -405,8 +405,9 @@ Page {
             spacing: 10
             visible: !page.selectionMode && !page.searchMode
             IconButton {
-                text: "‹"
-                font.pixelSize: 28
+                iconPath: Icons.chevronLeft
+                iconSize: 26
+                Accessible.name: qsTr("Back")
                 visible: page.showBack
                 onClicked: page.back()
             }
@@ -444,15 +445,10 @@ Page {
             IconButton {
                 visible: page.hasChat && !page.chatGroupchat
                 Accessible.name: qsTr("Call")
+                iconPath: Icons.call
+                iconSize: 20
+                glyphColor: Theme.positive
                 onClicked: App.calls.start(page.account, page.chatJid)
-
-                CallIcon {
-                    anchors.centerIn: parent
-                    width: 20
-                    height: 20
-                    symbol: "call"
-                    color: Theme.positive
-                }
             }
             IconButton {
                 objectName: "chatSearchButton"
@@ -463,7 +459,8 @@ Page {
                 onClicked: page.openSearch()
             }
             IconButton {
-                text: "⧉"
+                iconPath: Icons.openInNew
+                Accessible.name: qsTr("Pop out")
                 glyphColor: Theme.textDim
                 visible: page.canPopOut && page.hasChat
                 onClicked: page.popOut()
@@ -477,7 +474,8 @@ Page {
             spacing: 16
             visible: page.selectionMode
             IconButton {
-                text: "✕"
+                iconPath: Icons.close
+                Accessible.name: qsTr("Clear selection")
                 onClicked: page.clearSelection()
             }
             Text {
@@ -488,8 +486,9 @@ Page {
                 font.bold: true
             }
             IconButton {
-                text: "⧉"
-                font.pixelSize: 20
+                iconPath: Icons.contentCopy
+                iconSize: 20
+                Accessible.name: qsTr("Copy")
                 glyphColor: Theme.accentDeep
                 onClicked: page.copySelected()
             }
@@ -504,7 +503,8 @@ Page {
             spacing: 4
             visible: page.searchMode
             IconButton {
-                text: "✕"
+                iconPath: Icons.close
+                Accessible.name: qsTr("Close search")
                 onClicked: page.closeSearch()
             }
             TextField {
@@ -578,21 +578,23 @@ Page {
                            + (chatSearch.complete ? "" : "+")
                 }
             }
-            // Triangles rather than chevrons: ⌃ and ⌄ are drawn at the top and
-            // the bottom of their own em box, so a pair of them never lines up
-            // however the buttons are centred.
+            // Chevrons now that these are drawn: as text they had to be
+            // triangles, since ⌃ and ⌄ sit at opposite ends of their own em
+            // box and so never lined up as a pair.
             IconButton {
                 objectName: "olderHit"
-                text: "▲"
-                font.pixelSize: 11
+                iconPath: Icons.keyboardArrowUp
+                iconSize: 16
+                Accessible.name: qsTr("Previous match")
                 enabled: chatSearch.searched && page.hasOlderHit
                 opacity: enabled ? 1 : 0.35
                 onClicked: page.olderHit()
             }
             IconButton {
                 objectName: "newerHit"
-                text: "▼"
-                font.pixelSize: 11
+                iconPath: Icons.keyboardArrowDown
+                iconSize: 16
+                Accessible.name: qsTr("Next match")
                 enabled: page.hasNewerHit
                 opacity: enabled ? 1 : 0.35
                 onClicked: page.newerHit()
@@ -867,11 +869,11 @@ Page {
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "⌄"
+                    path: Icons.keyboardArrowDown
                     color: Theme.textDim
-                    font.pixelSize: 20
+                    size: 22
                 }
                 TapHandler { onTapped: chatModel.resetToBottom() }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -989,8 +991,9 @@ Page {
                     }
                 }
                 IconButton {
-                    text: "✕"
-                    font.pixelSize: 16
+                    iconPath: Icons.close
+                    iconSize: 16
+                    Accessible.name: qsTr("Cancel reply")
                     glyphColor: Theme.textDim
                     onClicked: page.cancelReply()
                 }
@@ -1105,7 +1108,12 @@ Page {
                     }
                     opacity: input.text.trim().length > 0 ? 1.0 : 0.5
                     Behavior on opacity { NumberAnimation { duration: 120 } }
-                    Text { anchors.centerIn: parent; text: "➤"; color: Theme.textOnAccent; font.pixelSize: 18 }
+                    Glyph {
+                        anchors.centerIn: parent
+                        path: Icons.send
+                        color: Theme.textOnAccent
+                        size: 20
+                    }
                     MouseArea { anchors.fill: parent; onClicked: page.sendCurrent() }
                 }
             }

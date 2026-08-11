@@ -81,14 +81,14 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
 
             CallButton {
-                symbol: "call"
+                iconPath: Icons.call
                 fill: Theme.positive
                 text: qsTr("Answer")
                 onClicked: App.calls.accept(dlg.account, dlg.sid)
             }
 
             CallButton {
-                symbol: "call-end"
+                iconPath: Icons.callEnd
                 fill: Theme.negative
                 text: qsTr("Decline")
                 onClicked: App.calls.reject(dlg.account, dlg.sid)

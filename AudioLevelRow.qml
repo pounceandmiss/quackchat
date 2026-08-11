@@ -97,7 +97,7 @@ RowLayout {
 
     IconButton {
         id: pickButton
-        text: "▾"
+        iconPath: Icons.arrowDropDown
         Accessible.name: qsTr("Choose %1").arg(row.label)
         onClicked: deviceMenu.popup(pickButton, 0, pickButton.height)
     }
@@ -135,13 +135,15 @@ RowLayout {
 
                 contentItem: RowLayout {
                     spacing: 6
-                    Text {
+                    Glyph {
                         // A fixed column so the names line up whether or not
-                        // the tick is there.
+                        // the tick is there: an empty path draws nothing but
+                        // stays laid out, where an invisible item would let
+                        // the row close up.
                         Layout.preferredWidth: 14
-                        text: entry.current ? "✓" : ""
+                        path: entry.current ? Icons.check : ""
                         color: Theme.accentDeep
-                        font.pixelSize: 13
+                        size: 14
                     }
                     Text {
                         Layout.fillWidth: true

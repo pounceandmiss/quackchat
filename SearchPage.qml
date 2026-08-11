@@ -119,8 +119,9 @@ Page {
             spacing: 6
 
             IconButton {
-                text: "‹"
-                font.pixelSize: 28
+                iconPath: Icons.chevronLeft
+                iconSize: 26
+                Accessible.name: qsTr("Back")
                 onClicked: page.closed()
             }
             TextField {

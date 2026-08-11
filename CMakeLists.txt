@@ -100,6 +100,7 @@ endif()
 
 qt_add_library(quack STATIC)
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(AppWindows.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(quack
     URI Quack
@@ -127,9 +128,10 @@ qt_add_qml_module(quack
         CallWindow.qml
         IncomingCallDialog.qml
         CallButton.qml
-        CallIcon.qml
         AudioLevelRow.qml
         AppWindows.qml
+        Glyph.qml
+        Icons.qml
         Theme.qml
     SOURCES
         backend/AppController.cpp backend/AppController.h

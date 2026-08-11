@@ -161,6 +161,7 @@ Rectangle {
             id: addBtn
             Layout.fillWidth: true
             Layout.preferredHeight: 60
+            Accessible.name: qsTr("Add account")
             onClicked: addSheet.open()
             contentItem: Rectangle {
                 anchors.centerIn: parent
@@ -169,11 +170,11 @@ Rectangle {
                 color: addBtn.hovered ? Theme.menuHover : Theme.field
                 border.width: 1
                 border.color: Theme.hairline
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "＋"
+                    path: Icons.add
                     color: Theme.accent
-                    font.pixelSize: 22
+                    size: 24
                 }
             }
             background: Item {}

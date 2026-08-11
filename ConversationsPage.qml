@@ -53,8 +53,8 @@ Page {
             }
             IconButton {
                 id: overflowBtn
-                text: "⋯"
-                font.pixelSize: 20
+                iconPath: Icons.moreHoriz
+                Accessible.name: qsTr("More")
                 glyphColor: Theme.textDim
                 onClicked: overflow.popup(overflowBtn,
                                           overflowBtn.width - overflow.width,
@@ -212,7 +212,7 @@ Page {
         font.pixelSize: 14
         text: {
             if (page.account === "")
-                return "No account selected.\nUse ＋ on the left to add one."
+                return "No account selected.\nUse + on the left to add one."
             // connRev is read purely to give this binding a dependency:
             // connStateFor is a call, so nothing would re-run it otherwise.
             App.accounts.connRev
