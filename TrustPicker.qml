@@ -143,7 +143,9 @@ Rectangle {
                 readonly property bool current: picker.activeIndex === seg.index
 
                 width: picker.segmentWidth
-                height: parent.height
+                // Sized off the picker rather than the row: a delegate outlives
+                // its parent binding on teardown, and the row is just this inset.
+                height: picker.height - 2 * picker.inset
 
                 Text {
                     anchors.centerIn: parent
