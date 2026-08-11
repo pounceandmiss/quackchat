@@ -114,14 +114,20 @@ void ChatListModel::setLoadError(const QString &message) {
     emit loadErrorChanged();
 }
 
+// Sort under what the row shows: an unnamed chat is listed by its JID, so it
+// belongs where that JID puts it, not ahead of every named chat as a bare ""
+// would. The Tk list's SortName.
+static QString sortName(const QVariantMap &e) {
+    const QString name = e.value(QStringLiteral("name")).toString();
+    return name.isEmpty() ? e.value(QStringLiteral("jid")).toString() : name;
+}
+
 bool ChatListModel::lessThan(const QVariantMap &a, const QVariantMap &b) {
     const qlonglong la = a.value(QStringLiteral("last_activity")).toLongLong();
     const qlonglong lb = b.value(QStringLiteral("last_activity")).toLongLong();
     if (la != lb)
         return la > lb; // newest activity first
-    const QString na = a.value(QStringLiteral("name")).toString();
-    const QString nb = b.value(QStringLiteral("name")).toString();
-    const int c = na.compare(nb, Qt::CaseInsensitive);
+    const int c = sortName(a).compare(sortName(b), Qt::CaseInsensitive);
     if (c != 0)
         return c < 0;
     return a.value(QStringLiteral("jid")).toString() <

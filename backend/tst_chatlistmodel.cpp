@@ -24,6 +24,7 @@ class TestChatList : public QObject {
     Q_OBJECT
 private slots:
     void sortsByActivity();
+    void unnamedChatsSortUnderTheirJid();
     void insertKeepsOrder();
     void upsertRenameInPlace();
     void upsertActivityReorders();
@@ -44,6 +45,23 @@ void TestChatList::sortsByActivity() {
     QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("a@h"));
     QCOMPARE(m.data(m.index(1), ChatListModel::JidRole).toString(), QString("c@h"));
     QCOMPARE(m.data(m.index(2), ChatListModel::JidRole).toString(), QString("b@h"));
+}
+
+// Contacts never messaged all sit at activity 0, so the name leg orders that
+// whole block. A nameless one belongs under the JID its row shows; a bare ""
+// swept every one of them to the top instead.
+void TestChatList::unnamedChatsSortUnderTheirJid() {
+    ChatListModel m;
+    m.applyList(entriesFrom(R"([
+        {"jid":"zoe@h","name":"","last_activity":0},
+        {"jid":"bob@h","name":"Bob","last_activity":0},
+        {"jid":"amy@h","name":"","last_activity":0},
+        {"jid":"cy@h","name":"Cy","last_activity":0}
+    ])"));
+    QStringList order;
+    for (int i = 0; i < m.rowCount(); ++i)
+        order << m.data(m.index(i), ChatListModel::JidRole).toString();
+    QCOMPARE(order, QStringList({"amy@h", "bob@h", "cy@h", "zoe@h"}));
 }
 
 void TestChatList::insertKeepsOrder() {

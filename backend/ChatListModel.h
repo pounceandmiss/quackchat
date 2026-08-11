@@ -73,7 +73,9 @@ signals:
     void accountChanged();
 
 private:
-    // Newest activity first, then name (ci), then jid - total and stable.
+    // Newest activity first, then display name (ci), then jid - total and
+    // stable. Contacts never messaged all share activity 0, so the name leg
+    // orders that whole block rather than the odd collision.
     static bool lessThan(const QVariantMap &a, const QVariantMap &b);
     int indexOfJid(const QString &jid) const;
     int insertPos(const QVariantMap &entry) const;
