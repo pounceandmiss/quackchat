@@ -1605,6 +1605,16 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(confirm, "accept"));
         QCOMPARE(lastFrame(), QString("roster/remove amy@example.com"));
 
+        // Refresh asks the server again rather than re-reading what tacky has.
+        sent.clear();
+        QVERIFY(QMetaObject::invokeMethod(page->findChild<QObject *>("refreshEntry"),
+                                          "triggered"));
+        QStringList refreshed;
+        for (const QList<QVariant> &c : sent)
+            refreshed << c.at(0).toString() + "/" + c.at(1).toString();
+        QCOMPARE(refreshed, QStringList({"roster/request", "bookmarks/request",
+                                         "chatlist/get"}));
+
         assertNoQmlErrors(warnings);
     }
 };

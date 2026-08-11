@@ -250,6 +250,14 @@ Page {
             shortcutHint: "Ctrl+T"
             onTriggered: Theme.cycle()
         }
+        // The Tk list's Refresh: not a repaint but a re-ask, for when the
+        // server and what we hold have drifted apart.
+        OverflowEntry {
+            objectName: "refreshEntry"
+            text: "Refresh"
+            enabled: page.account !== ""
+            onTriggered: if (page.chatList) page.chatList.reload()
+        }
     }
 
     ListView {
