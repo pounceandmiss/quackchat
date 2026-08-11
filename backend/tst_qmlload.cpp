@@ -13,8 +13,11 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
+#include <QGuiApplication>
+
 #include "AccountSettings.h"
 #include "AppController.h"
+#include "CallsModel.h"
 #include "OmemoDevicesModel.h"
 #include "SearchModel.h"
 
@@ -40,6 +43,24 @@ class TestQmlLoad : public QObject {
             if (QQuickItem *found = findItem(child, name))
                 return found;
         }
+        return nullptr;
+    }
+
+    // Call windows are built for every row but shown one at a time, so what is
+    // on screen is the only question worth asking. topLevelWindows() counts the
+    // hidden ones too.
+    static QList<QWindow *> visibleWindows() {
+        QList<QWindow *> out;
+        for (QWindow *w : QGuiApplication::topLevelWindows())
+            if (w->isVisible())
+                out << w;
+        return out;
+    }
+
+    static QWindow *visibleWindowTitled(const QString &fragment) {
+        for (QWindow *w : visibleWindows())
+            if (w->title().contains(fragment))
+                return w;
         return nullptr;
     }
 
@@ -538,6 +559,92 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Call windows are never asked for: they follow a CallsModel row, with the
+    // roles arriving as the delegate's required properties. This is the part
+    // that no C++ test can reach, so drive canned events through the real
+    // singleton and look at what is actually on screen.
+    //
+    // A ringing call is the dialog's, not the call window's - the window only
+    // appears once there is a call in it, as tacky's Tk GUI does it.
+    void ringingCallShowsTheDialogUntilItIsAnswered() {
+        QStringList warnings;
+        QQmlApplicationEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlApplicationEngine::warnings,
+                         [&](const QList<QQmlError> &ws) {
+                             for (const QQmlError &w : ws)
+                                 warnings << w.toString();
+                         });
+        e.loadFromModule("Quack", "Main"); // ShellWindow arms AppWindows
+        QVERIFY(!e.rootObjects().isEmpty());
+
+        const int before = visibleWindows().size();
+        app->calls()->handleEvent(
+            "calls", "Incoming",
+            QVariantMap{{"acc", "me@example.com"},
+                        {"sid", "tk-qml"},
+                        {"from", "friend@example.com"}});
+        QCoreApplication::processEvents();
+
+        QVERIFY2(visibleWindowTitled("Incoming Call"),
+                 "no dialog appeared for the ringing call");
+        QVERIFY2(!visibleWindowTitled("Call —"),
+                 "a call window appeared for a call still ringing");
+        QCOMPARE(visibleWindows().size(), before + 1);
+
+        // Answering swaps one for the other: the dialog has nothing left to
+        // ask, and the call is now a call.
+        app->calls()->accept("me@example.com", "tk-qml");
+        QCoreApplication::processEvents();
+        QVERIFY(!visibleWindowTitled("Incoming Call"));
+        QWindow *call = visibleWindowTitled("friend@example.com");
+        QVERIFY2(call, "answering did not raise the call window");
+        QCOMPARE(visibleWindows().size(), before + 1);
+
+        // Dismissing the row is what closes it - the window owns no lifetime
+        // of its own.
+        app->calls()->dismiss("me@example.com", "tk-qml");
+        QCoreApplication::processEvents();
+        QTRY_COMPARE(visibleWindows().size(), before);
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // Declining never shows a call window, so nothing is left holding the row
+    // open: it has to clear itself or it sits in the model unseen forever.
+    void decliningARingingCallClearsTheRow() {
+        QStringList warnings;
+        QQmlApplicationEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlApplicationEngine::warnings,
+                         [&](const QList<QQmlError> &ws) {
+                             for (const QQmlError &w : ws)
+                                 warnings << w.toString();
+                         });
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+
+        const int before = visibleWindows().size();
+        CallsModel *calls = app->calls();
+        calls->handleEvent("calls", "Incoming",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"sid", "tk-decline"},
+                                       {"from", "friend@example.com"}});
+        QCoreApplication::processEvents();
+        QVERIFY(visibleWindowTitled("Incoming Call"));
+
+        calls->reject("me@example.com", "tk-decline");
+        QCoreApplication::processEvents();
+        QVERIFY2(!visibleWindowTitled("Call —"),
+                 "declining raised a call window on the way out");
+        QTRY_COMPARE(calls->rowCount(), 0);
+        QTRY_COMPARE(visibleWindows().size(), before);
+
+        assertNoQmlErrors(warnings);
+    }
+
     // The same devices model as the account's own panel, pointed at a contact
     // instead: every device they have is listed, and none of it is ours.
     void loadsOmemoKeysWindow() {
@@ -619,6 +726,190 @@ private slots:
 
         QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
         QCoreApplication::processEvents();
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // Closing the window is not a way to walk out on a running call: it hangs
+    // up, and only then does the row (and with it the window) go.
+    void closingACallWindowHangsUp() {
+        QStringList warnings;
+        QQmlApplicationEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlApplicationEngine::warnings,
+                         [&](const QList<QQmlError> &ws) {
+                             for (const QQmlError &w : ws)
+                                 warnings << w.toString();
+                         });
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+
+        CallsModel *calls = app->calls();
+        calls->handleEvent("calls", "Active",
+                           QVariantMap{}); // no sid: must be ignored outright
+        calls->handleEvent("calls", "Outgoing",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"sid", "tk-close"},
+                                       {"to", "friend@example.com"}});
+        QCoreApplication::processEvents();
+
+        QWindow *call = visibleWindowTitled("friend@example.com");
+        QVERIFY2(call, "a call we placed did not take the call window");
+
+        call->close();
+        QCoreApplication::processEvents();
+        QCOMPARE(calls->rowCount(), 1);
+        QCOMPARE(calls->data(calls->index(0), CallsModel::StateRole).toString(),
+                 QString("ended"));
+        // The window's own timer clears the finished row shortly after.
+        QTRY_COMPARE_WITH_TIMEOUT(calls->rowCount(), 0, 4000);
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // Calling one of your own accounts from another is one session but two
+    // calls, and this app is on both ends of it. What is on screen is one call
+    // window and one ringing dialog - never two call windows on the same spot,
+    // which is unreadable - and, the bug this pins, one end finishing says
+    // nothing about the other: a sibling device answering ends the callee end
+    // while the caller end is up and audible.
+    void bothEndsOfACallBetweenOwnAccountsShowOneWindowAndOneDialog() {
+        QStringList warnings;
+        QQmlApplicationEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlApplicationEngine::warnings,
+                         [&](const QList<QQmlError> &ws) {
+                             for (const QQmlError &w : ws)
+                                 warnings << w.toString();
+                         });
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+
+        const int before = visibleWindows().size();
+        CallsModel *calls = app->calls();
+        calls->handleEvent(
+            "calls", "Outgoing",
+            QVariantMap{{"acc", "a@host"}, {"sid", "tk-s"}, {"to", "b@host"}});
+        calls->handleEvent(
+            "calls", "Incoming",
+            QVariantMap{{"acc", "b@host"}, {"sid", "tk-s"}, {"from", "a@host"}});
+        QCoreApplication::processEvents();
+
+        // One sid, two rows. The end that placed the call holds the window; the
+        // end being rung holds the dialog.
+        QCOMPARE(calls->rowCount(), 2);
+        QWindow *window = visibleWindowTitled("Call —");
+        QVERIFY2(window, "no call window for the calling end");
+        QCOMPARE(window->title(), QStringLiteral("Call — b@host"));
+        QVERIFY2(visibleWindowTitled("Incoming Call"),
+                 "no dialog for the end being rung");
+        QCOMPARE(visibleWindows().size(), before + 2);
+
+        // The answering end goes away (another device took it). The calling end
+        // must not follow it out - that call is still running.
+        calls->handleEvent("calls", "Ended",
+                           QVariantMap{{"acc", "b@host"}, {"sid", "tk-s"}});
+        calls->handleEvent("calls", "Active",
+                           QVariantMap{{"acc", "a@host"}, {"sid", "tk-s"}});
+        QCoreApplication::processEvents();
+        QTRY_COMPARE(calls->rowCount(), 1);
+        QCOMPARE(calls->data(calls->index(0), CallsModel::StateRole).toString(),
+                 QString("active"));
+        QVERIFY2(visibleWindowTitled("Call — b@host"),
+                 "the live call's window was closed");
+        QVERIFY(!visibleWindowTitled("Incoming Call"));
+
+        calls->dismiss("a@host", "tk-s");
+        QCoreApplication::processEvents();
+        QTRY_COMPARE(visibleWindows().size(), before);
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // Every colour in the active palette has to reach the property named after
+    // it, and the failure is silent: a QML property whose name starts with "on"
+    // followed by a capital reads as a signal handler, so `onAccent` never took
+    // its initialiser and every icon drawn on an accent fill came out
+    // default-constructed black.
+    void themePropertiesCarryTheirPaletteColour() {
+        QQmlEngine e;
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        const QVariantMap palette = theme->property("p").toMap();
+        QVERIFY2(!palette.isEmpty(), "the active palette is empty");
+
+        for (auto it = palette.cbegin(); it != palette.cend(); ++it) {
+            const QColor want = QColor::fromString(it.value().toString());
+            QVERIFY2(want.isValid(),
+                     qPrintable(it.key() + " is not a colour: " + it.value().toString()));
+            const QVariant got = theme->property(it.key().toUtf8().constData());
+            QVERIFY2(got.isValid(),
+                     qPrintable("Theme has no property for palette key " + it.key()));
+            QVERIFY2(got.value<QColor>() == want,
+                     qPrintable(QStringLiteral("Theme.%1 is %2, palette says %3")
+                                    .arg(it.key(), got.value<QColor>().name(),
+                                         want.name())));
+        }
+    }
+
+    // The device list is built from a plain JS array that gets replaced whole
+    // every time devices are re-enumerated, so the menu is filled by an
+    // Instantiator rather than declared. Check it really populates, that the
+    // tick tracks the current id rather than a position, and that picking
+    // reports the id instead of the label.
+    void deviceMenuListsEveryDeviceAndReportsThePick() {
+        QStringList warnings;
+        QQmlEngine e;
+        QObject::connect(&e, &QQmlEngine::warnings,
+                         [&](const QList<QQmlError> &ws) {
+                             for (const QQmlError &w : ws)
+                                 warnings << w.toString();
+                         });
+        QQuickWindow win;
+        win.resize(400, 120);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AudioLevelRow");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        auto *row = qobject_cast<QQuickItem *>(comp.createWithInitialProperties(
+            {{"label", "Microphone"},
+             {"devices",
+              QVariantList{QVariantMap{{"name", "Built-in"}, {"id", "mic-1"}},
+                           QVariantMap{{"name", "USB headset"}, {"id", "mic-2"}}}},
+             {"deviceId", "mic-2"},
+             {"width", win.width()}}));
+        QVERIFY2(row, qPrintable(comp.errorString()));
+        row->setParentItem(win.contentItem());
+
+        QObject *menu = row->findChild<QObject *>("deviceMenu");
+        QVERIFY(menu);
+        // The two real devices, behind the system-default entry.
+        QTRY_COMPARE(menu->property("count").toInt(), 3);
+
+        auto itemAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem *, item),
+                                      Q_ARG(int, i));
+            return item;
+        };
+        QVERIFY(itemAt(2));
+        QVERIFY(!itemAt(0)->property("current").toBool());
+        QVERIFY(!itemAt(1)->property("current").toBool());
+        QVERIFY(itemAt(2)->property("current").toBool());
+
+        QSignalSpy picked(row, SIGNAL(devicePicked(QString)));
+        QVERIFY(QMetaObject::invokeMethod(itemAt(1), "triggered"));
+        QCOMPARE(picked.count(), 1);
+        QCOMPARE(picked.first().at(0).toString(), QString("mic-1"));
+
+        // "" is a real choice, not an empty one: it hands the pick back to the
+        // system rather than leaving the device alone.
+        QVERIFY(QMetaObject::invokeMethod(itemAt(0), "triggered"));
+        QCOMPARE(picked.count(), 2);
+        QCOMPARE(picked.at(1).at(0).toString(), QString());
 
         assertNoQmlErrors(warnings);
     }

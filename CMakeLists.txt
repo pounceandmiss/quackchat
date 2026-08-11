@@ -124,6 +124,11 @@ qt_add_qml_module(quack
         ChatBubble.qml
         Avatar.qml
         IconButton.qml
+        CallWindow.qml
+        IncomingCallDialog.qml
+        CallButton.qml
+        CallIcon.qml
+        AudioLevelRow.qml
         AppWindows.qml
         Theme.qml
     SOURCES
@@ -142,6 +147,8 @@ qt_add_qml_module(quack
         backend/OmemoDevicesModel.cpp backend/OmemoDevicesModel.h
         backend/OmemoChat.cpp backend/OmemoChat.h
         backend/AvatarController.cpp backend/AvatarController.h
+        backend/CallsModel.cpp backend/CallsModel.h
+        backend/AudioDevices.cpp backend/AudioDevices.h
         backend/AvatarSink.h)
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
 # Core/Qml PUBLIC so the headless tests get the headers without linking QtGui.
@@ -195,7 +202,8 @@ enable_testing()
 
 foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
-          tst_searchmodel tst_integration tst_transport)
+          tst_searchmodel tst_integration tst_transport
+          tst_calls tst_audiodevices)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})

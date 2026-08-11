@@ -42,7 +42,7 @@ Rectangle {
         Text {
             anchors.centerIn: parent
             text: av.label.length > 0 ? av.label.charAt(0).toUpperCase() : "?"
-            color: Theme.onAccent
+            color: Theme.textOnAccent
             font.pixelSize: av.initialsPixelSize
             font.bold: true
         }

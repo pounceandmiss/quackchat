@@ -3,12 +3,19 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
+#include <QLoggingCategory>
 
 #include "TackyTransport.h"
 
 #ifndef Q_OS_ANDROID
 #include "EmbeddedTransport.h"
 #endif
+
+// Every JSON message either way, which is the only way to tell a backend
+// misbehaving from us misreading it. The level is what keeps it quiet: without
+// one, debug output is on and buries the terminal.
+//   QT_LOGGING_RULES='quack.*.debug=true' quackchat 2>wire.log
+Q_LOGGING_CATEGORY(lcWire, "quack.wire", QtWarningMsg)
 
 TackyBackend::TackyBackend(QObject *parent) : QObject(parent) {}
 
@@ -67,6 +74,10 @@ void TackyBackend::sendArray(const QString &module, const QString &method,
     // Ahead of the guard, so a model's outbound calls stay observable in the
     // tests, which never start an interpreter.
     emit sent(module, method, args.isValid() ? args : QVariantMap());
+    qCDebug(lcWire).noquote() << "->" << module << method
+                              << (withToken ? QString::number(token)
+                                            : QStringLiteral("(notify)"))
+                              << args;
     if (!isRunning())
         return;
     QJsonArray arr;
@@ -96,6 +107,7 @@ void TackyBackend::notify(const QString &module, const QString &method,
 
 void TackyBackend::deliver(const QString &json) {
     emit rawMessage(json);
+    qCDebug(lcWire).noquote() << "<-" << json;
 
     QJsonParseError pe{};
     const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &pe);

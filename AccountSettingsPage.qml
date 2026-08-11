@@ -415,7 +415,7 @@ Page {
                 onClicked: page.save()
                 contentItem: Text {
                     text: saveBtn.text
-                    color: saveBtn.enabled ? Theme.onAccent : Theme.textDim
+                    color: saveBtn.enabled ? Theme.textOnAccent : Theme.textDim
                     font.pixelSize: 14
                     font.bold: true
                     horizontalAlignment: Text.AlignHCenter

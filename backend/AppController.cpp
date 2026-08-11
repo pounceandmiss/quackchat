@@ -15,6 +15,8 @@ static const QLatin1String kAndroidBackendSocket("quackchat.backend");
 AppController::AppController(QObject *parent) : QObject(parent) {
     m_accounts.setBackend(&m_backend);
     m_avatars.setBackend(&m_backend);
+    m_calls.setBackend(&m_backend);
+    m_audio.setBackend(&m_backend);
 }
 
 ChatListModel *AppController::chatListFor(const QString &acc) {
@@ -82,4 +84,6 @@ void AppController::startFromEnvironment() {
     // Accounts already on disk auto-connect but never re-emit <Added>, so the
     // rail only sees them if we enumerate.
     m_accounts.refresh();
+    // Same for the audio prefs: they are persisted settings, not events.
+    m_audio.refresh();
 }

@@ -1,8 +1,11 @@
 <?xml version="1.0"?>
 <!-- Qt's own template (src/android/templates/AndroidManifest.xml), checked in
-     so the backend service can be declared. Everything Qt ships is left alone
-     and the %%INSERT%% placeholders are still filled by androiddeployqt, so the
-     permissions Qt's modules ask for keep being merged in alongside ours. -->
+     so the backend service and RECORD_AUDIO can be declared - the mic
+     permission would come from QtMultimedia, which this app does not link,
+     since the mic is opened by miniaudio inside libtacky. Everything Qt ships
+     is left alone and the %%INSERT%% placeholders are still filled by
+     androiddeployqt, so the permissions Qt's modules ask for keep being merged
+     in alongside ours. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="org.qtproject.example"
     android:installLocation="auto"
@@ -12,6 +15,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Not required: without a mic you can still read and send messages. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- %%INSERT_PERMISSIONS -->
     <!-- %%INSERT_FEATURES -->
     <supports-screens

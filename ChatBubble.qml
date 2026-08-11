@@ -271,7 +271,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: "✓"
-            color: Theme.onAccent
+            color: Theme.textOnAccent
             font.pixelSize: 14
             font.bold: true
             visible: root.selected

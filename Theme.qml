@@ -33,7 +33,7 @@ QtObject {
             quote:       "#2f8f68",   // quoted lines (tacky keeps their "> " markers)
             negative:    "#d9534f",
             warning:     "#e0a325",
-            onAccent:    "#5a3a00",   // text/icon drawn on an accent fill
+            textOnAccent:    "#5a3a00",   // text/icon drawn on an accent fill
             selection:   "#f5c14e",   // selected-message row highlight
             menuHover:   "#f7edd6"    // menu / toolbutton hover
         },
@@ -55,7 +55,7 @@ QtObject {
             quote:       "#0f8a6e",
             negative:    "#d9534f",
             warning:     "#e0a325",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#7fd0be",
             menuHover:   "#e6f2ee"
         },
@@ -77,7 +77,7 @@ QtObject {
             quote:       "#2c8a66",
             negative:    "#d9534f",
             warning:     "#dda01f",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#a9cdf2",
             menuHover:   "#e8f0f9"
         },
@@ -99,7 +99,7 @@ QtObject {
             quote:       "#3c8f6c",
             negative:    "#d1495b",
             warning:     "#d99a2b",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#f3b9cb",
             menuHover:   "#f7e6ea"
         },
@@ -121,7 +121,7 @@ QtObject {
             quote:       "#3d8759",
             negative:    "#c25450",
             warning:     "#d3a02c",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#c3d6ac",
             menuHover:   "#eaefe2"
         },
@@ -143,7 +143,7 @@ QtObject {
             quote:       "#1e8a4c",
             negative:    "#fa5151",
             warning:     "#fa9d3b",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#bdefa2",
             menuHover:   "#e6e6e6"
         },
@@ -165,7 +165,7 @@ QtObject {
             quote:       "#2e7d32",
             negative:    "#e53935",
             warning:     "#fb8c00",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#c5e1a5",
             menuHover:   "#eef4e8"
         },
@@ -187,7 +187,7 @@ QtObject {
             quote:       "#6fcf97",
             negative:    "#e5533d",
             warning:     "#e0a325",
-            onAccent:    "#ffffff",
+            textOnAccent:    "#ffffff",
             selection:   "#3d6a99",
             menuHover:   "#22303c"
         },
@@ -209,7 +209,7 @@ QtObject {
             quote:       "#86d6a4",
             negative:    "#ff6b6b",
             warning:     "#ffb454",
-            onAccent:    "#2a0f04",
+            textOnAccent:    "#2a0f04",
             selection:   "#7a4d8f",
             menuHover:   "#33243d"
         }
@@ -234,7 +234,7 @@ QtObject {
     readonly property color quote:       p.quote
     readonly property color negative:    p.negative
     readonly property color warning:     p.warning
-    readonly property color onAccent:    p.onAccent
+    readonly property color textOnAccent:    p.textOnAccent
     readonly property color selection:   p.selection
     readonly property color menuHover:   p.menuHover
 

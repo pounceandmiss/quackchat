@@ -14,7 +14,9 @@
 
 #include "AccountSettings.h"
 #include "AccountsModel.h"
+#include "AudioDevices.h"
 #include "AvatarController.h"
+#include "CallsModel.h"
 #include "ChatListModel.h"
 #include "TackyBackend.h"
 
@@ -25,6 +27,10 @@ class AppController : public QObject {
     Q_PROPERTY(TackyBackend *backend READ backend CONSTANT)
     Q_PROPERTY(AccountsModel *accounts READ accounts CONSTANT)
     Q_PROPERTY(AvatarController *avatars READ avatars CONSTANT)
+    // App-wide, not per-window: a call outlives the view that started it, and
+    // there is no way to re-enumerate one from the backend.
+    Q_PROPERTY(CallsModel *calls READ calls CONSTANT)
+    Q_PROPERTY(AudioDevices *audio READ audio CONSTANT)
 
 public:
     explicit AppController(QObject *parent = nullptr);
@@ -32,6 +38,8 @@ public:
     TackyBackend *backend() { return &m_backend; }
     AccountsModel *accounts() { return &m_accounts; }
     AvatarController *avatars() { return &m_avatars; }
+    CallsModel *calls() { return &m_calls; }
+    AudioDevices *audio() { return &m_audio; }
 
     // Lazily created and cached here; all windows on the same account share one
     // instance. Returns nullptr for an empty acc.
@@ -46,6 +54,8 @@ private:
     TackyBackend m_backend;
     AccountsModel m_accounts;
     AvatarController m_avatars;
+    CallsModel m_calls;
+    AudioDevices m_audio;
     QHash<QString, ChatListModel *> m_chatLists;
     QHash<QString, AccountSettings *> m_accountSettings;
     bool m_started = false;

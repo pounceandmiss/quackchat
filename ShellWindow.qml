@@ -25,6 +25,10 @@ ApplicationWindow {
     // combination, and binding the singular takes only the first of them.
     Shortcut { sequences: [StandardKey.Find]; onActivated: shell.startFind() }
 
+    // Build the AppWindows singleton now rather than on the first pop-out, so
+    // an incoming call gets a window even if nothing else has touched it.
+    Component.onCompleted: AppWindows.arm()
+
     // Android delivers the system back button/gesture as a window close
     // request; step the stacked navigation back instead of quitting while
     // there is somewhere to go. Desktop close (the X) is never intercepted.

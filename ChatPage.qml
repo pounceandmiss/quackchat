@@ -439,6 +439,21 @@ Page {
                     elide: Text.ElideRight
                 }
             }
+            // 1:1 only - tacky rings a bare JID over Jingle Message Initiation,
+            // which has no meaning for a room.
+            IconButton {
+                visible: page.hasChat && !page.chatGroupchat
+                Accessible.name: qsTr("Call")
+                onClicked: App.calls.start(page.account, page.chatJid)
+
+                CallIcon {
+                    anchors.centerIn: parent
+                    width: 20
+                    height: 20
+                    symbol: "call"
+                    color: Theme.positive
+                }
+            }
             IconButton {
                 objectName: "chatSearchButton"
                 text: "🔍"
@@ -530,7 +545,7 @@ Page {
                 }
                 contentItem: Text {
                     text: "Server"
-                    color: page.searchServer ? Theme.onAccent : Theme.textDim
+                    color: page.searchServer ? Theme.textOnAccent : Theme.textDim
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
@@ -609,6 +624,56 @@ Page {
             color: Theme.textDim
             font.pixelSize: 14
             text: "Pick a conversation to start chatting."
+        }
+    }
+
+    // A call that never got off the ground has no sid and so no call window to
+    // report from. Only the page showing that very chat says so, which keeps a
+    // pop-out and its shell from both piping up.
+    property string callNotice: ""
+    onChatJidChanged: callNotice = ""
+
+    Connections {
+        target: App.calls
+        function onStartFailed(account, peer, message) {
+            if (account === page.account && peer === page.chatJid)
+                page.callNotice = message
+        }
+        function onMicrophoneDenied(account, peer) {
+            if (account === page.account && peer === page.chatJid)
+                page.callNotice = qsTr("Microphone access is off for Quack.")
+        }
+    }
+
+    Rectangle {
+        id: notice
+        z: 5
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: 10
+        width: Math.min(parent.width - 24, 420)
+        height: noticeText.implicitHeight + 20
+        radius: 8
+        color: Theme.surface
+        border.width: 1
+        border.color: Theme.negative
+        visible: page.callNotice !== ""
+
+        Text {
+            id: noticeText
+            anchors.centerIn: parent
+            width: parent.width - 24
+            text: page.callNotice
+            color: Theme.textPrimary
+            font.pixelSize: 13
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+        }
+        TapHandler { onTapped: page.callNotice = "" }
+        Timer {
+            running: notice.visible
+            interval: 6000
+            onTriggered: page.callNotice = ""
         }
     }
 
@@ -1040,7 +1105,7 @@ Page {
                     }
                     opacity: input.text.trim().length > 0 ? 1.0 : 0.5
                     Behavior on opacity { NumberAnimation { duration: 120 } }
-                    Text { anchors.centerIn: parent; text: "➤"; color: Theme.onAccent; font.pixelSize: 18 }
+                    Text { anchors.centerIn: parent; text: "➤"; color: Theme.textOnAccent; font.pixelSize: 18 }
                     MouseArea { anchors.fill: parent; onClicked: page.sendCurrent() }
                 }
             }
