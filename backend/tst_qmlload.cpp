@@ -1309,6 +1309,74 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Starting a chat with someone not on the list yet: the chat opens either
+    // way, and the roster write is what the tick decides. The JID is cut back to
+    // bare lower case first, or the chat opened would be one the list can never
+    // produce a row for.
+    void newChatOpensTheChatAndOptionallyAddsTheContact() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QObject *sheet = page->findChild<QObject *>("newChatSheet");
+        QVERIFY(sheet);
+        QSignalSpy opened(page, SIGNAL(openChat(QString, QString, bool)));
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+
+        QObject *jidField = sheet->findChild<QObject *>("newChatJid");
+        QObject *nameField = sheet->findChild<QObject *>("newChatName");
+        QVERIFY(jidField);
+        QVERIFY(nameField);
+        jidField->setProperty("text", "Amy@Example.com/Phone");
+        nameField->setProperty("text", "Amy");
+        QVERIFY(QMetaObject::invokeMethod(sheet, "accept"));
+
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.at(0).at(0).toString(), QString("amy@example.com"));
+        QCOMPARE(opened.at(0).at(1).toString(), QString("Amy"));
+        QVERIFY(!opened.at(0).at(2).toBool()); // never a room
+        QCOMPARE(sent.count(), 1);
+        QCOMPARE(sent.at(0).at(0).toString(), QString("roster"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("add"));
+        QCOMPARE(sent.at(0).at(2).toMap().value("jid").toString(),
+                 QString("amy@example.com"));
+
+        // Unticked, it is a chat and nothing more - a one-off reply should not
+        // put a stranger in the roster.
+        sent.clear();
+        opened.clear();
+        QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+        jidField->setProperty("text", "cy@example.com");
+        sheet->findChild<QObject *>("newChatAddContact")->setProperty("checked", false);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "accept"));
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.at(0).at(0).toString(), QString("cy@example.com"));
+        QCOMPARE(sent.count(), 0);
+
+        assertNoQmlErrors(warnings);
+    }
+
     // Joining from the menu has to reach the backend as a bookmark write, and a
     // remove has to wait for the confirmation rather than fire on the click.
     void rowMenuEditsReachTheBackend() {

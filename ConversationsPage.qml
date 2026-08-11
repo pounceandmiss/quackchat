@@ -79,6 +79,15 @@ Page {
                 }
             }
             IconButton {
+                objectName: "newChatButton"
+                iconPath: Icons.add
+                Accessible.name: qsTr("New chat")
+                glyphColor: Theme.textDim
+                enabled: page.account !== ""
+                opacity: enabled ? 1 : 0.4
+                onClicked: newChatSheet.open()
+            }
+            IconButton {
                 objectName: "searchButton"
                 text: "🔍"
                 font.pixelSize: 16
@@ -139,6 +148,12 @@ Page {
                 color: mi.highlighted ? Theme.menuHover : "transparent"
                 radius: 6
             }
+        }
+        OverflowEntry {
+            objectName: "newChatEntry"
+            text: "New chat…"
+            enabled: page.account !== ""
+            onTriggered: newChatSheet.open()
         }
         OverflowEntry {
             text: "New window"
@@ -308,6 +323,17 @@ Page {
             removeBookmarkConfirm.subject = jid
             removeBookmarkConfirm.message = "Remove the bookmark for " + jid + "?"
             removeBookmarkConfirm.open()
+        }
+    }
+
+    // Adding the contact and opening the chat are separate: the chat opens
+    // either way, and the row the roster write produces arrives on its own.
+    NewChatSheet {
+        id: newChatSheet
+        onStartChat: (jid, name, addToContacts) => {
+            if (addToContacts && page.chatList)
+                page.chatList.addContact(jid, name)
+            page.openChat(jid, name, false)
         }
     }
 
