@@ -1,5 +1,17 @@
 #include "AppController.h"
 
+#ifdef Q_OS_ANDROID
+#include <QCoreApplication>
+#include <QJniObject>
+
+#include "SocketTransport.h"
+
+// Abstract-namespace name the backend service binds. Same string on both sides;
+// SELinux keeps other apps from reaching it, since they cannot connectto a
+// socket owned by a different UID.
+static const QLatin1String kAndroidBackendSocket("quackchat.backend");
+#endif
+
 AppController::AppController(QObject *parent) : QObject(parent) {
     m_accounts.setBackend(&m_backend);
     m_avatars.setBackend(&m_backend);
@@ -34,10 +46,27 @@ void AppController::startFromEnvironment() {
         return;
     m_started = true;
 
+#ifdef Q_OS_ANDROID
+    // The interpreter belongs to the backend service, in a process that
+    // outlives this one: Qt exits this process when the activity is destroyed.
+    // Starting our own here would put a second writer on tacky's store.
+    const auto context = QNativeInterface::QAndroidApplication::context();
+    QJniObject::callStaticMethod<void>(
+        "org/qtproject/example/quackchat/QuackBackendService", "start",
+        "(Landroid/content/Context;)V", context.object());
+    QJniObject::callStaticMethod<void>(
+        "org/qtproject/example/quackchat/Notifications", "requestPermission",
+        "(Landroid/content/Context;)V", context.object());
+    // Already running is the common case, so the socket is retried rather than
+    // sequenced after the service: whoever is ready first waits for the other.
+    m_backend.setTransport(new SocketTransport(kAndroidBackendSocket));
+    m_backend.start();
+#else
     // Persist to disk so an enabled account reconnects next launch without the
     // env vars. No -config-dir override, so we share tacky's own store
     // (~/.config/tacky) rather than keeping a separate quackchat one.
     m_backend.start({QStringLiteral("-transient"), QStringLiteral("0")});
+#endif
 
     const QString acc = qEnvironmentVariable("TACKY_ACC");
     if (!acc.isEmpty()) {

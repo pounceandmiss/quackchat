@@ -29,6 +29,8 @@ void AccountSettings::setBackend(TackyBackend *backend) {
                 &AccountSettings::handleResult);
         connect(m_backend, &TackyBackend::error, this,
                 &AccountSettings::handleError);
+        connect(m_backend, &TackyBackend::connected, this,
+                &AccountSettings::refresh);
     }
     refresh();
 }
@@ -82,8 +84,16 @@ void AccountSettings::save(const QString &password, const QString &nick) {
 
 void AccountSettings::handleEvent(const QString &module, const QString &name,
                                   const QVariant &args) {
-    if (!m_backend || module != QLatin1String("nick") ||
-        name != QLatin1String("Changed"))
+    if (!m_backend)
+        return;
+    // The nick is server state, so a fresh session may carry a different one
+    // than the reply we got against the old one.
+    if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
+        if (args.toMap().value(QStringLiteral("acc")).toString() == m_account)
+            requestNick();
+        return;
+    }
+    if (module != QLatin1String("nick") || name != QLatin1String("Changed"))
         return;
     const QVariantMap a = args.toMap();
     if (a.value(QStringLiteral("acc")).toString() != m_account)

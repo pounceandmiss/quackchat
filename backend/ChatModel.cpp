@@ -200,6 +200,8 @@ void ChatModel::setBackend(TackyBackend *backend) {
     if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &ChatModel::handleEvent);
         connect(m_backend, &TackyBackend::result, this, &ChatModel::handleResult);
+        connect(m_backend, &TackyBackend::connected, this, &ChatModel::reload);
+        connect(m_backend, &TackyBackend::error, this, &ChatModel::handleError);
     }
     emit backendChanged();
     reload();
@@ -275,10 +277,7 @@ void ChatModel::highlightMatches(qlonglong ts, const QVariantList &ranges) {
 // atTail stays true: an empty window is vacuously at tail, and a live event
 // arriving before the initial page lands gets deduped by it.
 void ChatModel::reload() {
-    cancelDir(QStringLiteral("old"));
-    cancelDir(QStringLiteral("new"));
-    cancelDir(QStringLiteral("goto"));
-    cancelDir(QStringLiteral("catchup"));
+    cancelAllDirs();
     if (!m_msgs.isEmpty()) {
         beginResetModel();
         m_msgs.clear();
@@ -292,7 +291,8 @@ void ChatModel::reload() {
     // Any open bracket belonged to the previous chat; the new one's own
     // <CatchupStarted> re-raises the flag if a sync is running for it.
     setCatchupBusy(false);
-    m_tailTs = 0; // the last <Tail> was the previous chat's
+    m_tailTs = 0;      // the last <Tail> was the previous chat's
+    m_markedRead = 0;  // and so was the watermark we last sent
     loadInitial();
 }
 
@@ -375,11 +375,29 @@ void ChatModel::gotoReplyTarget(qlonglong ts) {
                {QStringLiteral("reply_to"), m.value(QStringLiteral("reply_to"))}});
 }
 
+// markOwnRead is forward-only and safe to repeat, but the view calls this on
+// every insert and scroll, so an unchanged watermark is dropped here rather
+// than turned into a frame.
+void ChatModel::markRead() {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    const qlonglong ts = newestTs();
+    if (ts <= 0 || ts <= m_markedRead)
+        return;
+    m_markedRead = ts;
+    const QVariantMap args{{QStringLiteral("acc"), m_account},
+                           {QStringLiteral("chat"), m_chat},
+                           {QStringLiteral("timestamp"), ts}};
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("markOwnRead"),
+                      args);
+    // The wire half of the same read, 1:1 only (XEP-0333 <displayed>).
+    if (!m_groupchat)
+        m_backend->notify(QStringLiteral("message"),
+                          QStringLiteral("markDisplayed"), args);
+}
+
 void ChatModel::resetToBottom() {
-    cancelDir(QStringLiteral("old"));
-    cancelDir(QStringLiteral("new"));
-    cancelDir(QStringLiteral("goto"));
-    cancelDir(QStringLiteral("catchup"));
+    cancelAllDirs();
     if (!m_msgs.isEmpty()) {
         beginResetModel();
         m_msgs.clear();
@@ -458,8 +476,28 @@ void ChatModel::cullNew(int count) {
     setAtTail(false);
 }
 
+// "init" included: a lost reply leaves it in m_inflight, and issueHistory then
+// refuses every later init, so the feed stays empty with the pill lit.
+// An errored request is as gone as a lost one: without clearing the direction
+// it stays in m_inflight and issueHistory refuses every retry.
+void ChatModel::handleError(int token, const QString &message) {
+    const QString dir = m_pending.take(token);
+    if (dir.isEmpty())
+        return;
+    markInflight(dir, false);
+    qWarning("chat history (%s) failed: %s", qUtf8Printable(dir),
+             qUtf8Printable(message));
+}
+
+void ChatModel::cancelAllDirs() {
+    for (const char *dir : {"init", "old", "new", "goto", "catchup"})
+        cancelDir(QLatin1String(dir));
+}
+
 void ChatModel::cancelDir(const QString &dir) {
-    if (m_backend && !m_account.isEmpty())
+    // Only worth telling the backend about a request it actually has: a chat
+    // switch cancels every direction, and at most one or two are ever out.
+    if (m_backend && !m_account.isEmpty() && m_inflight.contains(dir))
         m_backend->notify(
             QStringLiteral("message"), QStringLiteral("cancel"),
             QVariantMap{{QStringLiteral("acc"), m_account},

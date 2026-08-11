@@ -13,7 +13,25 @@ private slots:
     void devicesFollowTheAccount();
     void integrationLoadsAndSavesPassword();
     void integrationSaveWithoutChangesIsNoWrite();
+    void refetchesNickOnReady();
 };
+
+// The nick is server state, so a fresh session can carry a different one than
+// the reply we got against the old session.
+void TestAccountSettings::refetchesNickOnReady() {
+    TackyBackend backend;
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@h");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    s.handleEvent("conn", "Ready", QVariantMap{{"acc", "other@h"}});
+    QCOMPARE(sent.count(), 0); // not our account
+
+    s.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("nick"));
+}
 
 void TestAccountSettings::loadsFromCannedData() {
     AccountSettings s;

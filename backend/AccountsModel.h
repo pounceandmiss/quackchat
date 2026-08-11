@@ -18,6 +18,7 @@ class AccountsModel : public QAbstractListModel {
     QML_ELEMENT
     Q_PROPERTY(TackyBackend *backend READ backend WRITE setBackend NOTIFY backendChanged)
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
+    Q_PROPERTY(int connRev READ connRev NOTIFY connRevChanged)
 
 public:
     enum Role {
@@ -38,6 +39,11 @@ public:
 
     // (Re)enumerate accounts from the backend (all + the enabled subset).
     Q_INVOKABLE void refresh();
+
+    // Bumped on every conn-state change. connStateFor() is a plain call, so a
+    // QML binding on it has nothing to re-evaluate against; reading this in the
+    // same binding gives it the dependency.
+    int connRev() const { return m_connRev; }
 
     // Per-JID lookups; the rail keys everything off the JID.
     Q_INVOKABLE QString connStateFor(const QString &jid) const;
@@ -67,8 +73,15 @@ public:
 signals:
     void backendChanged();
     void countChanged();
+    void connRevChanged();
 
 private:
+    // Asks tacky to re-fire this account's conn events at their current value,
+    // for rows built from `account list` rather than from a live transition.
+    void pullConnState(const QString &jid);
+
+    int m_connRev = 0;
+
     struct Account {
         QString jid;
         QString connState;

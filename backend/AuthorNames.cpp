@@ -11,6 +11,7 @@ void AuthorNames::setBackend(TackyBackend *backend) {
     if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &AuthorNames::handleEvent);
         connect(m_backend, &TackyBackend::result, this, &AuthorNames::handleResult);
+        connect(m_backend, &TackyBackend::connected, this, &AuthorNames::refresh);
     }
     emit backendChanged();
     refresh();
@@ -60,6 +61,13 @@ void AuthorNames::handleResult(int token, const QVariant &data) {
 // newly arrived occupant. Refetching the whole map for one of them is waste.
 void AuthorNames::handleEvent(const QString &module, const QString &name,
                               const QVariant &args) {
+    // Occupants are rebuilt when the session comes up, so whatever we resolved
+    // against the old one is stale and <Changed> won't replay it.
+    if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
+        if (args.toMap().value(QStringLiteral("acc")).toString() == m_account)
+            refresh();
+        return;
+    }
     if (module != QLatin1String("author") || name != QLatin1String("Changed"))
         return;
     const QVariantMap a = args.toMap();

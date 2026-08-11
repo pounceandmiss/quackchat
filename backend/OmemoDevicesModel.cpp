@@ -50,6 +50,8 @@ void OmemoDevicesModel::setBackend(TackyBackend *backend) {
                 &OmemoDevicesModel::handleEvent);
         connect(m_backend, &TackyBackend::result, this,
                 &OmemoDevicesModel::handleResult);
+        connect(m_backend, &TackyBackend::connected, this,
+                &OmemoDevicesModel::refresh);
     }
     emit backendChanged();
     refresh();

@@ -63,6 +63,8 @@ void ChatListModel::setBackend(TackyBackend *backend) {
     if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &ChatListModel::handleEvent);
         connect(m_backend, &TackyBackend::result, this, &ChatListModel::handleResult);
+        connect(m_backend, &TackyBackend::connected, this, &ChatListModel::refresh);
+        connect(m_backend, &TackyBackend::error, this, &ChatListModel::handleError);
     }
     emit backendChanged();
     refresh();
@@ -94,8 +96,22 @@ void ChatListModel::handleEvent(const QString &module, const QString &name,
 }
 
 void ChatListModel::handleResult(int token, const QVariant &data) {
+    if (token != m_getToken)
+        return;
+    setLoadError({});
+    applyList(data.toList());
+}
+
+void ChatListModel::handleError(int token, const QString &message) {
     if (token == m_getToken)
-        applyList(data.toList());
+        setLoadError(message);
+}
+
+void ChatListModel::setLoadError(const QString &message) {
+    if (m_loadError == message)
+        return;
+    m_loadError = message;
+    emit loadErrorChanged();
 }
 
 bool ChatListModel::lessThan(const QVariantMap &a, const QVariantMap &b) {

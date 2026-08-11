@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.21)
-project(quack_qml VERSION 1.0 LANGUAGES CXX)
+# C is only for the Android JNI shim; without it CMake drops the .c source from
+# the target silently rather than failing.
+project(quack_qml VERSION 1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 6.5 REQUIRED
-    COMPONENTS Core Gui Qml Quick QuickControls2 Test)
+    COMPONENTS Core Gui Network Qml Quick QuickControls2 Test)
 qt_standard_project_setup(REQUIRES 6.5)
 
 # tacky has its own (non-CMake) make, so we find what it drops in <root>/dist
@@ -86,6 +88,16 @@ if(NOT ANDROID)
     target_link_libraries(tacky INTERFACE pthread)
 endif()
 
+# The embedded transport is the only thing that calls into libtacky directly,
+# so on Android - where the interpreter lives in the service - it is left out
+# entirely rather than linked against an archive this process must not open.
+if(ANDROID)
+    set(_embedded_transport "")
+else()
+    set(_embedded_transport
+        backend/EmbeddedTransport.cpp backend/EmbeddedTransport.h)
+endif()
+
 qt_add_library(quack STATIC)
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(AppWindows.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -117,6 +129,9 @@ qt_add_qml_module(quack
     SOURCES
         backend/AppController.cpp backend/AppController.h
         backend/TackyBackend.cpp backend/TackyBackend.h
+        backend/TackyTransport.h
+        ${_embedded_transport}
+        backend/SocketTransport.cpp backend/SocketTransport.h
         backend/ChatModel.cpp backend/ChatModel.h
         backend/MessageMarkup.cpp backend/MessageMarkup.h
         backend/AuthorNames.cpp backend/AuthorNames.h
@@ -131,8 +146,15 @@ qt_add_qml_module(quack
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
 # Core/Qml PUBLIC so the headless tests get the headers without linking QtGui.
 target_link_libraries(quack
-    PUBLIC Qt6::Core Qt6::Qml
-    PRIVATE Qt6::Quick Qt6::QuickControls2 tacky)
+    PUBLIC Qt6::Core Qt6::Network Qt6::Qml
+    PRIVATE Qt6::Quick Qt6::QuickControls2)
+if(ANDROID)
+    # The interpreter belongs to the backend service's process, reached over a
+    # socket. Linking it here too would put a second writer on tacky's store.
+    target_link_libraries(quack PRIVATE Qt6::Network)
+else()
+    target_link_libraries(quack PRIVATE tacky)
+endif()
 
 qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp)
 target_link_libraries(quackchat PRIVATE
@@ -140,6 +162,32 @@ target_link_libraries(quackchat PRIVATE
 if(ANDROID)
     # libtacky-android.a is built against API 30 bionic
     set_target_properties(quackchat PROPERTIES QT_ANDROID_MIN_SDK_VERSION 30)
+
+    # The interpreter, loaded by the Java service in the :backend process. This
+    # is the only thing that links libtacky on Android, and it is why the NDK
+    # r29 / android-30 pinning still applies to the build as a whole.
+    add_library(tackyjni SHARED backend/jni/tacky_jni.c)
+    target_link_libraries(tackyjni PRIVATE tacky)
+    set_target_properties(tackyjni PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+    # Deliberately NOT QT_ANDROID_EXTRA_LIBS: that lists the library in
+    # libs.xml's bundled_libs, and QtLoader dlopens every entry in whichever
+    # process it initialises - so the UI process would map the interpreter it
+    # must never run. Staged into the package's libs/ instead, which gradle
+    # packages as a plain jniLib that only the service's System.loadLibrary
+    # resolves.
+    set(_android_pkg "${CMAKE_CURRENT_BINARY_DIR}/android-package")
+    add_custom_command(TARGET quackchat POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/android" "${_android_pkg}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:tackyjni>"
+                "${_android_pkg}/libs/${CMAKE_ANDROID_ARCH_ABI}/libtackyjni.so"
+        COMMENT "Staging the Android package source dir")
+    set_target_properties(quackchat PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${_android_pkg}")
+    add_dependencies(quackchat tackyjni)
 endif()
 
 if(NOT ANDROID)
@@ -147,7 +195,7 @@ enable_testing()
 
 foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
-          tst_searchmodel tst_integration)
+          tst_searchmodel tst_integration tst_transport)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})

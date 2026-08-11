@@ -43,6 +43,7 @@ void AccountsModel::setBackend(TackyBackend *backend) {
     if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &AccountsModel::handleEvent);
         connect(m_backend, &TackyBackend::result, this, &AccountsModel::handleResult);
+        connect(m_backend, &TackyBackend::connected, this, &AccountsModel::refresh);
     }
     emit backendChanged();
     refresh();
@@ -63,6 +64,18 @@ void AccountsModel::refresh() {
     m_enabledToken =
         m_backend->request(QStringLiteral("account"), QStringLiteral("list"),
                            QVariantMap{{QStringLiteral("enabled"), 1}});
+}
+
+// Re-fires conn <State> (and <ConnError> if one stands) with the value as it
+// is now; tacky calls this the initial-state sync on attach.
+void AccountsModel::pullConnState(const QString &jid) {
+    if (!m_backend)
+        return;
+    for (const auto *event : {"State", "ConnError"})
+        m_backend->notify(QStringLiteral("conn"), QStringLiteral("pull"),
+                          QVariantMap{{QStringLiteral("acc"), jid},
+                                      {QStringLiteral("event"),
+                                       QLatin1String(event)}});
 }
 
 QString AccountsModel::connStateFor(const QString &jid) const {
@@ -180,6 +193,11 @@ void AccountsModel::applyList(const QVariantList &jids) {
         m_accounts.insert(pos, a);
         endInsertRows();
     }
+    // conn state only ever arrives as an event, so a row built from `account
+    // list` has none: attaching to a backend whose accounts are already online
+    // would otherwise sit on "connecting" until the next reconnect.
+    for (const QString &jid : std::as_const(wanted))
+        pullConnState(jid);
     emit countChanged();
 }
 
@@ -253,6 +271,8 @@ void AccountsModel::setConnState(const QString &jid, const QString &state) {
     if (i < 0 || m_accounts.at(i).connState == state)
         return;
     m_accounts[i].connState = state;
+    ++m_connRev;
+    emit connRevChanged();
     const QModelIndex idx = index(i);
     emit dataChanged(idx, idx, {ConnStateRole});
 }

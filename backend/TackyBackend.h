@@ -1,18 +1,17 @@
-// Qt bridge to libtacky. It runs a Tcl interpreter on its own thread and its
-// emit callback fires there, so we hop every message onto the thread owning
-// this object; the signals below are all emitted there. QtCore only.
+// Qt bridge to tacky, over whichever TackyTransport it was given. Frames arrive
+// on the thread owning this object, so the signals below are all emitted there.
+// QtCore only.
 #ifndef TACKYBACKEND_H
 #define TACKYBACKEND_H
 
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
 #include <QtQml/qqmlregistration.h>
 
-extern "C" {
-struct tacky; // opaque backend handle (embed/tacky.h)
-}
+class TackyTransport;
 
 class TackyBackend : public QObject {
     Q_OBJECT
@@ -24,10 +23,16 @@ public:
     explicit TackyBackend(QObject *parent = nullptr);
     ~TackyBackend() override;
 
-    bool isRunning() const { return m_client != nullptr; }
+    bool isRunning() const;
+
+    // Hands the backend a transport to run over, replacing any previous one.
+    // Takes ownership. Call before start(); without it start() builds an
+    // EmbeddedTransport, which is what the desktop wants.
+    void setTransport(TackyTransport *transport);
 
     // tacoArgs go to the taco_type constructor, e.g. {"-transient","0"}; empty
-    // means an in-memory session. Blocks until ready.
+    // means an in-memory session. They reach an embedded transport only: with a
+    // socket the session belongs to whoever is on the other end.
     Q_INVOKABLE bool start(const QStringList &tacoArgs = {});
     Q_INVOKABLE void stop(); // safe to call more than once
 
@@ -42,6 +47,9 @@ public:
 
 signals:
     void runningChanged();
+    // Rising edge of runningChanged. State the backend held for us is gone by
+    // now, so this is where models re-ask for what they were showing.
+    void connected();
     // Every request/notify, whether or not a backend is running to receive it.
     void sent(const QString &module, const QString &method, const QVariant &args);
     void result(int token, const QVariant &data);
@@ -50,13 +58,13 @@ signals:
     void rawMessage(const QString &json); // every emit, before decoding
 
 private:
-    // Runs on the backend thread; must not block or re-enter tacky.
-    static void emitTrampoline(void *ud, const char *json, size_t len);
     void deliver(const QString &json);
+    void onTransportStateChanged();
     void sendArray(const QString &module, const QString &method,
                    const QVariant &args, bool withToken, int token);
 
-    tacky *m_client = nullptr;
+    TackyTransport *m_transport = nullptr; // owned
+    QHash<int, QString> m_inflight;        // token -> "module/method", for errors
     int m_nextToken = 1;
 };
 

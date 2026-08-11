@@ -213,6 +213,14 @@ Page {
         text: {
             if (page.account === "")
                 return "No account selected.\nUse ＋ on the left to add one."
+            // connRev is read purely to give this binding a dependency:
+            // connStateFor is a call, so nothing would re-run it otherwise.
+            App.accounts.connRev
+            // A load that failed leaves the list as empty as one that succeeded
+            // with nothing in it, so say which happened.
+            const failure = listView.model ? listView.model.loadError : ""
+            if (failure !== "")
+                return "Couldn't load conversations.\n" + failure
             switch (App.accounts.connStateFor(page.account)) {
             case "connected":
                 return "Connected as " + page.account + ".\nNo conversations yet."

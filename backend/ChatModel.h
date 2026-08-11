@@ -99,6 +99,10 @@ public:
     Q_INVOKABLE void gotoReplyTarget(qlonglong ts);
     Q_INVOKABLE int rowOfTimestamp(qlonglong ts) const { return indexOfTs(ts); }
     Q_INVOKABLE void resetToBottom();
+    // Advance our read watermark to the newest row. tacky has no "the user is
+    // looking at this chat" call - this is the gate that stops notify <Notify>
+    // firing for a chat on screen, so the view calls it whenever it is.
+    Q_INVOKABLE void markRead();
     // replyToTs names the message being answered, 0 for a plain send.
     Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
     // Toggles one emoji in our own set for that message, per XEP-0444; the
@@ -122,6 +126,7 @@ public:
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);
     void handleResult(int token, const QVariant &data);
+    void handleError(int token, const QString &message);
 
     void applyBatch(const QVariantList &messages);
     void applyFields(qlonglong ts, const QVariantMap &fields);
@@ -162,6 +167,7 @@ private:
     int insertPos(qlonglong ts) const;
     void issueHistory(const QString &dir, qlonglong cursor, bool haveCursor);
     void cancelDir(const QString &dir);
+    void cancelAllDirs();
     void markInflight(const QString &dir, bool busy);
     qlonglong oldestTs() const;
     qlonglong newestTs() const;
@@ -186,6 +192,7 @@ private:
     bool m_atTail = true;       // an empty window is vacuously at tail
     bool m_catchupBusy = false;
     qlonglong m_tailTs = 0;     // newest real-message ts, from message <Tail>
+    qlonglong m_markedRead = 0; // highest ts already sent to markOwnRead
 
     QList<QVariantMap> m_msgs;  // row 0 = newest
 

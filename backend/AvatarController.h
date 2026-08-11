@@ -53,11 +53,17 @@ signals:
 private slots:
     void onResult(int token, const QVariant &data);
     void onError(int token, const QString &message);
+    // Drops the visible set and fails the waiting sinks: nothing times a fetch
+    // out, so an image response left pending here never completes.
+    void onRunningChanged();
 
 private:
     static QString key(const QString &acc, const QString &jid);
     static QString normJid(const QString &jid);
     void ensureVisible(const QString &acc, const QString &jid);
+    // tacky drops its visible set on every <Disconnect>, resumed or not, so
+    // `acc`'s subscriptions have to be placed again from scratch on <Ready>.
+    void resubscribe(const QString &acc);
 
     TackyBackend *m_backend = nullptr;
     QHash<QString, QString> m_hash;     // "acc\njid" -> hash

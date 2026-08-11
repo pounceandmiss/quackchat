@@ -155,8 +155,23 @@ Page {
         onTriggered: page.highlightTs = 0
     }
 
+    // Reading is "this chat is on screen, the app is in front, and the newest
+    // message is in view". Anything looser marks a backgrounded window's chat
+    // read and swallows its notification.
+    readonly property bool reading: page.hasChat && visible
+                                    && Qt.application.state === Qt.ApplicationActive
+                                    && chatModel.atTail
+    onReadingChanged: if (reading) chatModel.markRead()
+
     Connections {
         target: chatModel
+        // Every new row while the chat is being read moves the watermark; tacky
+        // holds its alert briefly so this lands first and nothing fires.
+        function onRowsInserted() {
+            if (page.reading)
+                chatModel.markRead()
+        }
+
         // A resolved jump either kept the window and scrolled, or replaced it;
         // either way the row exists by now. callLater lets the view lay the
         // new slice out before we ask for its index.

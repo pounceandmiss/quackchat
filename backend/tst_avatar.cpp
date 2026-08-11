@@ -4,6 +4,7 @@
 
 #include "AvatarController.h"
 #include "AvatarImageProvider.h" // AvatarResponse (the AvatarSink implementer)
+#include "TackyBackend.h"
 
 class TestAvatar : public QObject {
     Q_OBJECT
@@ -18,6 +19,20 @@ class TestAvatar : public QObject {
     static QVariantMap update(const QString &acc, const QString &jid,
                               const QString &hash) {
         return {{"acc", acc}, {"jid", jid}, {"hash", hash}};
+    }
+
+    // The `avatar visible` JIDs in `spy`, in order, for one account.
+    static QStringList visibleJids(const QSignalSpy &spy, const QString &acc) {
+        QStringList jids;
+        for (const QList<QVariant> &call : spy) {
+            if (call.at(0).toString() != QLatin1String("avatar") ||
+                call.at(1).toString() != QLatin1String("visible"))
+                continue;
+            const QVariantMap a = call.at(2).toMap();
+            if (a.value("acc").toString() == acc)
+                jids.append(a.value("jid").toString());
+        }
+        return jids;
     }
 
 private slots:
@@ -86,6 +101,60 @@ private slots:
         AvatarController c; // no setBackend()
         AvatarResponse r;
         c.fetch("me@h", "bob@h", "somehash", &r);
+        QVERIFY(!r.errorString().isEmpty());
+    }
+
+    // tacky drops its visible set on every <Disconnect>, so a reconnect has to
+    // re-send the subscriptions or ensureVisible() short-circuits on its own
+    // bookkeeping and the hashes never update again.
+    void resubscribesOnReady() {
+        TackyBackend backend; // in-memory session
+        QVERIFY(backend.start());
+        AvatarController c;
+        c.setBackend(&backend);
+
+        QSignalSpy sent(&backend, &TackyBackend::sent);
+        c.hashFor("me@h", "bob@h"); // the read is what subscribes
+        QCOMPARE(visibleJids(sent, "me@h"), QStringList{"bob@h"});
+
+        // A second read must not re-ask while the subscription still stands.
+        sent.clear();
+        c.hashFor("me@h", "bob@h");
+        QCOMPARE(visibleJids(sent, "me@h"), QStringList{});
+
+        sent.clear();
+        c.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
+        QCOMPARE(visibleJids(sent, "me@h"), QStringList{"bob@h"});
+    }
+
+    // <Ready> for one account must not disturb another's subscriptions.
+    void resubscribeIsPerAccount() {
+        TackyBackend backend;
+        QVERIFY(backend.start());
+        AvatarController c;
+        c.setBackend(&backend);
+        c.hashFor("me@h", "bob@h");
+        c.hashFor("other@h", "eve@h");
+
+        QSignalSpy sent(&backend, &TackyBackend::sent);
+        c.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
+        QCOMPARE(visibleJids(sent, "me@h"), QStringList{"bob@h"});
+        QCOMPARE(visibleJids(sent, "other@h"), QStringList{});
+    }
+
+    // Nothing times out an avatar request, so a backend that stops has to fail
+    // the waiting sinks or the QQuickImageResponse never completes.
+    void pendingSinksFailWhenBackendStops() {
+        TackyBackend backend;
+        QVERIFY(backend.start());
+        AvatarController c;
+        c.setBackend(&backend);
+
+        AvatarResponse r;
+        c.fetch("me@h", "bob@h", "somehash", &r);
+        QVERIFY(r.errorString().isEmpty()); // still in flight
+
+        backend.stop();
         QVERIFY(!r.errorString().isEmpty());
     }
 };

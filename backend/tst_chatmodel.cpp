@@ -20,6 +20,15 @@ static QVariantList spans(const QByteArray &json) {
     return QJsonDocument::fromJson(json).array().toVariantList();
 }
 
+// The timestamps handed to `message markOwnRead`, in order.
+static QList<qlonglong> marks(const QSignalSpy &spy) {
+    QList<qlonglong> out;
+    for (const QList<QVariant> &call : spy)
+        if (call.at(1).toString() == QLatin1String("markOwnRead"))
+            out << call.at(2).toMap().value("timestamp").toLongLong();
+    return out;
+}
+
 // Stands in for the palette's; the markup only ever passes it through.
 static const QString kQuote = QStringLiteral("#0a0");
 
@@ -39,6 +48,10 @@ private slots:
     void cullOldKeepsTail();
     void loadedSignalReportsAdded();
     void loadingOlderTracksTheOldRequest();
+    void resetToBottomUnwedgesALostInitialLoad();
+    void cancelOnlyTellsTheBackendAboutLiveRequests();
+    void anErroredRequestDoesNotWedgeTheFeed();
+    void markReadAdvancesTheWatermarkOnlyForwards();
     void markupWrapsSpans();
     void markupNestsOverlappingSpans();
     void markupCountsCodePoints();
@@ -233,6 +246,93 @@ void TestChatModel::loadedSignalReportsAdded() {
     QCOMPARE(loaded.count(), 2);
     QCOMPARE(loaded.at(1).at(0).toString(), QString("old"));
     QCOMPARE(loaded.at(1).at(1).toInt(), 0);
+}
+
+// tacky's notify gate is the read watermark: without this the chat on screen
+// still alerts. markOwnRead is forward-only, and the view calls markRead on
+// every insert, so an unchanged watermark must not become a frame.
+void TestChatModel::markReadAdvancesTheWatermarkOnlyForwards() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":100},{"timestamp":300}])"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.markRead();
+    QCOMPARE(marks(sent), QList<qlonglong>{300});
+
+    sent.clear();
+    m.markRead(); // nothing newer arrived
+    QCOMPARE(marks(sent), QList<qlonglong>{});
+
+    m.applyBatch(msgs(R"([{"timestamp":400}])"));
+    sent.clear();
+    m.markRead();
+    QCOMPARE(marks(sent), QList<qlonglong>{400});
+}
+
+// An error reply is as final as a lost one. Without clearing the direction the
+// pill stays lit and issueHistory refuses every retry, exactly as a dropped
+// reply used to do.
+void TestChatModel::anErroredRequestDoesNotWedgeTheFeed() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // init is token 1
+    QVERIFY(m.loadingOlder());
+
+    // Through the signal, not the handler: the bug was never connecting it.
+    emit backend.error(1, "no such column: m.mentions_me");
+    QVERIFY(!m.loadingOlder());
+
+    m.loadInitial(); // token 2: refused if init were still in flight
+    m.handleResult(2, msgs(R"([{"timestamp":100}])"));
+    QCOMPARE(m.rowCount(), 1);
+}
+
+// Switching chats cancels every direction, but only one is usually out. The
+// rest have nothing for the backend to cancel, so they cost no frame.
+void TestChatModel::cancelOnlyTellsTheBackendAboutLiveRequests() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // init is the only thing in flight
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.resetToBottom();
+
+    int cancels = 0;
+    for (const QList<QVariant> &call : sent)
+        if (call.at(1).toString() == QLatin1String("cancel"))
+            ++cancels;
+    QCOMPARE(cancels, 1); // not one per direction
+}
+
+// Nothing times an initial load out, so a backend that goes away mid-load
+// leaves "init" in m_inflight. resetToBottom() is the way back out of that.
+void TestChatModel::resetToBottomUnwedgesALostInitialLoad() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // issues the initial history as token 1
+    QVERIFY(m.loadingOlder());
+
+    // Token 1 is never answered - the reply died with the backend.
+    m.resetToBottom(); // drops the stuck init and re-issues it as token 2
+
+    // A late token 1 must land nowhere: cancelDir dropped it with the direction.
+    m.handleResult(1, msgs(R"([{"timestamp":50}])"));
+    QCOMPARE(m.rowCount(), 0);
+
+    // Token 2 only exists if init was cleared before loadInitial() ran again.
+    m.handleResult(2, msgs(R"([{"timestamp":100}])"));
+    QCOMPARE(m.rowCount(), 1);
+    QVERIFY(!m.loadingOlder());
 }
 
 // Drives the feed's loading pill. The view keeps no in-flight latch of its own

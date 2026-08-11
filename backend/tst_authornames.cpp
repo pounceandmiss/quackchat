@@ -22,7 +22,29 @@ private slots:
     void changedUpdatesOneSender();
     void filtersOtherChats();
     void chatSwitchDropsTheOldMap();
+    void refetchesOnReady();
 };
+
+// Occupants are rebuilt when the session comes up, so the map resolved against
+// the old one is stale and <Changed> never replays the whole thing.
+void TestAuthorNames::refetchesOnReady() {
+    TackyBackend backend;
+    AuthorNames a;
+    a.setBackend(&backend);
+    a.setAccount("me@h");
+    a.setChat("room@h"); // issues `author get` as token 1
+    a.handleResult(1, map(R"({"room@h/ann":"Ann"})"));
+    QCOMPARE(a.names().value("room@h/ann").toString(), QString("Ann"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    feedEvent(a, R"(["event","conn","Ready",{"acc":"other@h"}])");
+    QCOMPARE(sent.count(), 0); // not our account
+
+    feedEvent(a, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    QCOMPARE(sent.count(), 1); // token 2
+    a.handleResult(2, map(R"({"room@h/ann":"Annabel"})"));
+    QCOMPARE(a.names().value("room@h/ann").toString(), QString("Annabel"));
+}
 
 void TestAuthorNames::fetchesOnChat() {
     TackyBackend backend;

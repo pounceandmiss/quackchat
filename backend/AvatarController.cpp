@@ -16,6 +16,24 @@ void AvatarController::setBackend(TackyBackend *backend) {
     connect(m_backend, &TackyBackend::event, this, &AvatarController::handleEvent);
     connect(m_backend, &TackyBackend::result, this, &AvatarController::onResult);
     connect(m_backend, &TackyBackend::error, this, &AvatarController::onError);
+    connect(m_backend, &TackyBackend::runningChanged, this,
+            &AvatarController::onRunningChanged);
+    connect(m_backend, &TackyBackend::connected, this, [this] {
+        // Subscriptions are placed by hashFor(), which QML only re-runs when
+        // rev moves; without a nudge nothing would ever ask again.
+        ++m_rev;
+        emit changed();
+    });
+}
+
+void AvatarController::onRunningChanged() {
+    if (m_backend && m_backend->isRunning())
+        return;
+    m_visible.clear(); // the backend holding them is gone
+    const QHash<int, AvatarSink *> pending = m_pending;
+    m_pending.clear();
+    for (AvatarSink *sink : pending)
+        sink->failSink(QStringLiteral("backend went away"));
 }
 
 QString AvatarController::key(const QString &acc, const QString &jid) {
@@ -50,6 +68,23 @@ void AvatarController::ensureVisible(const QString &acc, const QString &jid) {
     m_backend->notify(QStringLiteral("avatar"), QStringLiteral("visible"),
                       QVariantMap{{QStringLiteral("acc"), acc},
                                   {QStringLiteral("jid"), nj}});
+}
+
+void AvatarController::resubscribe(const QString &acc) {
+    if (acc.isEmpty())
+        return;
+    const QString prefix = acc + QLatin1Char('\n');
+    QStringList jids;
+    for (auto it = m_visible.begin(); it != m_visible.end();) {
+        if (it->startsWith(prefix)) {
+            jids.append(it->mid(prefix.size()));
+            it = m_visible.erase(it); // ensureVisible re-inserts
+        } else {
+            ++it;
+        }
+    }
+    for (const QString &jid : jids)
+        ensureVisible(acc, jid);
 }
 
 void AvatarController::fetch(const QString &acc, const QString &jid,
@@ -88,6 +123,10 @@ void AvatarController::onError(int token, const QString &message) {
 void AvatarController::handleEvent(const QString &module, const QString &name,
                                    const QVariant &args) {
     // Event names arrive bare on the JSON wire (the backend strips the Tcl <>).
+    if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
+        resubscribe(args.toMap().value(QStringLiteral("acc")).toString());
+        return;
+    }
     if (module != QLatin1String("avatar") || name != QLatin1String("Update"))
         return;
     const QVariantMap a = args.toMap();

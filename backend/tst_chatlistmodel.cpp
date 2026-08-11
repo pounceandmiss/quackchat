@@ -30,6 +30,7 @@ private slots:
     void removeDrops();
     void ignoresOtherAccounts();
     void integrationRefreshEmpty();
+    void failedLoadIsNotAnEmptyList();
 };
 
 void TestChatList::sortsByActivity() {
@@ -139,6 +140,26 @@ void TestChatList::integrationRefreshEmpty() {
     QCOMPARE(m.rowCount(), 0);
 
     backend.stop();
+}
+
+// A failed `chatlist get` used to look exactly like a roster with nothing in
+// it, which is how a schema error presented itself as "no conversations yet".
+void TestChatList::failedLoadIsNotAnEmptyList() {
+    TackyBackend backend;
+    ChatListModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h"); // issues `chatlist get` as token 1
+    QCOMPARE(m.loadError(), QString());
+
+    QSignalSpy failed(&m, &ChatListModel::loadErrorChanged);
+    // Through the signal, not the handler: the bug was never connecting it.
+    emit backend.error(1, "no such column: m.mentions_me");
+    QCOMPARE(m.loadError(), QString("no such column: m.mentions_me"));
+    QCOMPARE(failed.count(), 1);
+
+    m.setAccount("other@h"); // token 2
+    m.handleResult(2, QVariantList{});
+    QCOMPARE(m.loadError(), QString()); // a good load clears it
 }
 
 QTEST_MAIN(TestChatList)

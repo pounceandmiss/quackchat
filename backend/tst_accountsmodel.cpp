@@ -26,7 +26,30 @@ private slots:
     void connStateEvents();
     void lookups();
     void integrationListsAddedAccount();
+    void pullsConnStateForRowsFromTheList();
 };
+
+// conn state only ever arrives as an event. Attaching to a backend whose
+// accounts are already online means those events are long past, so the rows
+// have to ask for the current value or they sit on the default forever.
+void TestAccountsModel::pullsConnStateForRowsFromTheList() {
+    TackyBackend backend;
+    AccountsModel m;
+    m.setBackend(&backend);
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.applyList(QVariantList{"a@h", "b@h"});
+
+    QStringList pulled;
+    for (const QList<QVariant> &call : sent) {
+        if (call.at(0).toString() != "conn" || call.at(1).toString() != "pull")
+            continue;
+        const QVariantMap a = call.at(2).toMap();
+        pulled << a.value("acc").toString() + "/" + a.value("event").toString();
+    }
+    QVERIFY(pulled.contains("a@h/State"));
+    QVERIFY(pulled.contains("b@h/State"));
+}
 
 void TestAccountsModel::listSortsAndMarksEnabled() {
     AccountsModel m;

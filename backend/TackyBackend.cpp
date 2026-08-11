@@ -3,53 +3,63 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
-#include <QMetaObject>
 
-#include <vector>
+#include "TackyTransport.h"
 
-#include "tacky.h"
+#ifndef Q_OS_ANDROID
+#include "EmbeddedTransport.h"
+#endif
 
 TackyBackend::TackyBackend(QObject *parent) : QObject(parent) {}
 
 TackyBackend::~TackyBackend() { stop(); }
 
-void TackyBackend::emitTrampoline(void *ud, const char *json, size_t len) {
-    auto *self = static_cast<TackyBackend *>(ud);
-    // Copy out of the transient buffer, then hop to the owning thread: the
-    // functor form of invokeMethod delivers on `self`'s thread.
-    QString s = QString::fromUtf8(json, static_cast<int>(len));
-    QMetaObject::invokeMethod(
-        self, [self, s]() { self->deliver(s); }, Qt::QueuedConnection);
+bool TackyBackend::isRunning() const {
+    return m_transport && m_transport->isConnected();
+}
+
+void TackyBackend::setTransport(TackyTransport *transport) {
+    if (m_transport == transport)
+        return;
+    const bool was = isRunning();
+    delete m_transport;
+    m_transport = transport;
+    if (m_transport) {
+        m_transport->setParent(this);
+        connect(m_transport, &TackyTransport::received, this,
+                &TackyBackend::deliver);
+        connect(m_transport, &TackyTransport::connectedChanged, this,
+                &TackyBackend::onTransportStateChanged);
+    }
+    if (was != isRunning())
+        onTransportStateChanged();
+}
+
+void TackyBackend::onTransportStateChanged() {
+    if (!isRunning())
+        m_inflight.clear(); // those replies are never coming
+    emit runningChanged();
+    if (isRunning())
+        emit connected();
 }
 
 bool TackyBackend::start(const QStringList &tacoArgs) {
-    if (m_client)
-        return true;
-
-    // Hold the UTF-8 bytes alive across the call (tacky_create strdups them).
-    QList<QByteArray> holder;
-    holder.reserve(tacoArgs.size());
-    std::vector<const char *> argv;
-    argv.reserve(tacoArgs.size() + 1);
-    for (const QString &a : tacoArgs) {
-        holder.append(a.toUtf8());
-        argv.push_back(holder.last().constData());
+    if (!m_transport) {
+#ifdef Q_OS_ANDROID
+        // There is no in-process interpreter to fall back on: the session
+        // belongs to the backend service, and a second one here would put two
+        // writers on tacky's store. Callers must supply a transport.
+        return false;
+#else
+        setTransport(new EmbeddedTransport);
+#endif
     }
-    argv.push_back(nullptr);
-
-    m_client = tacky_create(argv.data(), &TackyBackend::emitTrampoline, this);
-    if (m_client)
-        emit runningChanged();
-    return m_client != nullptr;
+    return m_transport->start(tacoArgs);
 }
 
 void TackyBackend::stop() {
-    if (!m_client)
-        return;
-    tacky *c = m_client;
-    m_client = nullptr;
-    tacky_destroy(c); // no callbacks fire after this returns
-    emit runningChanged();
+    if (m_transport)
+        m_transport->stop();
 }
 
 void TackyBackend::sendArray(const QString &module, const QString &method,
@@ -57,16 +67,19 @@ void TackyBackend::sendArray(const QString &module, const QString &method,
     // Ahead of the guard, so a model's outbound calls stay observable in the
     // tests, which never start an interpreter.
     emit sent(module, method, args.isValid() ? args : QVariantMap());
-    if (!m_client)
+    if (!isRunning())
         return;
     QJsonArray arr;
     arr.append(module);
     arr.append(method);
     arr.append(QJsonValue::fromVariant(args.isValid() ? args : QVariantMap()));
-    if (withToken)
+    if (withToken) {
         arr.append(token);
-    const QByteArray bytes = QJsonDocument(arr).toJson(QJsonDocument::Compact);
-    tacky_send(m_client, bytes.constData(), static_cast<size_t>(bytes.size()));
+        // Kept so an error reply can name what failed. Only for requests that
+        // actually went out, so nothing accumulates for calls dropped above.
+        m_inflight.insert(token, module + QLatin1Char('/') + method);
+    }
+    m_transport->send(QJsonDocument(arr).toJson(QJsonDocument::Compact));
 }
 
 int TackyBackend::request(const QString &module, const QString &method,
@@ -94,9 +107,20 @@ void TackyBackend::deliver(const QString &json) {
 
     const QString tag = arr.at(0).toString();
     if (tag == QLatin1String("result")) {
-        emit result(arr.at(1).toInt(), arr.at(2).toVariant());
+        const int token = arr.at(1).toInt();
+        m_inflight.remove(token);
+        emit result(token, arr.at(2).toVariant());
     } else if (tag == QLatin1String("error")) {
-        emit error(arr.at(1).toInt(), arr.at(2).toString());
+        const int token = arr.at(1).toInt();
+        const QString message = arr.at(2).toString();
+        // Logged here because most callers do not connect error(): a failed
+        // request otherwise looks exactly like an empty result, which is how a
+        // schema error once read as "no conversations yet".
+        qWarning("tacky %s failed: %s",
+                 qUtf8Printable(m_inflight.value(token, QStringLiteral("request"))),
+                 qUtf8Printable(message));
+        m_inflight.remove(token);
+        emit error(token, message);
     } else if (tag == QLatin1String("event")) {
         emit event(arr.at(1).toString(), arr.at(2).toString(),
                    arr.at(3).toVariant());

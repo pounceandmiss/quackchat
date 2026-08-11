@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="backend_channel_name">Connection</string>
+    <!-- The service being up says nothing about the XMPP session, which may be
+         reconnecting or have no account at all. -->
+    <string name="backend_notification_title">Receiving messages</string>
+    <string name="messages_channel_name">Messages</string>
+    <string name="action_reply">Reply</string>
+    <string name="action_mark_read">Mark read</string>
+</resources>
