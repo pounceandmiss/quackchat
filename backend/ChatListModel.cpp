@@ -16,7 +16,7 @@ int ChatListModel::rowCount(const QModelIndex &parent) const {
 static const QList<QByteArray> kKeys = {
     "jid", "name", "source", "groupchat",
     "autojoin", "last_activity", "subscription", "room_state",
-    "unread",
+    "room_reason", "unread", "unread_mentions",
 };
 
 QVariant ChatListModel::data(const QModelIndex &index, int role) const {
@@ -77,6 +77,81 @@ void ChatListModel::refresh() {
     m_getToken = m_backend->request(QStringLiteral("chatlist"),
                                     QStringLiteral("get"),
                                     QVariantMap{{QStringLiteral("acc"), m_account}});
+}
+
+void ChatListModel::reload() {
+    if (!m_backend || m_account.isEmpty())
+        return;
+    const QVariantMap acc{{QStringLiteral("acc"), m_account}};
+    m_backend->notify(QStringLiteral("roster"), QStringLiteral("request"), acc);
+    m_backend->notify(QStringLiteral("bookmarks"), QStringLiteral("request"), acc);
+    refresh();
+}
+
+// The edits below go out as notifies, not requests: the roster and bookmark
+// writers are plain tacky methods rather than tackymethods, so they never call
+// back a token - a request would leave one in flight for good.
+void ChatListModel::sendEdit(const QString &module, const QString &method,
+                             QVariantMap args) {
+    if (!m_backend || m_account.isEmpty()
+        || args.value(QStringLiteral("jid")).toString().isEmpty())
+        return;
+    args.insert(QStringLiteral("acc"), m_account);
+    m_backend->notify(module, method, args);
+}
+
+void ChatListModel::addContact(const QString &jid, const QString &name) {
+    QVariantMap args{{QStringLiteral("jid"), jid}};
+    // Sent bare rather than as an empty -name, which would clear a name the
+    // roster already holds for a contact being re-added.
+    if (!name.isEmpty())
+        args.insert(QStringLiteral("name"), name);
+    // `add`, not `item`: it also asks for the subscription, without which the
+    // contact never shows a presence.
+    sendEdit(QStringLiteral("roster"), QStringLiteral("add"), args);
+}
+
+void ChatListModel::renameContact(const QString &jid, const QString &name) {
+    sendEdit(QStringLiteral("roster"), QStringLiteral("item"),
+             {{QStringLiteral("jid"), jid}, {QStringLiteral("name"), name}});
+}
+
+void ChatListModel::removeContact(const QString &jid) {
+    sendEdit(QStringLiteral("roster"), QStringLiteral("remove"),
+             {{QStringLiteral("jid"), jid}});
+}
+
+void ChatListModel::joinRoom(const QString &jid, const QString &nick,
+                             const QString &password) {
+    QVariantMap args{{QStringLiteral("jid"), jid},
+                     {QStringLiteral("autojoin"), 1}};
+    // Same reasoning as the contact name: an empty one would overwrite the
+    // bookmark's stored nick, and tacky's default fills the gap anyway.
+    if (!nick.isEmpty())
+        args.insert(QStringLiteral("nick"), nick);
+    if (!password.isEmpty())
+        args.insert(QStringLiteral("password"), password);
+    sendEdit(QStringLiteral("bookmarks"), QStringLiteral("item"), args);
+}
+
+void ChatListModel::leaveRoom(const QString &jid) {
+    sendEdit(QStringLiteral("bookmarks"), QStringLiteral("leave"),
+             {{QStringLiteral("jid"), jid}});
+}
+
+void ChatListModel::forceJoinRoom(const QString &jid) {
+    sendEdit(QStringLiteral("bookmarks"), QStringLiteral("forceJoin"),
+             {{QStringLiteral("jid"), jid}});
+}
+
+void ChatListModel::renameBookmark(const QString &jid, const QString &name) {
+    sendEdit(QStringLiteral("bookmarks"), QStringLiteral("item"),
+             {{QStringLiteral("jid"), jid}, {QStringLiteral("name"), name}});
+}
+
+void ChatListModel::removeBookmark(const QString &jid) {
+    sendEdit(QStringLiteral("bookmarks"), QStringLiteral("remove"),
+             {{QStringLiteral("jid"), jid}});
 }
 
 void ChatListModel::handleEvent(const QString &module, const QString &name,

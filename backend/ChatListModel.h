@@ -28,7 +28,9 @@ public:
         LastActivityRole,
         SubscriptionRole,
         RoomStateRole,
+        RoomReasonRole,
         UnreadRole,
+        UnreadMentionsRole,
         RawRole,
     };
     Q_ENUM(Role)
@@ -50,6 +52,31 @@ public:
 
     // The chat_entry for one JID, or an empty map when there is no such chat.
     Q_INVOKABLE QVariantMap entryFor(const QString &jid) const;
+
+    // Roster and bookmark edits: what the list's context menu and its new-chat
+    // and join-room dialogs do. Pass-throughs, like the Tk list's menu handlers.
+    // tacky owns the rules - including cutting a room's `?join` chat JID back to
+    // the bare room JID a bookmark is keyed by - so the JID a row carries goes
+    // straight in. None of them touch m_items either: the chatlist events the
+    // edit provokes are what repaint the list, so a rejected edit leaves no
+    // phantom row behind.
+    Q_INVOKABLE void addContact(const QString &jid, const QString &name = {});
+    Q_INVOKABLE void renameContact(const QString &jid, const QString &name);
+    Q_INVOKABLE void removeContact(const QString &jid);
+    // Membership, not attendance: joining a room also bookmarks it with
+    // autojoin set, and leaving clears the flag, which is the Tk list's "Join"
+    // tick. forceJoinRoom re-sends the join alone, for a room we are a member
+    // of but have been dropped from.
+    Q_INVOKABLE void joinRoom(const QString &jid, const QString &nick = {},
+                              const QString &password = {});
+    Q_INVOKABLE void leaveRoom(const QString &jid);
+    Q_INVOKABLE void forceJoinRoom(const QString &jid);
+    Q_INVOKABLE void renameBookmark(const QString &jid, const QString &name);
+    Q_INVOKABLE void removeBookmark(const QString &jid);
+
+    // Re-ask the server for the roster and the bookmarks, then reload. refresh()
+    // alone only re-reads what tacky already has stored.
+    Q_INVOKABLE void reload();
 
     // Why the last load failed, or "" if it did not. An empty list and a failed
     // one look identical otherwise, which is how a schema error once presented
@@ -80,6 +107,10 @@ private:
     static bool lessThan(const QVariantMap &a, const QVariantMap &b);
     int indexOfJid(const QString &jid) const;
     int insertPos(const QVariantMap &entry) const;
+
+    // One roster/bookmark edit: stamps the account on and sends it, or drops it
+    // when there is no account or no JID to act on.
+    void sendEdit(const QString &module, const QString &method, QVariantMap args);
 
     TackyBackend *m_backend = nullptr;
     QString m_account;
