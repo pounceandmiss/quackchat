@@ -28,6 +28,7 @@ public:
         LastActivityRole,
         SubscriptionRole,
         RoomStateRole,
+        UnreadRole,
         RawRole,
     };
     Q_ENUM(Role)

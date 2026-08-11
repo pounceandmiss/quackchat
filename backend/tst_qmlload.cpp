@@ -2,6 +2,7 @@
 // (ReferenceError etc.) only surface as warnings, so collect and fail on them.
 #include <QtTest>
 #include <QImage>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QQmlApplicationEngine>
@@ -18,6 +19,7 @@
 #include "AccountSettings.h"
 #include "AppController.h"
 #include "CallsModel.h"
+#include "ChatListModel.h"
 #include "OmemoDevicesModel.h"
 #include "SearchModel.h"
 
@@ -910,6 +912,81 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(itemAt(0), "triggered"));
         QCOMPARE(picked.count(), 2);
         QCOMPARE(picked.at(1).at(0).toString(), QString());
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // The badge is the row's only sign of unread mail, so it has to carry the
+    // count and, once the chat is read, leave without a trace.
+    void unreadChatsWearABadge() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"unread":3},
+            {"jid":"b@example.com","name":"Bob","last_activity":200,"unread":0},
+            {"jid":"c@example.com","name":"Cy","last_activity":100,"unread":140}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 3);
+        win.grabWindow(); // force the delegates to lay out and bind
+
+        auto rowAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return item;
+        };
+        auto badge = [&](int i) { return findItem(rowAt(i), "unreadBadge"); };
+        auto badgeText = [&](int i) {
+            QQuickItem *text = findItem(rowAt(i), "unreadCount");
+            return text ? text->property("text").toString() : QString();
+        };
+
+        QVERIFY(badge(0));
+        QVERIFY(badge(0)->isVisible());
+        QCOMPARE(badgeText(0), QString("3"));
+        // Nothing unread: the item exists but stays hidden, so the layout
+        // skips it rather than leaving a gap at the row's end.
+        QVERIFY(badge(1));
+        QVERIFY(!badge(1)->isVisible());
+        // Three digits would eat the name.
+        QCOMPARE(badgeText(2), QString("99+"));
+
+        // Opening the chat marks it read, which comes back as an <Item>.
+        chats->applyItem(QVariantMap{{"jid", "a@example.com"},
+                                     {"name", "Amy"},
+                                     {"last_activity", 300},
+                                     {"unread", 0}});
+        QTRY_VERIFY(!badge(0)->isVisible());
 
         assertNoQmlErrors(warnings);
     }

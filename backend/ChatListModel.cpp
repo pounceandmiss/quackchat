@@ -16,6 +16,7 @@ int ChatListModel::rowCount(const QModelIndex &parent) const {
 static const QList<QByteArray> kKeys = {
     "jid", "name", "source", "groupchat",
     "autojoin", "last_activity", "subscription", "room_state",
+    "unread",
 };
 
 QVariant ChatListModel::data(const QModelIndex &index, int role) const {

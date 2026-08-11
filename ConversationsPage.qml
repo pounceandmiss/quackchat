@@ -122,6 +122,7 @@ Page {
 
     ListView {
         id: listView
+        objectName: "chatList"
         anchors.fill: parent
         model: page.account !== "" ? App.chatListFor(page.account) : null
         clip: true
@@ -143,6 +144,7 @@ Page {
             required property string jid
             required property string name
             required property bool groupchat
+            required property int unread
             width: ListView.view.width
             height: 64
             onClicked: page.openChat(jid, name, groupchat)
@@ -195,6 +197,30 @@ Page {
                     Layout.rightMargin: 14
                     text: row.groupchat ? "👥" : ""
                     font.pixelSize: 14
+                }
+
+                // The Tk list's "Name (3)" suffix, as the badge an avatar row
+                // has room for. Hidden at zero, so the layout skips it.
+                Rectangle {
+                    objectName: "unreadBadge"
+                    Layout.rightMargin: 14
+                    visible: row.unread > 0
+                    implicitHeight: 20
+                    implicitWidth: Math.max(height, unreadText.implicitWidth + 12)
+                    radius: height / 2
+                    color: Theme.accent
+
+                    Text {
+                        id: unreadText
+                        objectName: "unreadCount"
+                        anchors.centerIn: parent
+                        // tacky counts the true total; three digits of it would
+                        // eat the name.
+                        text: row.unread > 99 ? "99+" : row.unread.toString()
+                        color: Theme.textOnAccent
+                        font.pixelSize: 12
+                        font.bold: true
+                    }
                 }
             }
         }

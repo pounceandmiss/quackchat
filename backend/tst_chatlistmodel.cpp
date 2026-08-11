@@ -25,6 +25,7 @@ class TestChatList : public QObject {
 private slots:
     void sortsByActivity();
     void unnamedChatsSortUnderTheirJid();
+    void carriesUnreadCounts();
     void insertKeepsOrder();
     void upsertRenameInPlace();
     void upsertActivityReorders();
@@ -62,6 +63,24 @@ void TestChatList::unnamedChatsSortUnderTheirJid() {
     for (int i = 0; i < m.rowCount(); ++i)
         order << m.data(m.index(i), ChatListModel::JidRole).toString();
     QCOMPARE(order, QStringList({"amy@h", "bob@h", "cy@h", "zoe@h"}));
+}
+
+void TestChatList::carriesUnreadCounts() {
+    ChatListModel m;
+    m.setAccount("me@h");
+    m.applyList(entriesFrom(R"([
+        {"jid":"a@h","last_activity":300,"unread":3},
+        {"jid":"b@h","last_activity":100}
+    ])"));
+    QCOMPARE(m.data(m.index(0), ChatListModel::UnreadRole).toInt(), 3);
+    // Absent means nothing unread, not "unknown" - the badge has to hide.
+    QCOMPARE(m.data(m.index(1), ChatListModel::UnreadRole).toInt(), 0);
+    QCOMPARE(m.roleNames().value(ChatListModel::UnreadRole), QByteArray("unread"));
+
+    // Reading the chat re-emits the entry with the count cleared.
+    feedEvent(m, R"(["event","chatlist","Item",
+        {"acc":"me@h","jid":"a@h","item":{"jid":"a@h","last_activity":300,"unread":0}}])");
+    QCOMPARE(m.data(m.index(0), ChatListModel::UnreadRole).toInt(), 0);
 }
 
 void TestChatList::insertKeepsOrder() {
