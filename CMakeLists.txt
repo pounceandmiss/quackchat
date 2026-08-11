@@ -154,6 +154,7 @@ qt_add_qml_module(quack
         backend/ChatListModel.cpp backend/ChatListModel.h
         backend/SearchModel.cpp backend/SearchModel.h
         backend/MucRoomsModel.cpp backend/MucRoomsModel.h
+        backend/ChatListFilter.cpp backend/ChatListFilter.h
         backend/AccountsModel.cpp backend/AccountsModel.h
         backend/AccountSettings.cpp backend/AccountSettings.h
         backend/OmemoDevicesModel.cpp backend/OmemoDevicesModel.h
@@ -214,7 +215,8 @@ enable_testing()
 
 foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
-          tst_searchmodel tst_mucrooms tst_integration tst_transport
+          tst_searchmodel tst_mucrooms tst_chatlistfilter
+          tst_integration tst_transport
           tst_calls tst_audiodevices)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)

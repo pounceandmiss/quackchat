@@ -20,9 +20,9 @@ Page {
     signal openAccounts()
     background: Rectangle { color: Theme.surface }
 
-    // The account's roster + bookmarks + history, and what the row menu's edits
-    // go through. Null until an account is picked, which is what an empty list
-    // and a disabled menu both come from.
+    // The account's roster + bookmarks + history, and what every edit below goes
+    // through. Null with no account, and again once one is removed - which is
+    // why the handlers check it rather than assume the row they came from.
     readonly property ChatListModel chatList:
         account !== "" ? App.chatListFor(account) : null
 
@@ -42,70 +42,131 @@ Page {
         activeFocusOnPress: false
     }
 
+    // What the list actually shows: the account's chats, narrowed by the filter
+    // box and in the order this window was asked for. Per view, so typing here
+    // leaves the same account's other windows alone.
+    ChatListFilter {
+        id: visibleChats
+        objectName: "chatListFilter"
+        source: page.chatList
+        query: filterField.text
+    }
+
     header: Rectangle {
-        height: 60
+        // Sized by what it holds - the title row and the filter under it - so
+        // neither can change height without the header following.
+        implicitHeight: headerRows.implicitHeight
         color: Theme.surface
-        RowLayout {
+
+        ColumnLayout {
+            id: headerRows
             anchors.fill: parent
-            // The glyph button carries its own padding, so the text lines up
-            // with the title either way.
-            anchors.leftMargin: page.showAccounts ? 4 : 16
-            anchors.rightMargin: 8
-            spacing: 8
-            IconButton {
-                objectName: "accountsButton"
-                iconPath: Icons.menu
-                Accessible.name: qsTr("Accounts")
-                glyphColor: Theme.textDim
-                visible: page.showAccounts
-                onClicked: page.openAccounts()
-            }
-            ColumnLayout {
+            spacing: 6
+
+            RowLayout {
                 Layout.fillWidth: true
-                spacing: 0
-                Text {
-                    text: "Chats"
-                    color: Theme.textPrimary
-                    font.pixelSize: 20
-                    font.bold: true
+                Layout.preferredHeight: 60
+                // The glyph button carries its own padding, so the text lines
+                // up with the title either way.
+                Layout.leftMargin: page.showAccounts ? 4 : 16
+                Layout.rightMargin: 8
+                spacing: 8
+                IconButton {
+                    objectName: "accountsButton"
+                    iconPath: Icons.menu
+                    Accessible.name: qsTr("Accounts")
+                    glyphColor: Theme.textDim
+                    visible: page.showAccounts
+                    onClicked: page.openAccounts()
                 }
-                Text {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: page.account
-                    visible: page.account !== ""
-                    color: Theme.textDim
-                    font.pixelSize: 11
-                    elide: Text.ElideRight
+                    spacing: 0
+                    Text {
+                        text: "Chats"
+                        color: Theme.textPrimary
+                        font.pixelSize: 20
+                        font.bold: true
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: page.account
+                        visible: page.account !== ""
+                        color: Theme.textDim
+                        font.pixelSize: 11
+                        elide: Text.ElideRight
+                    }
+                }
+                IconButton {
+                    objectName: "newChatButton"
+                    iconPath: Icons.add
+                    Accessible.name: qsTr("New chat")
+                    glyphColor: Theme.textDim
+                    enabled: page.account !== ""
+                    opacity: enabled ? 1 : 0.4
+                    onClicked: newChatSheet.open()
+                }
+                IconButton {
+                    objectName: "searchButton"
+                    text: "🔍"
+                    font.pixelSize: 16
+                    glyphColor: Theme.textDim
+                    enabled: page.account !== ""
+                    opacity: enabled ? 1 : 0.4
+                    onClicked: page.startSearch()
+                }
+                IconButton {
+                    id: overflowBtn
+                    iconPath: Icons.moreHoriz
+                    Accessible.name: qsTr("More")
+                    glyphColor: Theme.textDim
+                    onClicked: overflow.popup(overflowBtn,
+                                              overflowBtn.width - overflow.width,
+                                              overflowBtn.height + 2)
                 }
             }
-            IconButton {
-                objectName: "newChatButton"
-                iconPath: Icons.add
-                Accessible.name: qsTr("New chat")
-                glyphColor: Theme.textDim
+
+            // The Tk list's search entry: it narrows what is already here,
+            // which is a different question from the magnifier above it (search
+            // every message in the account). Permanent rather than revealed, as
+            // it is there.
+            TextField {
+                id: filterField
+                objectName: "chatFilter"
+                Layout.fillWidth: true
+                Layout.leftMargin: 12
+                Layout.rightMargin: 12
+                Layout.bottomMargin: 8
+                Layout.preferredHeight: 34
+                placeholderText: "Filter chats"
                 enabled: page.account !== ""
-                opacity: enabled ? 1 : 0.4
-                onClicked: newChatSheet.open()
-            }
-            IconButton {
-                objectName: "searchButton"
-                text: "🔍"
-                font.pixelSize: 16
-                glyphColor: Theme.textDim
-                enabled: page.account !== ""
-                opacity: enabled ? 1 : 0.4
-                onClicked: page.startSearch()
-            }
-            IconButton {
-                id: overflowBtn
-                iconPath: Icons.moreHoriz
-                Accessible.name: qsTr("More")
-                glyphColor: Theme.textDim
-                onClicked: overflow.popup(overflowBtn,
-                                          overflowBtn.width - overflow.width,
-                                          overflowBtn.height + 2)
+                font.pixelSize: 13
+                leftPadding: 10
+                rightPadding: clearFilter.visible ? clearFilter.width + 6 : 10
+                background: Rectangle {
+                    radius: 8
+                    color: Theme.field
+                    border.width: 1
+                    border.color: filterField.activeFocus ? Theme.accent
+                                                          : Theme.hairline
+                }
+                IconButton {
+                    id: clearFilter
+                    objectName: "clearFilterButton"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 28
+                    height: 28
+                    iconPath: Icons.close
+                    Accessible.name: qsTr("Clear filter")
+                    glyphColor: Theme.textDim
+                    visible: filterField.text !== ""
+                    onClicked: filterField.clear()
+                }
+                Keys.onEscapePressed: filterField.clear()
             }
         }
+
         Rectangle {
             anchors.bottom: parent.bottom
             width: parent.width; height: 1
@@ -161,6 +222,20 @@ Page {
             enabled: page.account !== ""
             onTriggered: joinRoomSheet.open()
         }
+        // The Tk list's "Sort by" submenu, flattened: two entries with a tick
+        // are the whole of it. Per window and not remembered, as it is there.
+        OverflowEntry {
+            objectName: "sortRecentEntry"
+            text: "Sort by activity"
+            shortcutHint: visibleChats.sortMode === ChatListFilter.Recent ? "✓" : ""
+            onTriggered: visibleChats.sortMode = ChatListFilter.Recent
+        }
+        OverflowEntry {
+            objectName: "sortNameEntry"
+            text: "Sort by name"
+            shortcutHint: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
+            onTriggered: visibleChats.sortMode = ChatListFilter.Name
+        }
         OverflowEntry {
             text: "New window"
             shortcutHint: "Ctrl+N"
@@ -181,7 +256,7 @@ Page {
         id: listView
         objectName: "chatList"
         anchors.fill: parent
-        model: page.chatList
+        model: visibleChats
         clip: true
 
         ScrollBar.vertical: ScrollBar {
@@ -400,12 +475,16 @@ Page {
         text: {
             if (page.account === "")
                 return "No account selected.\nUse + on the left to add one."
+            // A filter hiding everything is not an empty account, and saying
+            // "no conversations yet" over a typed query reads as a wrong answer.
+            if (visibleChats.totalCount > 0)
+                return "Nothing here matches \"" + filterField.text + "\"."
             // connRev is read purely to give this binding a dependency:
             // connStateFor is a call, so nothing would re-run it otherwise.
             App.accounts.connRev
             // A load that failed leaves the list as empty as one that succeeded
             // with nothing in it, so say which happened.
-            const failure = listView.model ? listView.model.loadError : ""
+            const failure = page.chatList ? page.chatList.loadError : ""
             if (failure !== "")
                 return "Couldn't load conversations.\n" + failure
             switch (App.accounts.connStateFor(page.account)) {
