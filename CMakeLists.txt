@@ -115,6 +115,7 @@ qt_add_qml_module(quack
         MessageXmlWindow.qml
         AppShell.qml
         AccountRail.qml
+        SheetDialog.qml
         AddAccountSheet.qml
         AccountSettingsPage.qml
         TrustPicker.qml
@@ -122,6 +123,9 @@ qt_add_qml_module(quack
         MessageXmlPage.qml
         Fingerprint.qml
         ConversationsPage.qml
+        ChatRowMenu.qml
+        TextPromptDialog.qml
+        ConfirmDialog.qml
         SearchPage.qml
         ChatPage.qml
         ChatBubble.qml

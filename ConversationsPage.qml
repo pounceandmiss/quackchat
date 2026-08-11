@@ -20,6 +20,28 @@ Page {
     signal openAccounts()
     background: Rectangle { color: Theme.surface }
 
+    // The account's roster + bookmarks + history, and what the row menu's edits
+    // go through. Null until an account is picked, which is what an empty list
+    // and a disabled menu both come from.
+    readonly property ChatListModel chatList:
+        account !== "" ? App.chatListFor(account) : null
+
+    // QML has no clipboard of its own; a TextEdit's copy() is the way to one.
+    function copyToClipboard(text) {
+        clipboard.text = text
+        clipboard.selectAll()
+        clipboard.copy()
+        clipboard.deselect()
+    }
+
+    TextEdit {
+        id: clipboard
+        width: 0
+        height: 0
+        opacity: 0
+        activeFocusOnPress: false
+    }
+
     header: Rectangle {
         height: 60
         color: Theme.surface
@@ -138,7 +160,7 @@ Page {
         id: listView
         objectName: "chatList"
         anchors.fill: parent
-        model: page.account !== "" ? App.chatListFor(page.account) : null
+        model: page.chatList
         clip: true
 
         ScrollBar.vertical: ScrollBar {
@@ -159,13 +181,23 @@ Page {
             required property string name
             required property bool groupchat
             required property int unread
+            // The whole entry, for the row menu: it wants the bookmark and
+            // room-state fields too, and naming each one here would be a
+            // second copy of the entry's shape.
+            required property var raw
             width: ListView.view.width
             height: 64
             onClicked: page.openChat(jid, name, groupchat)
 
+            // Right-click used to pop the chat out; that is one entry in this
+            // menu now, where the rest of the row's verbs are.
             TapHandler {
                 acceptedButtons: Qt.RightButton
-                onTapped: page.popOutChat(row.jid, row.title, row.groupchat)
+                onTapped: rowMenu.openFor(row.raw)
+            }
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onLongPressed: rowMenu.openFor(row.raw)
             }
 
             readonly property string title: name !== "" ? name : jid
@@ -238,6 +270,78 @@ Page {
                 }
             }
         }
+    }
+
+    // Everything a row can be asked to do. The menu holds the row it was opened
+    // on, so the handlers read it from there rather than from the delegate,
+    // which may well have been recycled by the time an answer comes back.
+    ChatRowMenu {
+        id: rowMenu
+        canPopOut: !Theme.mobile
+        onOpenChat: page.openChat(jid, chatTitle, groupchat)
+        onPopOutChat: page.popOutChat(jid, chatTitle, groupchat)
+        onStartCall: App.calls.start(page.account, jid)
+        onAddContact: if (page.chatList) page.chatList.addContact(jid, "")
+        onJoinRoom: if (page.chatList) page.chatList.joinRoom(jid)
+        onLeaveRoom: if (page.chatList) page.chatList.leaveRoom(jid)
+        onForceJoin: if (page.chatList) page.chatList.forceJoinRoom(jid)
+        onRefreshAvatar: App.avatars.refresh(page.account, jid)
+        onCopyJid: page.copyToClipboard(jid)
+        onRenameContact: {
+            renamePrompt.subject = jid
+            renamePrompt.prompt = "New name for " + jid + ":"
+            renamePrompt.value = chatTitle
+            renamePrompt.open()
+        }
+        onEditBookmark: {
+            bookmarkPrompt.subject = jid
+            bookmarkPrompt.prompt = "Bookmark name for " + jid + ":"
+            bookmarkPrompt.value = chatTitle
+            bookmarkPrompt.open()
+        }
+        onRemoveContact: {
+            removeContactConfirm.subject = jid
+            removeContactConfirm.message = "Remove " + jid + " from your contacts?"
+            removeContactConfirm.open()
+        }
+        onRemoveBookmark: {
+            removeBookmarkConfirm.subject = jid
+            removeBookmarkConfirm.message = "Remove the bookmark for " + jid + "?"
+            removeBookmarkConfirm.open()
+        }
+    }
+
+    // An empty answer is the Tk dialogs' "cancelled", and a name unchanged is
+    // not worth a round trip to the server.
+    TextPromptDialog {
+        id: renamePrompt
+        objectName: "renamePrompt"
+        title: "Rename contact"
+        onSubmitted: (text) => {
+            if (page.chatList && text !== "" && text !== value)
+                page.chatList.renameContact(subject, text)
+        }
+    }
+    TextPromptDialog {
+        id: bookmarkPrompt
+        objectName: "bookmarkPrompt"
+        title: "Edit bookmark"
+        onSubmitted: (text) => {
+            if (page.chatList && text !== "" && text !== value)
+                page.chatList.renameBookmark(subject, text)
+        }
+    }
+    ConfirmDialog {
+        id: removeContactConfirm
+        objectName: "removeContactConfirm"
+        title: "Remove contact"
+        onAccepted: if (page.chatList) page.chatList.removeContact(subject)
+    }
+    ConfirmDialog {
+        id: removeBookmarkConfirm
+        objectName: "removeBookmarkConfirm"
+        title: "Remove bookmark"
+        onAccepted: if (page.chatList) page.chatList.removeBookmark(subject)
     }
 
     // Empty state, reflecting the real connection state (not just "empty").

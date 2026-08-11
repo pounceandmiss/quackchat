@@ -22,6 +22,7 @@
 #include "ChatListModel.h"
 #include "OmemoDevicesModel.h"
 #include "SearchModel.h"
+#include "TackyBackend.h"
 
 class TestQmlLoad : public QObject {
     Q_OBJECT
@@ -1208,6 +1209,180 @@ private slots:
                                      {"last_activity", 300},
                                      {"unread", 0}});
         QTRY_VERIFY(!badge(0)->isVisible());
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // The row menu is one instance shared by every row, so which verbs it shows
+    // is entirely a function of the entry it was opened for. A contact offered
+    // a room's join, or a room offered a call, would both be nonsense.
+    void rowMenuFollowsTheRowItWasOpenedFor() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","source":"roster",
+             "last_activity":300},
+            {"jid":"room@muc.example.com?join","name":"The Room",
+             "source":"bookmarks","groupchat":true,"autojoin":false,
+             "room_state":"error","room_reason":"forbidden","last_activity":200},
+            {"jid":"cy@example.com","name":"","source":"free",
+             "last_activity":100}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        // A Popup is not in the page's visual tree until it opens, but it is
+        // its QObject child from the start.
+        QObject *menu = page->findChild<QObject *>("chatRowMenu");
+        QVERIFY(menu);
+        auto entry = [&](const char *name) {
+            return menu->findChild<QObject *>(QLatin1String(name));
+        };
+        auto shown = [&](const char *name) {
+            QObject *o = entry(name);
+            return o && o->property("visible").toBool();
+        };
+        auto openFor = [&](const QString &jid) {
+            QVERIFY(QMetaObject::invokeMethod(
+                menu, "openFor", Q_ARG(QVariant, QVariant(chats->entryFor(jid)))));
+        };
+
+        openFor("amy@example.com");
+        QVERIFY(shown("startCallEntry"));
+        QVERIFY(!shown("joinEntry"));
+        QVERIFY(!shown("forceJoinEntry"));
+        QVERIFY(!shown("roomStatusLine"));
+        // In the roster already, so there is nothing to add it to.
+        QVERIFY(!shown("addContactEntry"));
+        QVERIFY(shown("renameEntry"));
+        QCOMPARE(entry("renameEntry")->property("text").toString(),
+                 QString("Rename…"));
+        QCOMPARE(menu->property("chatTitle").toString(), QString("Amy"));
+
+        openFor("room@muc.example.com?join");
+        QVERIFY(!shown("startCallEntry"));
+        QVERIFY(shown("joinEntry"));
+        QVERIFY(shown("forceJoinEntry"));
+        // A room we are not a member of: the tick is the membership, and the
+        // reason a join failed is the only actionable thing about the state.
+        QCOMPARE(entry("joinEntry")->property("trailing").toString(), QString());
+        QVERIFY(shown("roomStatusLine"));
+        QCOMPARE(entry("roomStatusLine")->property("text").toString(),
+                 QString("Join failed: forbidden"));
+        QCOMPARE(entry("removeEntry")->property("text").toString(),
+                 QString("Remove bookmark…"));
+
+        // Chat history but no roster entry: the way in, rather than a rename
+        // and a remove that would act on an item that isn't there.
+        openFor("cy@example.com");
+        QVERIFY(shown("addContactEntry"));
+        QVERIFY(!shown("renameEntry"));
+        QVERIFY(!shown("removeEntry"));
+        QCOMPARE(menu->property("chatTitle").toString(),
+                 QString("cy@example.com")); // unnamed: goes by its JID
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // Joining from the menu has to reach the backend as a bookmark write, and a
+    // remove has to wait for the confirmation rather than fire on the click.
+    void rowMenuEditsReachTheBackend() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","source":"roster",
+             "last_activity":300},
+            {"jid":"room@muc.example.com?join","name":"The Room",
+             "source":"bookmarks","groupchat":true,"autojoin":false,
+             "last_activity":200}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QObject *menu = page->findChild<QObject *>("chatRowMenu");
+        QVERIFY(menu);
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        auto lastFrame = [&] {
+            if (sent.isEmpty())
+                return QString();
+            const QList<QVariant> &c = sent.last();
+            return c.at(0).toString() + "/" + c.at(1).toString() + " "
+                   + c.at(2).toMap().value("jid").toString();
+        };
+
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "openFor",
+            Q_ARG(QVariant, QVariant(chats->entryFor("room@muc.example.com?join")))));
+        QVERIFY(QMetaObject::invokeMethod(menu->findChild<QObject *>("joinEntry"),
+                                          "triggered"));
+        QCOMPARE(lastFrame(), QString("bookmarks/item room@muc.example.com?join"));
+
+        // Removing a contact is destructive, so the menu only opens the
+        // question; nothing goes out until it is answered.
+        const int before = sent.count();
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "openFor",
+            Q_ARG(QVariant, QVariant(chats->entryFor("amy@example.com")))));
+        QVERIFY(QMetaObject::invokeMethod(menu->findChild<QObject *>("removeEntry"),
+                                          "triggered"));
+        QCOMPARE(sent.count(), before);
+
+        QObject *confirm = page->findChild<QObject *>("removeContactConfirm");
+        QVERIFY(confirm);
+        QCOMPARE(confirm->property("subject").toString(),
+                 QString("amy@example.com"));
+        QVERIFY(QMetaObject::invokeMethod(confirm, "accept"));
+        QCOMPARE(lastFrame(), QString("roster/remove amy@example.com"));
 
         assertNoQmlErrors(warnings);
     }

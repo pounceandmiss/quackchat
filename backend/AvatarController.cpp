@@ -70,6 +70,14 @@ void AvatarController::ensureVisible(const QString &acc, const QString &jid) {
                                   {QStringLiteral("jid"), nj}});
 }
 
+void AvatarController::refresh(const QString &acc, const QString &jid) {
+    if (!m_backend || acc.isEmpty() || jid.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("avatar"), QStringLiteral("refresh"),
+                      QVariantMap{{QStringLiteral("acc"), acc},
+                                  {QStringLiteral("jid"), normJid(jid)}});
+}
+
 void AvatarController::resubscribe(const QString &acc) {
     if (acc.isEmpty())
         return;

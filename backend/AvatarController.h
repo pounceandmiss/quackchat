@@ -38,6 +38,12 @@ public:
     // push an `avatar <Update>` carrying the hash.
     Q_INVOKABLE QString hashFor(const QString &acc, const QString &jid);
 
+    // Re-ask the server for this JID's avatar, ignoring the cached hash - the
+    // way out when a contact changed their picture and we never heard about it.
+    // The new hash arrives as an ordinary `avatar <Update>`, so the picture
+    // swaps itself; there is nothing to wait for here.
+    Q_INVOKABLE void refresh(const QString &acc, const QString &jid);
+
     // Completes `sink` when the reply lands or fails. Called from the image
     // provider's loader thread, so it hops onto this object's thread first.
     void fetch(const QString &acc, const QString &jid, const QString &hash,
