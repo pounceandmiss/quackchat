@@ -109,8 +109,10 @@ Item {
     onCurrentAccountChanged: {
         // Not a navigation: the open chat belongs to the account just left, so
         // it goes at once rather than sliding off as somebody else's pane.
-        popping = false
+        // easeSlide goes first: dropping `popping` with the Behavior still on
+        // starts a slide back to the chat that the clear below cannot call off.
         easeSlide = false
+        popping = false
         clearChat()
         easeSlide = true
         searching = false
