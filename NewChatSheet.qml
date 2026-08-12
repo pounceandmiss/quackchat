@@ -18,17 +18,9 @@ SheetDialog {
     title: "New chat"
     standardButtons: Dialog.Cancel | Dialog.Ok
 
-    readonly property bool jidValid: /^[^@\s]+@[^@\s]+$/.test(jidField.text.trim())
-
-    // A chat JID is bare and lower case, and that is the form the list keys its
-    // rows by - typing a resource on would otherwise open a second chat beside
-    // the one already there. tacky normalizes what it stores; this is so the
-    // chat we open and the row that answers agree.
-    readonly property string targetJid: {
-        const raw = jidField.text.trim().toLowerCase()
-        const cut = raw.search(/[\/?]/)
-        return cut < 0 ? raw : raw.substring(0, cut)
-    }
+    // Bare, so the chat we open and the row that answers agree on the key.
+    readonly property string targetJid: Jid.bare(jidField.text)
+    readonly property bool jidValid: Jid.plausible(targetJid)
 
     onAboutToShow: {
         jidField.clear()

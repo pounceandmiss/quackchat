@@ -25,15 +25,11 @@ SheetDialog {
     height: Math.min(480, parent ? parent.height - 24 : 480)
     standardButtons: Dialog.Cancel | Dialog.Ok
 
-    readonly property string targetJid: {
-        const raw = roomField.text.trim().toLowerCase()
-        // The list's rooms carry a ?join suffix; the bookmark commands are keyed
-        // by the bare room JID, so it goes in without one either way.
-        const cut = raw.search(/[\/?]/)
-        return cut < 0 ? raw : raw.substring(0, cut)
-    }
+    // The list's rooms carry a ?join suffix; the bookmark commands are keyed by
+    // the bare room JID, so it goes in without one either way.
+    readonly property string targetJid: Jid.bare(roomField.text)
     readonly property bool canJoin:
-        /^[^@\s]+@[^@\s]+$/.test(targetJid) && nickField.text.trim() !== ""
+        Jid.plausible(targetJid) && nickField.text.trim() !== ""
 
     // Where a server's rooms live by convention. A guess, and editable: plenty
     // of deployments put theirs somewhere else.

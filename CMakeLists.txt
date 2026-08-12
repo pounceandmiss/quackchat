@@ -101,6 +101,7 @@ endif()
 qt_add_library(quack STATIC)
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(Jid.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(AppWindows.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(quack
     URI Quack
@@ -131,6 +132,7 @@ qt_add_qml_module(quack
         AppMenu.qml
         MenuEntry.qml
         NewChatSheet.qml
+        Jid.qml
         JoinRoomSheet.qml
         TextPromptDialog.qml
         ConfirmDialog.qml
