@@ -201,7 +201,7 @@ Page {
     // message is in view". Anything looser marks a backgrounded window's chat
     // read and swallows its notification.
     readonly property bool reading: page.hasChat && visible
-                                    && Qt.application.state === Qt.ApplicationActive
+                                    && Qt.application.state === Qt.ApplicationActive // qmllint disable missing-property
                                     && chatModel.atTail
     onReadingChanged: if (reading) chatModel.markRead()
 
