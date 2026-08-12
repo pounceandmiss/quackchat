@@ -160,47 +160,16 @@ Page {
 
     // Window-level actions, previously a global toolbar. The keyboard shortcuts
     // (Ctrl+N / Ctrl+T) live on the window; this menu is their mouse path.
-    Menu {
+    AppMenu {
         id: overflow
         width: 190
-        background: Rectangle {
-            color: Theme.surface
-            radius: 10
-            border.color: Theme.hairline
-        }
-        component OverflowEntry: MenuItem {
-            id: mi
-            height: 40
-            property string shortcutHint: ""
-            contentItem: RowLayout {
-                spacing: 8
-                Text {
-                    Layout.fillWidth: true
-                    text: mi.text
-                    color: Theme.textPrimary
-                    font.pixelSize: 14
-                    verticalAlignment: Text.AlignVCenter
-                    leftPadding: 8
-                }
-                Text {
-                    text: mi.shortcutHint
-                    color: Theme.textDim
-                    font.pixelSize: 12
-                    rightPadding: 8
-                }
-            }
-            background: Rectangle {
-                color: mi.highlighted ? Theme.menuHover : "transparent"
-                radius: 6
-            }
-        }
-        OverflowEntry {
+        MenuEntry {
             objectName: "newChatEntry"
             text: "New chat…"
             enabled: page.account !== ""
             onTriggered: newChatSheet.open()
         }
-        OverflowEntry {
+        MenuEntry {
             objectName: "joinRoomEntry"
             text: "Join room…"
             enabled: page.account !== ""
@@ -208,35 +177,32 @@ Page {
         }
         // The Tk list's "Sort by" submenu, flattened: two entries with a tick
         // are the whole of it. Per window and not remembered, as it is there.
-        OverflowEntry {
+        MenuEntry {
             objectName: "sortRecentEntry"
             text: "Sort by activity"
-            shortcutHint: visibleChats.sortMode === ChatListFilter.Recent ? "✓" : ""
+            trailing: visibleChats.sortMode === ChatListFilter.Recent ? "✓" : ""
             onTriggered: visibleChats.sortMode = ChatListFilter.Recent
         }
-        OverflowEntry {
+        MenuEntry {
             objectName: "sortNameEntry"
             text: "Sort by name"
-            shortcutHint: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
+            trailing: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
             onTriggered: visibleChats.sortMode = ChatListFilter.Name
         }
-        OverflowEntry {
+        MenuEntry {
             text: "New window"
-            shortcutHint: "Ctrl+N"
-            // Single-window platforms: hide, with height 0 so the menu's
-            // column doesn't hold a blank slot for the invisible item.
-            visible: !Theme.mobile
-            height: Theme.mobile ? 0 : 40
+            trailing: "Ctrl+N"
+            offered: !Theme.mobile // single-window platforms
             onTriggered: AppWindows.newShell(page.account)
         }
-        OverflowEntry {
+        MenuEntry {
             text: "Change theme"
-            shortcutHint: "Ctrl+T"
+            trailing: "Ctrl+T"
             onTriggered: Theme.cycle()
         }
         // The Tk list's Refresh: not a repaint but a re-ask, for when the
         // server and what we hold have drifted apart.
-        OverflowEntry {
+        MenuEntry {
             objectName: "refreshEntry"
             text: "Refresh"
             enabled: page.account !== ""

@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import Quack
 
 // The chat list's row menu, from the Tk list's pair of context menus: a room
@@ -11,7 +10,7 @@ import Quack
 // One instance per list rather than one per delegate: the menu is a windowful
 // of scenery for a row that is nearly always just clicked, and the list can run
 // long. openFor() loads it from the row's entry before it pops up.
-Menu {
+AppMenu {
     id: menu
     objectName: "chatRowMenu"
     width: 220
@@ -75,49 +74,14 @@ Menu {
         }
     }
 
-    background: Rectangle {
-        color: Theme.surface
-        radius: 10
-        border.color: Theme.hairline
-    }
-
-    // An entry a row has no use for collapses rather than merely hiding: an
-    // invisible one at full height would hold a blank slot in the column.
-    component MenuEntry: MenuItem {
-        id: mi
-        height: visible ? 40 : 0
-        property string trailing: ""
-        property color labelColor: Theme.textPrimary
-        contentItem: RowLayout {
-            spacing: 8
-            Text {
-                Layout.fillWidth: true
-                text: mi.text
-                color: mi.labelColor
-                font.pixelSize: 14
-                elide: Text.ElideRight
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: 8
-            }
-            Text {
-                text: mi.trailing
-                color: Theme.textDim
-                font.pixelSize: 13
-                rightPadding: 8
-            }
-        }
-        background: Rectangle {
-            color: mi.highlighted ? Theme.menuHover : "transparent"
-            radius: 6
-        }
-    }
-
     // A label, not an action - the JID this menu is about, and what the room is
-    // doing. Collapses when empty, for the same reason MenuEntry does.
+    // doing. Collapses when empty, the way a MenuEntry does.
     component MenuLabel: MenuItem {
         id: ml
+        property bool offered: true
         enabled: false
-        height: visible ? 26 : 0
+        visible: ml.offered
+        height: ml.offered ? 26 : 0
         contentItem: Text {
             text: ml.text
             color: Theme.textDim
@@ -141,7 +105,7 @@ Menu {
     MenuLabel {
         objectName: "roomStatusLine"
         text: menu.statusLine
-        visible: menu.statusLine !== ""
+        offered: menu.statusLine !== ""
     }
     Rule {}
 
@@ -152,14 +116,14 @@ Menu {
     MenuEntry {
         objectName: "popOutEntry"
         text: "Open in new window"
-        visible: menu.canPopOut
+        offered: menu.canPopOut
         onTriggered: menu.popOutChat()
     }
     // A room's calls are its occupants', not the room's.
     MenuEntry {
         objectName: "startCallEntry"
         text: "Start call"
-        visible: !menu.groupchat
+        offered: !menu.groupchat
         onTriggered: menu.startCall()
     }
 
@@ -169,7 +133,7 @@ Menu {
         objectName: "joinEntry"
         text: "Join"
         trailing: menu.autojoin ? "✓" : ""
-        visible: menu.groupchat
+        offered: menu.groupchat
         onTriggered: menu.autojoin ? menu.leaveRoom() : menu.joinRoom()
     }
     // Re-attempts a room we are a member of but have been dropped from (an IRC
@@ -177,7 +141,7 @@ Menu {
     MenuEntry {
         objectName: "forceJoinEntry"
         text: "Force join request"
-        visible: menu.groupchat
+        offered: menu.groupchat
         onTriggered: menu.forceJoin()
     }
 
@@ -188,20 +152,20 @@ Menu {
         text: "Add to contacts"
         // Only a chat that is in neither the roster nor the bookmarks: the rest
         // are already somewhere this would put them.
-        visible: !menu.groupchat && menu.source === "free"
+        offered: !menu.groupchat && menu.source === "free"
         onTriggered: menu.addContact()
     }
     MenuEntry {
         objectName: "renameEntry"
         text: menu.groupchat ? "Edit name…" : "Rename…"
-        visible: menu.groupchat || menu.source === "roster"
+        offered: menu.groupchat || menu.source === "roster"
         onTriggered: menu.groupchat ? menu.editBookmark() : menu.renameContact()
     }
     MenuEntry {
         objectName: "removeEntry"
         text: menu.groupchat ? "Remove bookmark…" : "Remove…"
         labelColor: Theme.negative
-        visible: menu.groupchat || menu.source === "roster"
+        offered: menu.groupchat || menu.source === "roster"
         onTriggered: menu.groupchat ? menu.removeBookmark() : menu.removeContact()
     }
 

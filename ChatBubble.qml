@@ -133,45 +133,20 @@ Item {
     implicitWidth: parent ? parent.width : rowContent.width
     implicitHeight: rowContent.height
 
-    Menu {
+    AppMenu {
         id: ctxMenu
         objectName: "bubbleMenu"
         width: 180
-        background: Rectangle {
-            color: Theme.surface
-            radius: 10
-            border.color: Theme.hairline
-        }
-
-        component MenuEntry: MenuItem {
-            id: mi
-            height: 40
-            property color labelColor: Theme.textPrimary
-            contentItem: Text {
-                text: mi.text
-                color: mi.labelColor
-                font.pixelSize: 14
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: 8
-            }
-            background: Rectangle {
-                color: mi.highlighted ? Theme.menuHover : "transparent"
-                radius: 6
-            }
-        }
 
         MenuEntry { text: "React";  onTriggered: reactionBar.open() }
         MenuEntry { text: "Reply";  onTriggered: root.replyRequested() }
         MenuEntry { text: "Copy";   onTriggered: root.copyRequested() }
         MenuEntry { text: "Select"; onTriggered: root.toggleRequested() }
-        // Only offered on a message that needs them. The height goes with the
-        // condition rather than with `visible`, which the menu drives itself:
-        // an entry left at full height would hold a blank slot in the column.
+        // Only offered on a message that needs them.
         MenuEntry {
             objectName: "retryEntry"
             text: "Retry"
-            visible: root.canRetry
-            height: root.canRetry ? 40 : 0
+            offered: root.canRetry
             onTriggered: root.retryRequested()
         }
         MenuEntry {
@@ -180,8 +155,7 @@ Item {
             // A downgrade to warn about, not a deletion to fear; the tick has
             // the negative colour already.
             labelColor: Theme.warning
-            visible: root.canResendPlain
-            height: root.canResendPlain ? 40 : 0
+            offered: root.canResendPlain
             onTriggered: root.resendPlainRequested()
         }
         // Ungated, unlike the two above: a message with nothing recorded is

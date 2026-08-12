@@ -127,6 +127,8 @@ qt_add_qml_module(quack
         Fingerprint.qml
         ConversationsPage.qml
         ChatRowMenu.qml
+        AppMenu.qml
+        MenuEntry.qml
         NewChatSheet.qml
         JoinRoomSheet.qml
         TextPromptDialog.qml
