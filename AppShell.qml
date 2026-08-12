@@ -6,9 +6,9 @@ import QtQuick.Layouts
 import Quack
 
 // Wide window: rail | list | chat side by side. Narrow: one column showing the
-// list, or the open chat with a back button, with the rail moved into a pull-out
-// drawer - 64px of permanent chrome is a sixth of a phone's width.
-// One instance per window.
+// list, or the open chat pushed over it with a back button, with the rail moved
+// into a pull-out drawer - 64px of permanent chrome is a sixth of a phone's
+// width. One instance per window.
 Item {
     id: shell
     objectName: "appShell"
@@ -37,10 +37,58 @@ Item {
     // Searching inside one chat happens in the chat's own header.
     property bool searching: false
 
-    function closeChat() {
+    // Stacked, opening a chat is a push: it arrives from the right over the
+    // conversations list, which drifts the other way underneath it.
+    // `chatOnTop` is where the navigation stands, `slide` how far the push has
+    // got - 0 at the list, 1 at the chat. In between, both panes are on screen
+    // at full width, which no two panes of a split can be: hence the chat
+    // sitting outside it (see below).
+    readonly property bool chatOnTop: !wide && currentChatJid !== "" && !popping
+    property real slide: chatOnTop ? 1 : 0
+    readonly property bool sliding: slide > 0 && slide < 1
+    // A pane is up if the push is heading its way or it has not left yet.
+    readonly property bool listUp: !chatOnTop || slide < 1
+    readonly property bool chatUp: chatOnTop || slide > 0
+
+    // Off for what is not navigation: switching account discards the open chat
+    // rather than popping it, and an empty pane leaving is nothing to watch.
+    property bool easeSlide: true
+    Behavior on slide {
+        enabled: shell.easeSlide
+        // Fast-out-slow-in, not a plain Out*: those leave at full speed and
+        // spend the back half of the duration crawling the last few pixels,
+        // which reads as the push stalling in mid-air.
+        NumberAnimation {
+            duration: 250
+            easing.type: Easing.Bezier
+            easing.bezierCurve: [0.4, 0.0, 0.2, 1.0, 1.0, 1.0]
+        }
+    }
+
+    // The chat has to stay on screen for as long as it takes to slide off, so
+    // a pop lets go of it at the end of the slide rather than the start.
+    property bool popping: false
+    onSlideChanged: if (slide === 0 && popping) { popping = false; clearChat() }
+
+    function clearChat() {
         currentChatJid = ""
         currentChatName = ""
         currentChatGroupchat = false
+    }
+
+    function openChat(jid, name, groupchat) {
+        popping = false // a pop still running is overtaken, not queued behind
+        currentChatJid = jid
+        currentChatName = name
+        currentChatGroupchat = groupchat
+    }
+
+    function closeChat() {
+        if (!wide && currentChatJid !== "") {
+            popping = true
+            return
+        }
+        clearChat()
     }
 
     function openSearch() {
@@ -59,7 +107,12 @@ Item {
     }
 
     onCurrentAccountChanged: {
-        closeChat()
+        // Not a navigation: the open chat belongs to the account just left, so
+        // it goes at once rather than sliding off as somebody else's pane.
+        popping = false
+        easeSlide = false
+        clearChat()
+        easeSlide = true
         searching = false
     }
 
@@ -159,19 +212,23 @@ Item {
                 // Cap the list at half the split, but only while it shares the
                 // split with the chat; alone (narrow layout) it must fill.
                 SplitView.maximumWidth: shell.wide ? split.width * 0.5 : split.width
-                // Hidden (and thus excluded from the split) when a chat is open
-                // in the narrow layout; as the only visible pane it auto-fills.
-                visible: !shell.searching && (shell.wide || shell.currentChatJid === "")
+                // Hidden (and thus excluded from the split) once a chat is open
+                // in the narrow layout - but not before the push lands, or
+                // there would be no list for the chat to slide over. As the
+                // only visible pane it auto-fills.
+                visible: !shell.searching && (shell.wide || shell.listUp)
+                // Drifts left under the arriving chat rather than sitting
+                // still, so the two do not read as one sheet. A transform, not
+                // x: the split owns where the pane is.
+                transform: Translate {
+                    x: shell.wide ? 0 : -shell.slide * shell.width * 0.22
+                }
                 account: shell.currentAccount
                 // The list is the only pane the rail is missing from that can
                 // still reach it, so its header carries the way in.
                 showAccounts: !shell.wide
                 onOpenAccounts: railDrawer.open()
-                onOpenChat: (jid, name, groupchat) => {
-                    shell.currentChatJid = jid
-                    shell.currentChatName = name
-                    shell.currentChatGroupchat = groupchat
-                }
+                onOpenChat: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
                 onPopOutChat: (jid, name, groupchat) => {
                     if (!Theme.mobile)
                         AppWindows.popOut(shell.currentAccount, jid, name, groupchat)
@@ -195,9 +252,8 @@ Item {
                 onOpenHit: (jid, ts, matches) => {
                     if (jid !== shell.currentChatJid) {
                         const entry = App.chatListFor(shell.currentAccount).entryFor(jid)
-                        shell.currentChatJid = jid
-                        shell.currentChatName = entry.name !== undefined ? entry.name : ""
-                        shell.currentChatGroupchat = entry.groupchat === true
+                        shell.openChat(jid, entry.name !== undefined ? entry.name : "",
+                                       entry.groupchat === true)
                     }
                     chatPage.jumpTo(ts, matches)
                     // Stacked, the results are covering the message they point
@@ -207,25 +263,66 @@ Item {
                 }
             }
 
-            ChatPage {
-                id: chatPage
+            // Stands in for the chat, which cannot be a pane of the split:
+            // stacked it has to overlap the list to slide over it. The split
+            // still sizes and constrains the column - this is what the handle
+            // drags - and the chat follows it.
+            Item {
+                id: chatSlot
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 280
-                visible: shell.wide || (shell.currentChatJid !== "" && !shell.searching)
-                account: shell.currentAccount
-                chatJid: shell.currentChatJid
-                chatName: shell.currentChatName
-                chatGroupchat: shell.currentChatGroupchat
-                showBack: !shell.wide
-                canPopOut: shell.wide && !Theme.mobile
-                onBack: shell.closeChat()
-                onPopOut: {
-                    AppWindows.popOut(shell.currentAccount, shell.currentChatJid,
-                                      shell.currentChatName,
-                                      shell.currentChatGroupchat)
-                    shell.closeChat()
-                }
+                // Stacked, the chat covers the whole shell instead, leaving the
+                // list (or search) as the only pane, which then auto-fills.
+                visible: shell.wide
             }
+        }
+    }
+
+    // Dim over the list and a soft edge at the chat's leading side, for as long
+    // as the push is in flight, so it reads as a layer lifted over the list
+    // rather than the two trading places. Declared before the chat, so they
+    // land between it and the split.
+    Rectangle {
+        anchors.fill: parent
+        visible: !shell.wide && shell.sliding
+        color: "#000000"
+        opacity: shell.slide * 0.25
+    }
+    Rectangle {
+        x: chatPage.x - width
+        width: 18
+        height: shell.height
+        visible: !shell.wide && shell.sliding
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#00000000" }
+            GradientStop { position: 1.0; color: "#38000000" }
+        }
+    }
+
+    // Wide, the chat tracks the slot the split laid out for it, and sits
+    // *under* the split so the divider between them keeps presses on the seam.
+    // Stacked, it is a card pushed over the list, so it goes on top instead and
+    // takes the full width.
+    ChatPage {
+        id: chatPage
+        z: shell.wide ? -1 : 0
+        x: shell.wide ? split.x + chatSlot.x : (1 - shell.slide) * shell.width
+        width: shell.wide ? chatSlot.width : shell.width
+        height: shell.height
+        visible: shell.wide || (shell.chatUp && !shell.searching)
+        account: shell.currentAccount
+        chatJid: shell.currentChatJid
+        chatName: shell.currentChatName
+        chatGroupchat: shell.currentChatGroupchat
+        showBack: !shell.wide
+        canPopOut: shell.wide && !Theme.mobile
+        onBack: shell.closeChat()
+        onPopOut: {
+            AppWindows.popOut(shell.currentAccount, shell.currentChatJid,
+                              shell.currentChatName,
+                              shell.currentChatGroupchat)
+            shell.closeChat()
         }
     }
 

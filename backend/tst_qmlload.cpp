@@ -1010,6 +1010,110 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Stacked, opening a chat is a push, not a swap: the chat comes in from
+    // the right edge over the list, and the list only drops out once it lands.
+    // Both panes are on screen at full width for the length of that, which no
+    // two panes of a split can be - hence the chat living outside it, over a
+    // slot the split sizes in its place.
+    void narrowLayoutPushesTheChatOverTheList() {
+        constexpr int kNarrow = 400; // one column, under the 720 breakpoint
+        constexpr int kWide = 1000;  // rail, list and chat side by side
+
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+        app->accounts()->applyList({"me@example.com"});
+
+        // Sized for the widest the shell gets: the divider drag at the end is a
+        // real press, and presses land in window coordinates.
+        QQuickWindow win;
+        win.resize(kWide, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"},
+             {"width", kNarrow},
+             {"height", 700}}));
+        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(shell);
+        shell->setParentItem(win.contentItem());
+        QVERIFY(!shell->property("wide").toBool());
+
+        QQuickItem *list = findItem(shell, "conversationsPane");
+        QQuickItem *chat = findItem(shell, "chatPane");
+        QVERIFY(list);
+        QVERIFY(chat);
+        // Nothing open: the list has the column to itself.
+        QVERIFY(!chat->isVisible());
+        QTRY_COMPARE(list->width(), qreal(kNarrow));
+
+        shell->setProperty("currentChatName", "Friend");
+        shell->setProperty("currentChatJid", "friend@example.com");
+        // Up at full width and still out at the right edge with the list under
+        // it: the state a swap never passes through.
+        QVERIFY2(chat->isVisible(), "the chat was still hidden when the push began");
+        QCOMPARE(chat->width(), qreal(kNarrow));
+        QVERIFY2(chat->x() >= qreal(kNarrow),
+                 qPrintable(QString("the chat opened already home, at x=%1")
+                                .arg(chat->x())));
+        QVERIFY2(list->isVisible(), "the list vanished out from under the push");
+        QTRY_COMPARE(chat->x(), qreal(0));
+        QTRY_VERIFY2(!list->isVisible(), "the list stayed up behind a landed chat");
+
+        // The shell holds the chat until the pop lands. Drop it when the press
+        // arrives instead and it is a blank pane that slides off.
+        QVERIFY(QMetaObject::invokeMethod(shell, "closeChat"));
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
+        QCOMPARE(chat->property("chatName").toString(), QString("Friend"));
+        QVERIFY(chat->isVisible());
+        QVERIFY(list->isVisible());
+        QTRY_VERIFY2(!chat->isVisible(), "the chat never finished sliding off");
+        QCOMPARE(chat->x(), qreal(kNarrow));
+        QCOMPARE(shell->property("currentChatJid").toString(), QString());
+
+        // Wide there is no push: the chat is a column again, running from the
+        // divider to the far edge.
+        shell->setWidth(kWide);
+        QTRY_VERIFY(shell->property("wide").toBool());
+        QVERIFY(chat->isVisible());
+        QVERIFY(list->isVisible());
+        // The split re-lays out on the next polish; let it settle before
+        // reading where the panes meet.
+        QTRY_COMPARE(chat->x() + chat->width(), shell->width());
+        const qreal seam = list->mapToItem(shell, QPointF(list->width(), 0)).x();
+        QVERIFY2(qAbs(chat->x() - seam) <= 2,
+                 qPrintable(QString("the chat starts at %1, the list runs to %2")
+                                .arg(chat->x())
+                                .arg(seam)));
+
+        // Out of the split but under it, so a press on the seam still reaches
+        // the divider rather than the chat's leading edge.
+        const qreal before = list->width();
+        const QPoint grab(qRound(seam), 300);
+        QTest::mousePress(&win, Qt::LeftButton, Qt::NoModifier, grab);
+        for (int dx = 5; dx <= 80; dx += 5)
+            QTest::mouseMove(&win, grab + QPoint(dx, 0));
+        QTest::mouseRelease(&win, Qt::LeftButton, Qt::NoModifier, grab + QPoint(80, 0));
+        QTRY_VERIFY2(list->width() > before + 40,
+                     qPrintable(QString("the divider did not take the drag: the "
+                                        "list is %1 wide, was %2")
+                                    .arg(list->width())
+                                    .arg(before)));
+
+        win.grabWindow();
+        QCoreApplication::processEvents();
+        assertNoQmlErrors(warnings);
+    }
+
     // Every colour in the active palette has to reach the property named after
     // it, and the failure is silent: a QML property whose name starts with "on"
     // followed by a capital reads as a signal handler, so `onAccent` never took
