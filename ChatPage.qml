@@ -431,10 +431,10 @@ Page {
         cancelReply()
     }
 
-    header: Rectangle {
-        height: page.hasChat ? 60 : 0
+    header: PageHeader {
+        // No chat, no header - the empty pane draws its own invitation.
+        implicitHeight: page.hasChat ? 60 : 0
         visible: page.hasChat
-        color: Theme.surface
 
         RowLayout {
             anchors.fill: parent
@@ -637,12 +637,6 @@ Page {
                 opacity: enabled ? 1 : 0.35
                 onClicked: page.newerHit()
             }
-        }
-
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width; height: 1
-            color: Theme.hairline
         }
     }
 

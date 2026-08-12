@@ -36,11 +36,10 @@ Page {
         query: filterField.text
     }
 
-    header: Rectangle {
+    header: PageHeader {
         // Sized by what it holds - the title row and the filter under it - so
         // neither can change height without the header following.
         implicitHeight: headerRows.implicitHeight
-        color: Theme.surface
 
         ColumnLayout {
             id: headerRows
@@ -149,12 +148,6 @@ Page {
                 }
                 Keys.onEscapePressed: filterField.clear()
             }
-        }
-
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width; height: 1
-            color: Theme.hairline
         }
     }
 

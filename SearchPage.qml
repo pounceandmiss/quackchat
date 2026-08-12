@@ -108,9 +108,7 @@ Page {
         return d.toLocaleDateString(Qt.locale(), Locale.ShortFormat) + " " + hm
     }
 
-    header: Rectangle {
-        height: 60
-        color: Theme.surface
+    header: PageHeader {
 
         RowLayout {
             anchors.fill: parent
@@ -148,11 +146,6 @@ Page {
             }
         }
 
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width; height: 1
-            color: Theme.hairline
-        }
     }
 
     ListView {

@@ -46,9 +46,7 @@ Page {
         copiedNotice.show()
     }
 
-    header: Rectangle {
-        height: 60
-        color: Theme.surface
+    header: PageHeader {
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: page.showClose ? 4 : 16
@@ -81,11 +79,6 @@ Page {
                     elide: Text.ElideRight
                 }
             }
-        }
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width; height: 1
-            color: Theme.hairline
         }
     }
 

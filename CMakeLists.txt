@@ -116,6 +116,7 @@ qt_add_qml_module(quack
         AppShell.qml
         AccountRail.qml
         SheetDialog.qml
+        PageHeader.qml
         AddAccountSheet.qml
         AccountSettingsPage.qml
         TrustPicker.qml

@@ -20,9 +20,7 @@ Page {
 
     background: Rectangle { color: Theme.background }
 
-    header: Rectangle {
-        height: 60
-        color: Theme.surface
+    header: PageHeader {
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: page.showClose ? 4 : 16
@@ -62,11 +60,6 @@ Page {
                 enabled: page.hasXml
                 onClicked: Clipboard.setText(page.xml)
             }
-        }
-        Rectangle {
-            anchors.bottom: parent.bottom
-            width: parent.width; height: 1
-            color: Theme.hairline
         }
     }
 
