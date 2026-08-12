@@ -253,9 +253,9 @@ Item {
                 // reading of the JID.
                 onOpenHit: (jid, ts, matches) => {
                     if (jid !== shell.currentChatJid) {
-                        const entry = App.chatListFor(shell.currentAccount).entryFor(jid)
-                        shell.openChat(jid, entry.name !== undefined ? entry.name : "",
-                                       entry.groupchat === true)
+                        const list = App.chatListFor(shell.currentAccount)
+                        const entry = list ? list.entryFor(jid) : ({})
+                        shell.openChat(jid, entry.name ?? "", entry.groupchat === true)
                     }
                     chatPage.jumpTo(ts, matches)
                     // Stacked, the results are covering the message they point
