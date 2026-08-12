@@ -1,5 +1,7 @@
 #include "AppController.h"
 
+#include "Notifier.h"
+
 #ifdef Q_OS_ANDROID
 #include <QCoreApplication>
 #include <QJniObject>
@@ -17,6 +19,7 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     m_avatars.setBackend(&m_backend);
     m_calls.setBackend(&m_backend);
     m_audio.setBackend(&m_backend);
+    m_notifications.setBackend(&m_backend);
     // The per-account models are cached for as long as the account is here, and
     // no longer: an account that has been removed has a roster nobody can reach
     // and a backend connection still listening for its events.
@@ -60,6 +63,12 @@ void AppController::startFromEnvironment() {
     if (m_started)
         return;
     m_started = true;
+
+    // Here rather than in the constructor: this is the one entry point QML
+    // never reaches, so loading the UI in a test opens no session bus. Null on
+    // a platform with no implementation, which disables alerts and nothing
+    // else.
+    m_notifications.setNotifier(createPlatformNotifier());
 
 #ifdef Q_OS_ANDROID
     // The interpreter belongs to the backend service, in a process that

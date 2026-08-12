@@ -18,6 +18,7 @@
 #include "AvatarController.h"
 #include "CallsModel.h"
 #include "ChatListModel.h"
+#include "NotificationController.h"
 #include "TackyBackend.h"
 
 class AppController : public QObject {
@@ -31,6 +32,9 @@ class AppController : public QObject {
     // there is no way to re-enumerate one from the backend.
     Q_PROPERTY(CallsModel *calls READ calls CONSTANT)
     Q_PROPERTY(AudioDevices *audio READ audio CONSTANT)
+    // App-wide for the same reason as calls: an alert names a chat, and which
+    // window ends up showing it is decided when the user picks it.
+    Q_PROPERTY(NotificationController *notifications READ notifications CONSTANT)
 
 public:
     explicit AppController(QObject *parent = nullptr);
@@ -40,6 +44,7 @@ public:
     AvatarController *avatars() { return &m_avatars; }
     CallsModel *calls() { return &m_calls; }
     AudioDevices *audio() { return &m_audio; }
+    NotificationController *notifications() { return &m_notifications; }
 
     // Lazily created and cached here; all windows on the same account share one
     // instance. Returns nullptr for an empty acc.
@@ -59,6 +64,7 @@ private:
     AvatarController m_avatars;
     CallsModel m_calls;
     AudioDevices m_audio;
+    NotificationController m_notifications;
     QHash<QString, ChatListModel *> m_chatLists;
     QHash<QString, AccountSettings *> m_accountSettings;
     bool m_started = false;

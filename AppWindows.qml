@@ -13,6 +13,10 @@ QtObject {
 
     // Nothing binds to these, so they're mutated in place.
     readonly property var _windows: []
+    // Every shell window, the primary one included. It is created by the
+    // engine rather than by newShell, so it is not in _windows and each shell
+    // registers itself instead.
+    readonly property var _shells: []
     // account -> its open settings window, so a second request raises it.
     readonly property var _settingsWindows: ({})
     // account|jid -> its open key window, for the same reason.
@@ -29,10 +33,21 @@ QtObject {
     //
     // This lives on the singleton so there is exactly one set of call windows
     // no matter how many shells are open. Singletons are built on first use,
-    // and nothing else here runs at startup, so ShellWindow calls arm() to make
-    // sure that happens now rather than whenever something first pops a window
-    // out - otherwise the first incoming call would have nowhere to appear.
-    function arm() {}
+    // and nothing else here runs at startup, so every ShellWindow registers
+    // itself below to make sure that happens now rather than whenever
+    // something first pops a window out - otherwise the first incoming call
+    // would have nowhere to appear, and a notification arriving before any
+    // pop-out would have nothing listening.
+    function registerShell(w) {
+        if (!w)
+            return
+        mgr._shells.push(w)
+        w.closing.connect(() => {
+            const i = mgr._shells.indexOf(w)
+            if (i >= 0)
+                mgr._shells.splice(i, 1)
+        })
+    }
 
     // One call window at a time, as tacky's Tk GUI does it: it keeps a single
     // toplevel and rewires it per call. Here windows follow rows, so the same
@@ -171,5 +186,40 @@ QtObject {
     // for a second window to argue over - any number can be open at once.
     function messageXml(xml) {
         return _track(mgr._xmlComp.createObject(null, { xml: xml || "" }))
+    }
+
+    // Where picking a desktop notification lands. A pop-out already holding
+    // the chat owns it; otherwise the first shell open switches to it, and
+    // failing that a new shell opens on the account.
+    //
+    // Nothing is marked read here: the chat reaching the screen is what moves
+    // the watermark, and that is what retracts the alert.
+    function showChat(account, jid) {
+        if (!account || !jid)
+            return null
+
+        for (const w of mgr._windows) {
+            if (w.chatJid === jid && w.account === account)
+                return _raise(w)
+        }
+
+        const shell = mgr._shells.length > 0 ? mgr._shells[0]
+                                             : mgr.newShell(account)
+        if (!shell)
+            return null
+        shell.showChat(account, jid)
+        return _raise(shell)
+    }
+
+    function _raise(w) {
+        w.raise()
+        w.requestActivate()
+        return w
+    }
+
+    // One connection for the whole app, not one per window.
+    property Connections _notifications: Connections {
+        target: App.notifications
+        function onActivated(acc, jid) { mgr.showChat(acc, jid) }
     }
 }

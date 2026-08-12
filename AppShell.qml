@@ -76,6 +76,18 @@ Item {
         currentChatGroupchat = false
     }
 
+    // openChat by JID alone, for callers that have no row in hand - a desktop
+    // notification carries the sender's nick, which in a room is the speaker
+    // rather than the chat. Also switches account, since the alert may well be
+    // for one this window is not showing.
+    function showChat(account, jid) {
+        const list = App.chatListFor(account)
+        const entry = list ? list.entryFor(jid) : ({})
+        currentAccount = account
+        searching = false
+        openChat(jid, entry.name || jid, entry.groupchat === true)
+    }
+
     function openChat(jid, name, groupchat) {
         popping = false // a pop still running is overtaken, not queued behind
         currentChatJid = jid

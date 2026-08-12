@@ -12,6 +12,11 @@
 
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
+    // What a notification daemon looks us up by (the `desktop-entry` hint), so
+    // it can find our icon and file the popup under one app. Until an
+    // installed quackchat.desktop exists there is nothing to find, and the
+    // alert simply shows without an icon.
+    app.setApplicationName(QStringLiteral("quackchat"));
 
     QQmlApplicationEngine engine;
     // Create the singleton and connect before the UI loads, so the first frame

@@ -8,6 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 6.5 REQUIRED
     COMPONENTS Core Gui Network Qml Quick QuickControls2 Test)
+# Desktop notifications on Linux go over the session bus. Optional: without it
+# the app builds and runs exactly as before, just silently. Android posts its
+# own from the backend service (android/.../Notifications.java), so it is never
+# wanted there.
+if(NOT ANDROID)
+    find_package(Qt6 6.5 QUIET COMPONENTS DBus)
+endif()
 qt_standard_project_setup(REQUIRES 6.5)
 
 # tacky has its own (non-CMake) make, so we find what it drops in <root>/dist
@@ -98,6 +105,16 @@ else()
         backend/EmbeddedTransport.cpp backend/EmbeddedTransport.h)
 endif()
 
+# Same shape as the transport above: one Notifier implementation per platform,
+# picked here. Windows, macOS and a Linux build without Qt6::DBus get the null
+# factory, which disables alerts and nothing else. So does Android, which posts
+# its own from the service rather than from this process.
+if(TARGET Qt6::DBus)
+    set(_notifier backend/FdoNotifier.cpp backend/FdoNotifier.h)
+else()
+    set(_notifier backend/NullNotifier.cpp)
+endif()
+
 qt_add_library(quack STATIC)
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -170,6 +187,9 @@ qt_add_qml_module(quack
         backend/OmemoChat.cpp backend/OmemoChat.h
         backend/AvatarController.cpp backend/AvatarController.h
         backend/Clipboard.cpp backend/Clipboard.h
+        backend/NotificationController.cpp backend/NotificationController.h
+        backend/Notifier.h
+        ${_notifier}
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
         backend/AvatarSink.h)
@@ -184,6 +204,9 @@ if(ANDROID)
     target_link_libraries(quack PRIVATE Qt6::Network)
 else()
     target_link_libraries(quack PRIVATE tacky)
+endif()
+if(TARGET Qt6::DBus)
+    target_link_libraries(quack PRIVATE Qt6::DBus)
 endif()
 
 qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp)
@@ -227,11 +250,25 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
           tst_searchmodel tst_mucrooms tst_chatlistfilter
           tst_integration tst_transport
-          tst_calls tst_audiodevices)
+          tst_calls tst_audiodevices tst_notifications)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
+
+# The real FdoNotifier against a stand-in daemon. dbus-run-session gives it a
+# private bus to own org.freedesktop.Notifications on - on the developer's own
+# session the desktop's daemon already has that name, so without it the test
+# could not run at all.
+find_program(DBUS_RUN_SESSION dbus-run-session)
+if(TARGET Qt6::DBus AND DBUS_RUN_SESSION)
+    qt_add_executable(tst_fdonotifier backend/tst_fdonotifier.cpp)
+    target_link_libraries(tst_fdonotifier PRIVATE quack Qt6::Test Qt6::DBus)
+    add_test(NAME tst_fdonotifier
+             COMMAND ${DBUS_RUN_SESSION} -- $<TARGET_FILE:tst_fdonotifier>)
+elseif(TARGET Qt6::DBus)
+    message(STATUS "dbus-run-session not found; skipping tst_fdonotifier")
+endif()
 
 # needs QtGui/QtQuick for the image provider response
 qt_add_executable(tst_avatar backend/tst_avatar.cpp backend/AvatarImageProvider.cpp)
