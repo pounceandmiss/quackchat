@@ -91,8 +91,9 @@ Page {
                 }
                 IconButton {
                     objectName: "searchButton"
-                    text: "🔍"
-                    font.pixelSize: 16
+                    iconPath: Icons.search
+                    iconSize: 20
+                    Accessible.name: qsTr("Search all chats")
                     glyphColor: Theme.textDim
                     enabled: page.account !== ""
                     opacity: enabled ? 1 : 0.4
@@ -308,10 +309,12 @@ Page {
                     }
                 }
 
-                Text {
+                Glyph {
                     Layout.rightMargin: 14
-                    text: row.groupchat ? "👥" : ""
-                    font.pixelSize: 14
+                    visible: row.groupchat
+                    path: Icons.group
+                    color: Theme.textDim
+                    size: 16
                 }
 
                 // Someone named you in there. The Tk list says this by bolding

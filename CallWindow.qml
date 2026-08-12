@@ -141,8 +141,8 @@ ApplicationWindow {
 
             AudioLevelRow {
                 Layout.fillWidth: true
-                mutedGlyph: "🔇"
-                liveGlyph: "🎙"
+                mutedIcon: Icons.micOff
+                liveIcon: Icons.mic
                 label: qsTr("Microphone")
                 devices: App.audio.captureDevices
                 deviceId: App.audio.captureDevice
@@ -155,8 +155,6 @@ ApplicationWindow {
 
             AudioLevelRow {
                 Layout.fillWidth: true
-                mutedGlyph: "🔇"
-                liveGlyph: "🔊"
                 label: qsTr("Speaker")
                 devices: App.audio.playbackDevices
                 deviceId: App.audio.playbackDevice

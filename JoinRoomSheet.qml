@@ -193,10 +193,19 @@ SheetDialog {
                                 elide: Text.ElideRight
                             }
                         }
-                        Text {
-                            text: roomRow.occupants > 0 ? roomRow.occupants + " 👥" : ""
-                            color: Theme.textDim
-                            font.pixelSize: 12
+                        RowLayout {
+                            visible: roomRow.occupants > 0
+                            spacing: 3
+                            Text {
+                                text: roomRow.occupants
+                                color: Theme.textDim
+                                font.pixelSize: 12
+                            }
+                            Glyph {
+                                path: Icons.group
+                                color: Theme.textDim
+                                size: 14
+                            }
                         }
                     }
                 }

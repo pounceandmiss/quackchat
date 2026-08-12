@@ -18,8 +18,9 @@ RowLayout {
     id: row
 
     property string label: ""
-    property string mutedGlyph: "🔇"
-    property string liveGlyph: "🔊"
+    // Icons paths: which endpoint this row is, and that it is off.
+    property string mutedIcon: Icons.volumeOff
+    property string liveIcon: Icons.volumeUp
     property var devices: []
     property string deviceId: ""
     property real volume: 1.0
@@ -36,7 +37,7 @@ RowLayout {
     spacing: 8
 
     IconButton {
-        text: row.muted ? row.mutedGlyph : row.liveGlyph
+        iconPath: row.muted ? row.mutedIcon : row.liveIcon
         glyphColor: row.muted ? Theme.negative : Theme.textPrimary
         // Which endpoint this is is only in the glyph, so say it here.
         Accessible.name: row.muted ? qsTr("Unmute %1").arg(row.label)

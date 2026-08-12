@@ -490,8 +490,9 @@ Page {
             }
             IconButton {
                 objectName: "chatSearchButton"
-                text: "🔍"
-                font.pixelSize: 16
+                iconPath: Icons.search
+                iconSize: 20
+                Accessible.name: qsTr("Search this chat")
                 glyphColor: Theme.textDim
                 visible: page.hasChat
                 onClicked: page.openSearch()

@@ -542,9 +542,10 @@ Item {
                                 anchors.leftMargin: 10
                                 anchors.rightMargin: 10
                                 spacing: 8
-                                Text {
-                                    text: att.isImage ? "🖼" : "📎"
-                                    font.pixelSize: 17
+                                Glyph {
+                                    path: att.isImage ? Icons.image : Icons.attachFile
+                                    color: Theme.textDim
+                                    size: 18
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true

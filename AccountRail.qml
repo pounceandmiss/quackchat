@@ -166,8 +166,8 @@ Rectangle {
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
                     visible: rail.expanded
-                    text: "⋯"
-                    font.pixelSize: 20
+                    iconPath: Icons.moreHoriz
+                    Accessible.name: qsTr("Account actions")
                     glyphColor: Theme.textDim
                     onClicked: ctx.popup(moreBtn, 0, moreBtn.height)
                 }
