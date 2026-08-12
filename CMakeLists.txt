@@ -161,6 +161,7 @@ qt_add_qml_module(quack
         backend/AuthorNames.cpp backend/AuthorNames.h
         backend/ChatListModel.cpp backend/ChatListModel.h
         backend/SearchModel.cpp backend/SearchModel.h
+        backend/MapListModel.cpp backend/MapListModel.h
         backend/MucRoomsModel.cpp backend/MucRoomsModel.h
         backend/ChatListFilter.cpp backend/ChatListFilter.h
         backend/AccountsModel.cpp backend/AccountsModel.h

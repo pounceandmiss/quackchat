@@ -4,14 +4,13 @@
 #ifndef CHATLISTMODEL_H
 #define CHATLISTMODEL_H
 
-#include <QAbstractListModel>
-#include <QList>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
+#include "MapListModel.h"
 #include "TackyBackend.h"
 
-class ChatListModel : public QAbstractListModel {
+class ChatListModel : public MapListModel {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(TackyBackend *backend READ backend WRITE setBackend NOTIFY backendChanged)
@@ -31,15 +30,10 @@ public:
         RoomReasonRole,
         UnreadRole,
         UnreadMentionsRole,
-        RawRole,
     };
     Q_ENUM(Role)
 
     explicit ChatListModel(QObject *parent = nullptr);
-
-    int rowCount(const QModelIndex &parent = {}) const override;
-    QVariant data(const QModelIndex &index, int role) const override;
-    QHash<int, QByteArray> roleNames() const override;
 
     QString account() const { return m_account; }
     void setAccount(const QString &acc);
@@ -118,7 +112,6 @@ private:
 
     int m_getToken = -1;
     QString m_loadError;
-    QList<QVariantMap> m_items;
 };
 
 #endif // CHATLISTMODEL_H

@@ -1,30 +1,8 @@
 #include "MucRoomsModel.h"
 
-MucRoomsModel::MucRoomsModel(QObject *parent) : QAbstractListModel(parent) {}
-
-int MucRoomsModel::rowCount(const QModelIndex &parent) const {
-    return parent.isValid() ? 0 : m_rooms.size();
-}
-
-// Role order: kKeys[i] is Qt::UserRole+1+i, and the QML role name is also the
-// key tacky sends it under - keep it in step with the Role enum.
-static const QList<QByteArray> kKeys = {"jid", "name", "occupants"};
-
-QVariant MucRoomsModel::data(const QModelIndex &index, int role) const {
-    if (index.row() < 0 || index.row() >= m_rooms.size())
-        return {};
-    const int i = role - (Qt::UserRole + 1);
-    if (i < 0 || i >= kKeys.size())
-        return {};
-    return m_rooms.at(index.row()).value(QString::fromLatin1(kKeys.at(i)));
-}
-
-QHash<int, QByteArray> MucRoomsModel::roleNames() const {
-    QHash<int, QByteArray> r;
-    for (int i = 0; i < kKeys.size(); ++i)
-        r.insert(Qt::UserRole + 1 + i, kKeys.at(i));
-    return r;
-}
+// In Role order, which is what lines the keys up with the roles.
+MucRoomsModel::MucRoomsModel(QObject *parent)
+    : MapListModel({"jid", "name", "occupants"}, parent) {}
 
 void MucRoomsModel::setBackend(TackyBackend *backend) {
     if (m_backend == backend)
@@ -67,9 +45,9 @@ void MucRoomsModel::clear() {
     m_token = 0;
     setError({});
     setLoaded(false);
-    if (!m_rooms.isEmpty()) {
+    if (!m_items.isEmpty()) {
         beginResetModel();
-        m_rooms.clear();
+        m_items.clear();
         endResetModel();
     }
     if (wasLoading)
@@ -114,10 +92,10 @@ void MucRoomsModel::handleError(int token, const QString &message) {
 
 void MucRoomsModel::applyRooms(const QVariantList &rooms) {
     beginResetModel();
-    m_rooms.clear();
-    m_rooms.reserve(rooms.size());
+    m_items.clear();
+    m_items.reserve(rooms.size());
     for (const QVariant &v : rooms)
-        m_rooms.append(v.toMap());
+        m_items.append(v.toMap());
     endResetModel();
 }
 

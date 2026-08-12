@@ -9,15 +9,14 @@
 #ifndef MUCROOMSMODEL_H
 #define MUCROOMSMODEL_H
 
-#include <QAbstractListModel>
-#include <QList>
 #include <QString>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
+#include "MapListModel.h"
 #include "TackyBackend.h"
 
-class MucRoomsModel : public QAbstractListModel {
+class MucRoomsModel : public MapListModel {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(TackyBackend *backend READ backend WRITE setBackend NOTIFY backendChanged)
@@ -40,10 +39,6 @@ public:
     Q_ENUM(Role)
 
     explicit MucRoomsModel(QObject *parent = nullptr);
-
-    int rowCount(const QModelIndex &parent = {}) const override;
-    QVariant data(const QModelIndex &index, int role) const override;
-    QHash<int, QByteArray> roleNames() const override;
 
     TackyBackend *backend() const { return m_backend; }
     QString account() const { return m_account; }
@@ -85,8 +80,6 @@ private:
     bool m_loaded = false;
     int m_token = 0;     // in-flight discoverRooms, 0 for none
     int m_nickToken = 0; // in-flight bookmarks defaultNick
-
-    QList<QVariantMap> m_rooms;
 };
 
 #endif // MUCROOMSMODEL_H

@@ -4,40 +4,12 @@
 
 #include <algorithm>
 
-ChatListModel::ChatListModel(QObject *parent) : QAbstractListModel(parent) {}
-
-int ChatListModel::rowCount(const QModelIndex &parent) const {
-    return parent.isValid() ? 0 : m_items.size();
-}
-
-// Role order: kKeys[i] is Qt::UserRole+1+i. The QML role name is also the tacky
-// storage key, so data() and roleNames() both come off this list - keep it in
-// step with the Role enum. RawRole is separate (whole map, no key).
-static const QList<QByteArray> kKeys = {
-    "jid", "name", "source", "groupchat",
-    "autojoin", "last_activity", "subscription", "room_state",
-    "room_reason", "unread", "unread_mentions",
-};
-
-QVariant ChatListModel::data(const QModelIndex &index, int role) const {
-    if (index.row() < 0 || index.row() >= m_items.size())
-        return {};
-    const QVariantMap &e = m_items.at(index.row());
-    if (role == RawRole)
-        return e;
-    const int i = role - (Qt::UserRole + 1);
-    if (i < 0 || i >= kKeys.size())
-        return {};
-    return e.value(QString::fromLatin1(kKeys.at(i)));
-}
-
-QHash<int, QByteArray> ChatListModel::roleNames() const {
-    QHash<int, QByteArray> r;
-    for (int i = 0; i < kKeys.size(); ++i)
-        r.insert(Qt::UserRole + 1 + i, kKeys.at(i));
-    r.insert(RawRole, "raw");
-    return r;
-}
+// In Role order, which is what lines the keys up with the roles.
+ChatListModel::ChatListModel(QObject *parent)
+    : MapListModel({"jid", "name", "source", "groupchat", "autojoin",
+                    "last_activity", "subscription", "room_state", "room_reason",
+                    "unread", "unread_mentions"},
+                   parent) {}
 
 // One chat's entry, for the views that hold a JID with no row of this model to
 // bind to - a search hit naming its own chat, say. Empty when the list has
