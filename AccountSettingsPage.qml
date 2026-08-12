@@ -63,30 +63,6 @@ Page {
         font.bold: true
     }
 
-    component Caption: Text {
-        color: Theme.textDim
-        font.pixelSize: 11
-    }
-
-    component Card: Rectangle {
-        default property alias content: cardColumn.data
-        Layout.fillWidth: true
-        implicitHeight: cardColumn.implicitHeight + 28
-        color: Theme.surface
-        radius: 12
-        border.width: 1
-        border.color: Theme.hairline
-
-        ColumnLayout {
-            id: cardColumn
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 14
-            spacing: 10
-        }
-    }
-
     header: Rectangle {
         height: 60
         color: Theme.surface
@@ -288,65 +264,9 @@ Page {
                     wrapMode: Text.WordWrap
                 }
 
-                // Only worth offering once there is more than one to set. The
-                // label sits above the control so this picker lines up with
-                // the per-device ones under it.
-                ColumnLayout {
-                    objectName: "setAllRow"
-                    Layout.fillWidth: true
-                    Layout.topMargin: 4
-                    visible: page.devices !== null && page.devices.settableCount >= 2
-                    spacing: 4
-                    Caption { text: "Set all"; font.bold: true }
-                    TrustPicker {
-                        objectName: "setAllPicker"
-                        trust: page.devices ? page.devices.commonTrust : ""
-                        onPicked: (newTrust) => page.devices.setAllTrust(newTrust)
-                    }
-                }
-
-                Repeater {
-                    objectName: "deviceList"
-                    model: page.devices
-
-                    delegate: ColumnLayout {
-                        id: deviceRow
-                        required property int device
-                        required property string trust
-                        required property bool active
-                        required property string fingerprint
-                        required property bool settable
-
-                        Layout.fillWidth: true
-                        Layout.topMargin: 6
-                        spacing: 6
-
-                        Fingerprint {
-                            Layout.fillWidth: true
-                            hex: deviceRow.fingerprint
-                            note: deviceRow.active ? "" : "(inactive)"
-                            onCopyRequested: (spaced) => page.copyFingerprint(spaced)
-                        }
-
-                        // The backend pins a rotated key, so there is nothing
-                        // to pick on this row.
-                        Text {
-                            Layout.fillWidth: true
-                            visible: !deviceRow.settable
-                            text: "Compromised - key changed"
-                            color: Theme.negative
-                            font.pixelSize: 12
-                            font.bold: true
-                            wrapMode: Text.WordWrap
-                        }
-
-                        TrustPicker {
-                            objectName: "devicePicker"
-                            visible: deviceRow.settable
-                            trust: deviceRow.trust
-                            onPicked: (newTrust) => page.devices.setTrust(deviceRow.device, newTrust)
-                        }
-                    }
+                TrustList {
+                    devices: page.devices
+                    onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                 }
 
                 Caption {

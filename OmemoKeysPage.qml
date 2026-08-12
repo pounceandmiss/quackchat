@@ -25,7 +25,7 @@ Page {
     background: Rectangle { color: Theme.background }
 
     OmemoDevicesModel {
-        id: devices
+        id: theirKeys
         backend: App.backend
         account: page.account
         jid: page.jid
@@ -44,30 +44,6 @@ Page {
     function copyFingerprint(spaced) {
         Clipboard.setText(spaced)
         copiedNotice.show()
-    }
-
-    component Caption: Text {
-        color: Theme.textDim
-        font.pixelSize: 11
-    }
-
-    component Card: Rectangle {
-        default property alias content: cardColumn.data
-        Layout.fillWidth: true
-        implicitHeight: cardColumn.implicitHeight + 28
-        color: Theme.surface
-        radius: 12
-        border.width: 1
-        border.color: Theme.hairline
-
-        ColumnLayout {
-            id: cardColumn
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 14
-            spacing: 10
-        }
     }
 
     header: Rectangle {
@@ -143,68 +119,14 @@ Page {
                 Caption {
                     Layout.fillWidth: true
                     objectName: "noKeysNotice"
-                    visible: devices.count === 0
+                    visible: theirKeys.count === 0
                     text: "No keys for this contact yet. They appear once their devices announce themselves."
                     wrapMode: Text.WordWrap
                 }
 
-                // Only worth offering once there is more than one to set.
-                ColumnLayout {
-                    objectName: "setAllRow"
-                    Layout.fillWidth: true
-                    Layout.topMargin: 4
-                    visible: devices.settableCount >= 2
-                    spacing: 4
-                    Caption { text: "Set all"; font.bold: true }
-                    TrustPicker {
-                        objectName: "setAllPicker"
-                        trust: devices.commonTrust
-                        onPicked: (newTrust) => devices.setAllTrust(newTrust)
-                    }
-                }
-
-                Repeater {
-                    objectName: "deviceList"
-                    model: devices
-
-                    delegate: ColumnLayout {
-                        id: deviceRow
-                        required property int device
-                        required property string trust
-                        required property bool active
-                        required property string fingerprint
-                        required property bool settable
-
-                        Layout.fillWidth: true
-                        Layout.topMargin: 6
-                        spacing: 6
-
-                        Fingerprint {
-                            Layout.fillWidth: true
-                            hex: deviceRow.fingerprint
-                            note: deviceRow.active ? "" : "(inactive)"
-                            onCopyRequested: (spaced) => page.copyFingerprint(spaced)
-                        }
-
-                        // The backend pins a rotated key, so there is nothing
-                        // to pick on this row.
-                        Text {
-                            Layout.fillWidth: true
-                            visible: !deviceRow.settable
-                            text: "Compromised - key changed"
-                            color: Theme.negative
-                            font.pixelSize: 12
-                            font.bold: true
-                            wrapMode: Text.WordWrap
-                        }
-
-                        TrustPicker {
-                            objectName: "devicePicker"
-                            visible: deviceRow.settable
-                            trust: deviceRow.trust
-                            onPicked: (newTrust) => devices.setTrust(deviceRow.device, newTrust)
-                        }
-                    }
+                TrustList {
+                    devices: theirKeys
+                    onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                 }
             }
 

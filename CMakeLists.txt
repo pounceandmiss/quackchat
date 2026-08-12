@@ -119,6 +119,9 @@ qt_add_qml_module(quack
         AddAccountSheet.qml
         AccountSettingsPage.qml
         TrustPicker.qml
+        TrustList.qml
+        Card.qml
+        Caption.qml
         OmemoKeysPage.qml
         MessageXmlPage.qml
         Fingerprint.qml
