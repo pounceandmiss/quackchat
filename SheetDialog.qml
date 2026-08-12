@@ -6,7 +6,8 @@ import QtQuick.Controls
 // centred in the overlay ends up underneath it; this centres in whatever strip
 // the keyboard leaves and slides as it opens and closes.
 //
-// The base for every dialog here that asks for typed input.
+// The base for every dialog in the app, typed-into or not: the ones that only
+// ask a yes/no get the centring and the width clamp, and nothing else applies.
 Dialog {
     id: sheet
 
