@@ -160,6 +160,7 @@ qt_add_qml_module(quack
         backend/OmemoDevicesModel.cpp backend/OmemoDevicesModel.h
         backend/OmemoChat.cpp backend/OmemoChat.h
         backend/AvatarController.cpp backend/AvatarController.h
+        backend/Clipboard.cpp backend/Clipboard.h
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
         backend/AvatarSink.h)

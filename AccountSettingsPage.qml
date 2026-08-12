@@ -47,21 +47,9 @@ Page {
 
     background: Rectangle { color: Theme.background }
 
-    // QML has no clipboard of its own; a TextEdit's copy() is the way to one.
     function copyFingerprint(spaced) {
-        clipboard.text = spaced
-        clipboard.selectAll()
-        clipboard.copy()
-        clipboard.deselect()
+        Clipboard.setText(spaced)
         copiedNotice.show()
-    }
-
-    TextEdit {
-        id: clipboard
-        width: 0
-        height: 0
-        opacity: 0
-        activeFocusOnPress: false
     }
 
     Connections {

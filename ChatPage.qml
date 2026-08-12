@@ -126,9 +126,6 @@ Page {
         }
     }
 
-    // Hidden helper that places copied message text on the system clipboard.
-    TextEdit { id: clip; visible: false }
-
     ChatModel {
         id: chatModel
         backend: App.backend
@@ -169,10 +166,9 @@ Page {
     function copySelected() {
         // Object keys iterate in ascending numeric order, so this joins the
         // chosen messages oldest-first regardless of the tap order.
-        copyText(Object.values(selectedBodies).join("\n"))
+        Clipboard.setText(Object.values(selectedBodies).join("\n"))
         clearSelection()
     }
-    function copyText(t) { clip.text = t; clip.selectAll(); clip.copy() }
 
     // The message being answered. Its timestamp is what the backend needs;
     // the body and direction are only here to draw the composer banner.
@@ -871,7 +867,7 @@ Page {
                     selected: page.isSelected(wrap.timestamp)
                     reactions: wrap.reactions
                     onToggleRequested: page.toggle(wrap.timestamp, wrap.label)
-                    onCopyRequested: page.copyText(wrap.label)
+                    onCopyRequested: Clipboard.setText(wrap.label)
                     onReplyRequested: page.startReply(wrap.timestamp, wrap.label, wrap.outgoing)
                     onReactRequested: (emoji) => chatModel.react(wrap.timestamp, emoji)
                     onViewXmlRequested: page.viewXml(wrap.timestamp)

@@ -20,22 +20,6 @@ Page {
 
     background: Rectangle { color: Theme.background }
 
-    // QML has no clipboard of its own; a TextEdit's copy() is the way to one.
-    function copy() {
-        clipboard.text = page.xml
-        clipboard.selectAll()
-        clipboard.copy()
-        clipboard.deselect()
-    }
-
-    TextEdit {
-        id: clipboard
-        width: 0
-        height: 0
-        opacity: 0
-        activeFocusOnPress: false
-    }
-
     header: Rectangle {
         height: 60
         color: Theme.surface
@@ -76,7 +60,7 @@ Page {
             Button {
                 text: "Copy"
                 enabled: page.hasXml
-                onClicked: page.copy()
+                onClicked: Clipboard.setText(page.xml)
             }
         }
         Rectangle {

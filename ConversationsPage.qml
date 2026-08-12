@@ -26,22 +26,6 @@ Page {
     readonly property ChatListModel chatList:
         account !== "" ? App.chatListFor(account) : null
 
-    // QML has no clipboard of its own; a TextEdit's copy() is the way to one.
-    function copyToClipboard(text) {
-        clipboard.text = text
-        clipboard.selectAll()
-        clipboard.copy()
-        clipboard.deselect()
-    }
-
-    TextEdit {
-        id: clipboard
-        width: 0
-        height: 0
-        opacity: 0
-        activeFocusOnPress: false
-    }
-
     // What the list actually shows: the account's chats, narrowed by the filter
     // box and in the order this window was asked for. Per view, so typing here
     // leaves the same account's other windows alone.
@@ -425,7 +409,7 @@ Page {
         onLeaveRoom: if (page.chatList) page.chatList.leaveRoom(jid)
         onForceJoin: if (page.chatList) page.chatList.forceJoinRoom(jid)
         onRefreshAvatar: App.avatars.refresh(page.account, jid)
-        onCopyJid: page.copyToClipboard(jid)
+        onCopyJid: Clipboard.setText(jid)
         onRenameContact: {
             renamePrompt.subject = jid
             renamePrompt.prompt = "New name for " + jid + ":"
