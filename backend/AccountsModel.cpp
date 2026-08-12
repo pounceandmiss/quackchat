@@ -177,9 +177,11 @@ void AccountsModel::applyList(const QVariantList &jids) {
     }
     for (int i = m_accounts.size() - 1; i >= 0; --i) {
         if (!wanted.contains(m_accounts.at(i).jid)) {
+            const QString gone = m_accounts.at(i).jid;
             beginRemoveRows({}, i, i);
             m_accounts.removeAt(i);
             endRemoveRows();
+            emit removed(gone);
         }
     }
     for (const QString &jid : std::as_const(wanted)) {
@@ -240,6 +242,7 @@ void AccountsModel::applyRemoved(const QString &jid) {
     endRemoveRows();
     m_enabledJids.remove(jid);
     emit countChanged();
+    emit removed(jid);
 }
 
 void AccountsModel::setEnabled(const QString &jid, bool enabled) {

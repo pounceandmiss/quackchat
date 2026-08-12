@@ -74,6 +74,8 @@ signals:
     void backendChanged();
     void countChanged();
     void connRevChanged();
+    // The account is gone, for whoever is holding something keyed by it.
+    void removed(const QString &jid);
 
 private:
     // Asks tacky to re-fire this account's conn events at their current value,

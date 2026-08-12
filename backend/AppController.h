@@ -51,6 +51,9 @@ public:
     Q_INVOKABLE void startFromEnvironment();
 
 private:
+    // Drop what was cached for an account that has been removed.
+    void forget(const QString &acc);
+
     TackyBackend m_backend;
     AccountsModel m_accounts;
     AvatarController m_avatars;

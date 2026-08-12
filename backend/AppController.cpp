@@ -17,6 +17,19 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     m_avatars.setBackend(&m_backend);
     m_calls.setBackend(&m_backend);
     m_audio.setBackend(&m_backend);
+    // The per-account models are cached for as long as the account is here, and
+    // no longer: an account that has been removed has a roster nobody can reach
+    // and a backend connection still listening for its events.
+    connect(&m_accounts, &AccountsModel::removed, this, &AppController::forget);
+}
+
+void AppController::forget(const QString &acc) {
+    // deleteLater rather than delete: a view bound to one of these is still
+    // holding it while the removal is being announced.
+    if (ChatListModel *m = m_chatLists.take(acc))
+        m->deleteLater();
+    if (AccountSettings *s = m_accountSettings.take(acc))
+        s->deleteLater();
 }
 
 ChatListModel *AppController::chatListFor(const QString &acc) {

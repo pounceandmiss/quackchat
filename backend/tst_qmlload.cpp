@@ -1721,6 +1721,20 @@ private slots:
 
         assertNoQmlErrors(warnings);
     }
+
+    // The per-account models are cached on the App singleton, so nothing else
+    // would ever let go of one for an account that has been removed.
+    void removingAnAccountDropsWhatWasCachedForIt() {
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        app->accounts()->applyAdded("gone@example.com");
+        QPointer<ChatListModel> chats = app->chatListFor("gone@example.com");
+        QVERIFY(chats);
+
+        app->accounts()->applyRemoved("gone@example.com");
+        QTRY_VERIFY(chats.isNull());
+    }
 };
 
 QTEST_MAIN(TestQmlLoad)
