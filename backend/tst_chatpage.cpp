@@ -194,6 +194,7 @@ private slots:
     void togglingTheComposerLockChangesWhatIsSent();
     void keysOpenFromTheComposerLock();
     void reactionChipsShowTheBackendSet();
+    void hoveringAReactionGrowsItsGlyphRatherThanTheItem();
     void senderNamesComeFromAuthorGet();
     void oneSessionServesEveryWindowOnAChat();
 };
@@ -944,6 +945,38 @@ void TestChatPage::reactionChipsShowTheBackendSet() {
     QTRY_VERIFY_WITH_TIMEOUT(
         model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
     QTRY_VERIFY(!row->isVisible());
+}
+
+// The hover pop was an item scale, which magnifies the raster the glyph cache
+// holds at the resting size - emoji are bitmaps, so it came out blocky.
+void TestChatPage::hoveringAReactionGrowsItsGlyphRatherThanTheItem() {
+    const Chat chat = open("react@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *row = chat.row(0);
+    QVERIFY(row);
+    auto *bar = row->findChild<QObject *>("reactionBar");
+    QVERIFY(bar);
+    QVERIFY(QMetaObject::invokeMethod(bar, "open"));
+    QTRY_VERIFY(bar->property("opened").toBool());
+
+    // The bar floats in the window overlay, so its choices hang off the popup's
+    // contentItem rather than the row.
+    auto *content = bar->property("contentItem").value<QQuickItem *>();
+    QVERIFY(content);
+    QQuickItem *glyph = findItem(content, "reactionChoice");
+    QVERIFY(glyph);
+    const int resting = glyph->property("font").value<QFont>().pixelSize();
+    QVERIFY(resting > 0);
+
+    const QPointF centre =
+        glyph->mapToScene(QPointF(glyph->width() / 2, glyph->height() / 2));
+    QTest::mouseMove(chat.win(), centre.toPoint());
+    QTRY_VERIFY(glyph->property("font").value<QFont>().pixelSize() > resting);
+    QCOMPARE(glyph->scale(), 1.0);
+
+    QVERIFY(QMetaObject::invokeMethod(bar, "close"));
 }
 
 // The name used to be the JID chopped at the "@", which is neither the roster

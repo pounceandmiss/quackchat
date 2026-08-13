@@ -224,6 +224,7 @@ Item {
     // clipped by the list.
     Popup {
         id: reactionBar
+        objectName: "reactionBar"
         y: -height - 8
         x: root.outgoing ? root.width - width - 16 : 16
         padding: 6
@@ -251,11 +252,14 @@ Item {
                     width: 40; height: 40; radius: 20
                     color: choiceHover.hovered ? Theme.menuHover : "transparent"
                     Text {
+                        objectName: "reactionChoice"
                         anchors.centerIn: parent
                         text: choice.modelData
-                        font.pixelSize: 22
-                        scale: choiceHover.hovered ? 1.3 : 1.0
-                        Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutBack } }
+                        // Emoji are bitmap glyphs: item scale magnifies the
+                        // raster cached at the resting size, so grow the font.
+                        property real grow: choiceHover.hovered ? 1.3 : 1.0
+                        font.pixelSize: Math.round(22 * grow)
+                        Behavior on grow { NumberAnimation { duration: 90; easing.type: Easing.OutBack } }
                     }
                     HoverHandler { id: choiceHover }
                     TapHandler { onTapped: { root.reactRequested(choice.modelData); reactionBar.close() } }
