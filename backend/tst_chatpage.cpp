@@ -181,6 +181,7 @@ private slots:
     void bubbleRendersMarkupAsRichText();
     void mouseDragSelectsBodyText();
     void rightClickStillOpensTheBubbleMenu();
+    void touchLongPressOpensTheBubbleMenu();
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
     void plainMessageDrawsNoQuote();
@@ -491,6 +492,35 @@ void TestChatPage::rightClickStillOpensTheBubbleMenu() {
     QTest::mouseClick(chat.win(), Qt::RightButton, {},
                       body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint());
     QTRY_VERIFY(menu->property("opened").toBool());
+}
+
+// The touch half of the same question. With no right button the long press is
+// the only way in, and one that starts on the body used to stop at the TextEdit.
+void TestChatPage::touchLongPressOpensTheBubbleMenu() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = nullptr;
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
+        menu = at->findChild<QObject *>("bubbleMenu");
+    QVERIFY(menu);
+    QVERIFY(!menu->property("opened").toBool());
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+
+    // Held, not tapped: the menu opens before the finger lifts.
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(menu->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    // A held finger must not have counted as a reply swipe.
+    QVERIFY(!chat.win()->findChild<QObject *>("chatPane")->property("replying").toBool());
 }
 
 // The composer used to hold the quoted body and nothing else, so replying sent

@@ -129,14 +129,19 @@ Item {
 
     // Off while selecting (that mode owns taps for the checkboxes).
     TapHandler {
+        id: bubbleTap
         enabled: !root.selectionMode
         acceptedButtons: Qt.LeftButton
         onDoubleTapped: root.reactRequested("❤️")
-        onLongPressed: reactionBar.open()
+        onLongPressed: root.openMenu(bubbleTap.point.position)
     }
 
     implicitWidth: parent ? parent.width : rowContent.width
     implicitHeight: rowContent.height
+
+    function openMenu(pos) {
+        ctxMenu.popup(root, pos.x, pos.y)
+    }
 
     AppMenu {
         id: ctxMenu
@@ -263,25 +268,6 @@ Item {
                     }
                     HoverHandler { id: choiceHover }
                     TapHandler { onTapped: { root.reactRequested(choice.modelData); reactionBar.close() } }
-                }
-            }
-            // Touch path to the actions that sit on right-click for a mouse.
-            Rectangle {
-                id: moreBtn
-                width: 40; height: 40; radius: 20
-                color: moreHover.hovered ? Theme.menuHover : "transparent"
-                Glyph {
-                    anchors.centerIn: parent
-                    path: Icons.moreHoriz
-                    color: Theme.textDim
-                    size: 20
-                }
-                HoverHandler { id: moreHover }
-                TapHandler {
-                    onTapped: {
-                        reactionBar.close()
-                        ctxMenu.popup(root, reactionBar.x, 0)
-                    }
                 }
             }
         }
@@ -689,6 +675,18 @@ Item {
                     selectByMouse: true
                     persistentSelection: true
                     Layout.maximumWidth: root.maxBubbleWidth
+
+                    // The TextEdit takes the press for itself, so a long press
+                    // on the words never reaches the handlers above.
+                    TapHandler {
+                        id: bodyTap
+                        enabled: !root.selectionMode
+                        acceptedDevices: PointerDevice.TouchScreen
+                        gesturePolicy: TapHandler.WithinBounds
+                        onDoubleTapped: root.reactRequested("❤️")
+                        onLongPressed: root.openMenu(
+                            bodyText.mapToItem(root, bodyTap.point.position))
+                    }
                 }
 
                 RowLayout {
