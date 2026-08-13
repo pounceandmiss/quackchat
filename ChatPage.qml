@@ -1268,8 +1268,6 @@ Page {
                         anchors.leftMargin: 16
                         anchors.rightMargin: 16
                         verticalAlignment: TextInput.AlignVCenter
-                        placeholderText: "Message"
-                        placeholderTextColor: Theme.textDim
                         color: Theme.textPrimary
                         font.pixelSize: 15
                         background: Item {}
