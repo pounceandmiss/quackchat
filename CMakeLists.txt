@@ -148,6 +148,21 @@ else()
 endif()
 
 qt_add_library(quack STATIC)
+
+# qmlcachegen's ahead-of-time C++ is the most expensive thing in the build: tens
+# of seconds to compile per .qml, against milliseconds for the bytecode it falls
+# back to. Debug builds take the bytecode, where keeping up with an edit is worth
+# more than the startup and binding speed AOT buys.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_qml_aot_default OFF)
+else()
+    set(_qml_aot_default ON)
+endif()
+option(QUACK_QML_AOT "Compile QML ahead of time to C++" ${_qml_aot_default})
+if(NOT QUACK_QML_AOT)
+    set_target_properties(quack PROPERTIES QT_QMLCACHEGEN_ARGUMENTS "--only-bytecode")
+endif()
+
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Jid.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
