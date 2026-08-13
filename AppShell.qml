@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Layouts
 import Quack
 
 // Wide window: rail | list | chat side by side. Narrow: one column showing the
@@ -19,6 +18,21 @@ Item {
     property bool currentChatGroupchat: false
 
     readonly property bool wide: width >= 720
+
+    // Where the columns start. Stacked there is no rail in the layout - it is in
+    // the drawer - so the list and chat each begin at the left edge.
+    readonly property real railWidth: wide ? accountRail.width : 0
+    // `listWidth` is what the divider was last dragged to, `listSpan` what the
+    // shell can actually give it. Keeping them apart lets a window too narrow to
+    // honour the drag squeeze the column without forgetting what it was asked
+    // for.
+    property real listWidth: 320
+    readonly property real listSpan: wide ? clampListWidth(listWidth) : width
+    // Narrower than this stops being a conversation list; wider than half of
+    // what the rail leaves takes the larger share from the chat.
+    function clampListWidth(w) {
+        return Math.max(220, Math.min(w, (width - railWidth) * 0.5))
+    }
 
     // Fall back to the first available account when none is selected (or the
     // selected one disappears, e.g. after a remove).
@@ -41,8 +55,8 @@ Item {
     // conversations list, which drifts the other way underneath it.
     // `chatOnTop` is where the navigation stands, `slide` how far the push has
     // got - 0 at the list, 1 at the chat. In between, both panes are on screen
-    // at full width, which no two panes of a split can be: hence the chat
-    // sitting outside it (see below).
+    // at full width, which is why the panes are placed by hand rather than by a
+    // SplitView: no two panes of a split can overlap.
     readonly property bool chatOnTop: !wide && currentChatJid !== "" && !popping
     property real slide: chatOnTop ? 1 : 0
     readonly property bool sliding: slide > 0 && slide < 1
@@ -166,136 +180,70 @@ Item {
         return false
     }
 
-    RowLayout {
-        anchors.fill: parent
-        spacing: 0
+    // Takes its own compact width; `railWidth` reads it back off the rail rather
+    // than repeating it.
+    AccountRail {
+        id: accountRail
+        height: shell.height
+        // Narrow, the same rail is in the drawer instead.
+        visible: shell.wide
+        currentAccount: shell.currentAccount
+        onSelectAccount: (jid) => shell.currentAccount = jid
+    }
 
-        AccountRail {
-            Layout.fillHeight: true
-            Layout.preferredWidth: 64
-            // Narrow, the same rail is in the drawer instead.
-            visible: shell.wide
-            currentAccount: shell.currentAccount
-            onSelectAccount: (jid) => shell.currentAccount = jid
+    ConversationsPage {
+        // Stacked, drifts left under the arriving chat rather than sitting
+        // still, so the two do not read as one sheet.
+        x: shell.wide ? shell.railWidth : -shell.slide * shell.width * 0.22
+        width: shell.listSpan
+        height: shell.height
+        // Hidden once a chat is open in the narrow layout - but not before the
+        // push lands, or there would be no list for the chat to slide over.
+        visible: !shell.searching && (shell.wide || shell.listUp)
+        account: shell.currentAccount
+        // The list is the only pane the rail is missing from that can still
+        // reach it, so its header carries the way in.
+        showAccounts: !shell.wide
+        onOpenAccounts: railDrawer.open()
+        onOpenChat: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
+        onPopOutChat: (jid, name, groupchat) => {
+            if (!Theme.mobile)
+                AppWindows.popOut(shell.currentAccount, jid, name, groupchat)
         }
+        onStartSearch: shell.openSearch()
+    }
 
-        // Draggable divider; SplitView stores the dragged size in the list's
-        // SplitView.preferredWidth.
-        SplitView {
-            id: split
-            Layout.fillHeight: true
-            Layout.fillWidth: true
-            orientation: Qt.Horizontal
-
-            // Visually the old 1px hairline; the containmentMask widens the
-            // draggable strip well past it so it is grabbable by touch.
-            handle: Rectangle {
-                id: grip
-                implicitWidth: 1
-                color: Theme.hairline
-                readonly property bool engaged: SplitHandle.hovered || SplitHandle.pressed
-                // Widens to the right only. Handles sit above the panes, so a
-                // centred strip eats presses on the list's scrollbar.
-                containmentMask: Item {
-                    width: 18
-                    height: grip.height
-                }
-                // Always-on grab nub, for touch discoverability.
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 4
-                    height: 36
-                    radius: 2
-                    color: Theme.textDim
-                    opacity: grip.engaged ? 0 : 0.35
-                }
-                // Accent highlight along the divider while dragging.
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 3
-                    height: parent.height
-                    color: Theme.accent
-                    opacity: grip.engaged ? (grip.SplitHandle.pressed ? 0.8 : 0.45) : 0
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
-                }
+    SearchPage {
+        id: searchPane
+        // Stacked, it takes the whole width from the open chat; side by side it
+        // takes the conversations list's column.
+        x: shell.railWidth
+        width: shell.listSpan
+        height: shell.height
+        visible: shell.searching
+        account: shell.currentAccount
+        onClosed: shell.searching = false
+        // The hit names its own chat, which need not be the open one. Whether
+        // that chat is a room is the chat list's answer, not a reading of the
+        // JID.
+        onOpenHit: (jid, ts, matches) => {
+            if (jid !== shell.currentChatJid) {
+                const list = App.chatListFor(shell.currentAccount)
+                const entry = list ? list.entryFor(jid) : ({})
+                shell.openChat(jid, entry.name ?? "", entry.groupchat === true)
             }
-
-            ConversationsPage {
-                SplitView.preferredWidth: 320
-                SplitView.minimumWidth: 220
-                // Cap the list at half the split, but only while it shares the
-                // split with the chat; alone (narrow layout) it must fill.
-                SplitView.maximumWidth: shell.wide ? split.width * 0.5 : split.width
-                // Hidden (and thus excluded from the split) once a chat is open
-                // in the narrow layout - but not before the push lands, or
-                // there would be no list for the chat to slide over. As the
-                // only visible pane it auto-fills.
-                visible: !shell.searching && (shell.wide || shell.listUp)
-                // Drifts left under the arriving chat rather than sitting
-                // still, so the two do not read as one sheet. A transform, not
-                // x: the split owns where the pane is.
-                transform: Translate {
-                    x: shell.wide ? 0 : -shell.slide * shell.width * 0.22
-                }
-                account: shell.currentAccount
-                // The list is the only pane the rail is missing from that can
-                // still reach it, so its header carries the way in.
-                showAccounts: !shell.wide
-                onOpenAccounts: railDrawer.open()
-                onOpenChat: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
-                onPopOutChat: (jid, name, groupchat) => {
-                    if (!Theme.mobile)
-                        AppWindows.popOut(shell.currentAccount, jid, name, groupchat)
-                }
-                onStartSearch: shell.openSearch()
-            }
-
-            SearchPage {
-                id: searchPane
-                SplitView.preferredWidth: 320
-                SplitView.minimumWidth: 220
-                SplitView.maximumWidth: shell.wide ? split.width * 0.5 : split.width
-                // Stacked, it takes the column from the open chat; side by side
-                // it takes it from the conversations list.
-                visible: shell.searching
-                account: shell.currentAccount
-                onClosed: shell.searching = false
-                // The hit names its own chat, which need not be the open one.
-                // Whether that chat is a room is the chat list's answer, not a
-                // reading of the JID.
-                onOpenHit: (jid, ts, matches) => {
-                    if (jid !== shell.currentChatJid) {
-                        const list = App.chatListFor(shell.currentAccount)
-                        const entry = list ? list.entryFor(jid) : ({})
-                        shell.openChat(jid, entry.name ?? "", entry.groupchat === true)
-                    }
-                    chatPage.jumpTo(ts, matches)
-                    // Stacked, the results are covering the message they point
-                    // at; side by side both are on screen and the list stays.
-                    if (!shell.wide)
-                        shell.searching = false
-                }
-            }
-
-            // Stands in for the chat, which cannot be a pane of the split:
-            // stacked it has to overlap the list to slide over it. The split
-            // still sizes and constrains the column - this is what the handle
-            // drags - and the chat follows it.
-            Item {
-                id: chatSlot
-                SplitView.fillWidth: true
-                SplitView.minimumWidth: 280
-                // Stacked, the chat covers the whole shell instead, leaving the
-                // list (or search) as the only pane, which then auto-fills.
-                visible: shell.wide
-            }
+            chatPage.jumpTo(ts, matches)
+            // Stacked, the results are covering the message they point at; side
+            // by side both are on screen and the list stays.
+            if (!shell.wide)
+                shell.searching = false
         }
     }
 
     // Dim over the list and a soft edge at the chat's leading side, for as long
     // as the push is in flight, so it reads as a layer lifted over the list
     // rather than the two trading places. Declared before the chat, so they
-    // land between it and the split.
+    // land between it and the list.
     Rectangle {
         anchors.fill: parent
         visible: !shell.wide && shell.sliding
@@ -314,15 +262,14 @@ Item {
         }
     }
 
-    // Wide, the chat tracks the slot the split laid out for it, and sits
-    // *under* the split so the divider between them keeps presses on the seam.
-    // Stacked, it is a card pushed over the list, so it goes on top instead and
-    // takes the full width.
+    // Wide, the chat is the column past the divider, taking whatever the rail
+    // and the list leave. Stacked, it is a card pushed over the list, so it
+    // takes the full width and rides in from the right edge.
     ChatPage {
         id: chatPage
-        z: shell.wide ? -1 : 0
-        x: shell.wide ? split.x + chatSlot.x : (1 - shell.slide) * shell.width
-        width: shell.wide ? chatSlot.width : shell.width
+        x: shell.wide ? shell.railWidth + shell.listSpan + 1
+                      : (1 - shell.slide) * shell.width
+        width: shell.wide ? shell.width - x : shell.width
         height: shell.height
         visible: shell.wide || (shell.chatUp && !shell.searching)
         account: shell.currentAccount
@@ -337,6 +284,72 @@ Item {
                               shell.currentChatName,
                               shell.currentChatGroupchat)
             shell.closeChat()
+        }
+    }
+
+    // The seam between the two columns, and the strip that drags it. Declared
+    // after both, so a press on the hairline moves the divider rather than
+    // landing in the chat behind it.
+    Item {
+        id: divider
+        x: shell.railWidth + shell.listSpan
+        // Reaches to the right of the hairline only, so it is grabbable by touch
+        // without covering the list's scrollbar.
+        width: 18
+        height: shell.height
+        visible: shell.wide
+
+        readonly property bool engaged: dividerHover.hovered || dividerDrag.active
+
+        HoverHandler {
+            id: dividerHover
+            cursorShape: Qt.SplitHCursor
+        }
+        DragHandler {
+            id: dividerDrag
+            target: null
+            yAxis.enabled: false
+            // Where the column stood when the drag began; the handler's
+            // translation is measured from there.
+            property real grabbedSpan: 0
+            onActiveChanged: if (active) grabbedSpan = shell.listSpan
+        }
+        // The dragged width is a function of where the drag started and how far
+        // it has come, so it is written as one. RestoreNone: where it lands is
+        // the new width, not something to undo on release.
+        Binding {
+            target: shell
+            property: "listWidth"
+            when: dividerDrag.active
+            restoreMode: Binding.RestoreNone
+            value: shell.clampListWidth(dividerDrag.grabbedSpan
+                                        + dividerDrag.activeTranslation.x)
+        }
+
+        Rectangle {
+            width: 1
+            height: parent.height
+            color: Theme.hairline
+        }
+        // Always-on grab nub, for touch discoverability. Centred on the
+        // hairline, not in the strip: the strip is all to one side of it.
+        Rectangle {
+            anchors.horizontalCenter: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: 4
+            height: 36
+            radius: 2
+            color: Theme.textDim
+            opacity: divider.engaged ? 0 : 0.35
+        }
+        // Accent highlight along the divider while dragging.
+        Rectangle {
+            anchors.horizontalCenter: parent.left
+            width: 3
+            height: parent.height
+            color: Theme.accent
+            opacity: divider.engaged ? (dividerDrag.active ? 0.8 : 0.45) : 0
+            Behavior on opacity { NumberAnimation { duration: 120 } }
         }
     }
 

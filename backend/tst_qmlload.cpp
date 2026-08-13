@@ -1191,8 +1191,7 @@ private slots:
     // Stacked, opening a chat is a push, not a swap: the chat comes in from
     // the right edge over the list, and the list only drops out once it lands.
     // Both panes are on screen at full width for the length of that, which no
-    // two panes of a split can be - hence the chat living outside it, over a
-    // slot the split sizes in its place.
+    // two panes of a split can be - hence the shell placing them itself.
     void narrowLayoutPushesTheChatOverTheList() {
         constexpr int kNarrow = 400; // one column, under the 720 breakpoint
         constexpr int kWide = 1000;  // rail, list and chat side by side
@@ -1264,8 +1263,8 @@ private slots:
         QTRY_VERIFY(shell->property("wide").toBool());
         QVERIFY(chat->isVisible());
         QVERIFY(list->isVisible());
-        // The split re-lays out on the next polish; let it settle before
-        // reading where the panes meet.
+        // The panes re-lay out on the next polish; let it settle before reading
+        // where they meet.
         QTRY_COMPARE(chat->x() + chat->width(), shell->width());
         const qreal seam = list->mapToItem(shell, QPointF(list->width(), 0)).x();
         QVERIFY2(qAbs(chat->x() - seam) <= 2,
@@ -1273,8 +1272,8 @@ private slots:
                                 .arg(chat->x())
                                 .arg(seam)));
 
-        // Out of the split but under it, so a press on the seam still reaches
-        // the divider rather than the chat's leading edge.
+        // The divider sits above both columns, so a press on the seam reaches it
+        // rather than the chat's leading edge.
         const qreal before = list->width();
         const QPoint grab(qRound(seam), 300);
         QTest::mousePress(&win, Qt::LeftButton, Qt::NoModifier, grab);
