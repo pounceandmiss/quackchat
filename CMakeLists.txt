@@ -11,8 +11,10 @@ find_package(Qt6 6.5 REQUIRED
 # Desktop notifications on Linux go over the session bus. Optional: without it
 # the app builds and runs exactly as before, just silently. Android posts its
 # own from the backend service (android/.../Notifications.java), so it is never
-# wanted there.
-if(NOT ANDROID)
+# wanted there. Gated on the platform rather than on the package being findable,
+# because the Windows and macOS kits do ship Qt6DBus: QUIET alone would pick the
+# FreeDesktop notifier there and address a session bus that is not running.
+if(NOT ANDROID AND NOT WIN32 AND NOT APPLE)
     find_package(Qt6 6.5 QUIET COMPONENTS DBus)
 endif()
 qt_standard_project_setup(REQUIRES 6.5)
@@ -24,6 +26,13 @@ if(ANDROID)
     # bionic arm64 archive; tacky builds it in Docker via `make android-lib`
     set(_tacky_lib_file libtacky-android.a)
     set(_tacky_make android-lib)
+elseif(WIN32)
+    # MinGW PE archive, cross-built from Linux. `make win-lib` tracks whichever
+    # mingw is installed, which is the one doing the final link here; the
+    # DOCKER=1 variant pins gcc 12 for reproducibility and links just as well,
+    # since the runtime only has to be no older than the objects.
+    set(_tacky_lib_file libtacky-win.a)
+    set(_tacky_make win-lib)
 else()
     set(_tacky_lib_file libtacky.a)
     set(_tacky_make lib)
@@ -89,10 +98,24 @@ add_library(tacky STATIC IMPORTED GLOBAL)
 set_target_properties(tacky PROPERTIES
     IMPORTED_LOCATION "${TACKY_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${TACKY_INCLUDE}")
-target_link_libraries(tacky INTERFACE dl z m)
-if(NOT ANDROID)
-    # bionic has pthreads in libc
-    target_link_libraries(tacky INTERFACE pthread)
+if(WIN32)
+    # No libdl on Windows, and no -lz either: tacky's `ar -M` merge folds zlib
+    # into the archive. What is left is import libs - the subset of tacky's own
+    # KITSH_SYSLIBS (zippy/windows.mk) this archive still reaches for, found by
+    # diffing its undefined symbols against what each lib defines:
+    #   x86_64-w64-mingw32-nm --undefined-only dist/libtacky-win.a
+    # The Tk half (gdi32, comdlg32, comctl32, uxtheme, ...) is deliberately
+    # absent - libtacky is the tclsh flavour and resolves nothing from it. So is
+    # -static: Qt's kit ships shared libgcc/libstdc++ and the app has to keep
+    # using them.
+    target_link_libraries(tacky INTERFACE
+        ws2_32 crypt32 netapi32 userenv iphlpapi bcrypt ncrypt winpthread ssp)
+else()
+    target_link_libraries(tacky INTERFACE dl z m)
+    if(NOT ANDROID)
+        # bionic has pthreads in libc
+        target_link_libraries(tacky INTERFACE pthread)
+    endif()
 endif()
 
 # The embedded transport is the only thing that calls into libtacky directly,
@@ -217,6 +240,16 @@ qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp
                             backend/QImageAvatarEncoder.cpp)
 target_link_libraries(quackchat PRIVATE
     quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+if(WIN32)
+    # Mark the PE as GUI-subsystem, or Windows opens a terminal behind the app.
+    # Deliberately not WIN32_EXECUTABLE, which routes the entry through
+    # Qt6::EntryPoint: its prebuilt qtentrypoint_win.cpp.obj wants __argc as a
+    # dllimport (`__imp___argc`) that a newer MinGW's CRT no longer exports.
+    # Keeping mainCRTStartup never pulls that object in, and the CRT builds
+    # argc/argv the same way under either subsystem.
+    target_link_options(quackchat PRIVATE
+        -Wl,--subsystem,windows -Wl,--entry=mainCRTStartup)
+endif()
 if(ANDROID)
     # libtacky-android.a is built against API 30 bionic
     set_target_properties(quackchat PROPERTIES QT_ANDROID_MIN_SDK_VERSION 30)
@@ -248,7 +281,21 @@ if(ANDROID)
     add_dependencies(quackchat tackyjni)
 endif()
 
-if(NOT ANDROID)
+# A cross build emits tests this host cannot run, and ctest reports those as
+# failures rather than skips, so they are off by default there.
+# -DQUACK_BUILD_TESTS=ON opts back in for a runner that can execute them (a
+# Windows host, or wine via CMAKE_CROSSCOMPILING_EMULATOR).
+if(CMAKE_CROSSCOMPILING)
+    set(_tests_default OFF)
+else()
+    set(_tests_default ON)
+endif()
+option(QUACK_BUILD_TESTS "Build the test executables" ${_tests_default})
+
+# Android stays a hard exclusion rather than a default: there the app reaches
+# the interpreter over a socket and `quack` links no tacky at all, so the tests
+# have nothing to drive even if asked for.
+if(QUACK_BUILD_TESTS AND NOT ANDROID)
 enable_testing()
 
 foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
@@ -301,4 +348,93 @@ target_link_libraries(tst_chatpage PRIVATE
     quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 add_test(NAME tst_chatpage COMMAND tst_chatpage)
 set_tests_properties(tst_chatpage PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
+# Packaging. Neither half of it is an option to set: whether Qt is static comes
+# from the kit CMAKE_PREFIX_PATH points at, and the format is picked at
+# `cpack -G` time. A shared Qt is the case that needs work, because the DLLs,
+# the qwindows platform plugin and the QML modules are not link-time
+# dependencies the exe records - windeployqt has to go and find them, and
+# without them the app dies at startup saying nothing. Android is excluded
+# outright: there androiddeployqt and gradle own packaging, and the deliverable
+# is an apk rather than a staged directory.
+if(NOT ANDROID)
+install(TARGETS quackchat RUNTIME DESTINATION . BUNDLE DESTINATION .)
+
+get_target_property(_qt_core_type Qt6::Core TYPE)
+if(WIN32 AND NOT _qt_core_type STREQUAL "STATIC_LIBRARY")
+    # windeployqt ships as a .exe even in a kit meant for cross-building, so a
+    # cross build has to route it through an emulator.
+    if(CMAKE_CROSSCOMPILING)
+        find_program(WINE_EXECUTABLE NAMES wine
+            DOC "runs the Windows-only windeployqt when cross-compiling")
+        set(_deploy_launcher "${WINE_EXECUTABLE}")
+        # By path, not find_program: the .exe comes out of Qt's archive without
+        # the executable bit, so find_program will never match it. Not a cache
+        # entry either - set(CACHE) will not overwrite one, so a NOTFOUND from an
+        # earlier configure would stick and silently skip deployment.
+        if(NOT WINDEPLOYQT_EXECUTABLE)
+            set(WINDEPLOYQT_EXECUTABLE "${QT6_INSTALL_PREFIX}/bin/windeployqt.exe")
+        endif()
+    else()
+        set(_deploy_launcher "")
+        find_program(WINDEPLOYQT_EXECUTABLE NAMES windeployqt
+            HINTS "${QT6_INSTALL_PREFIX}/bin" PATH_SUFFIXES bin
+            DOC "Qt's Windows deployment tool")
+    endif()
+
+    if(EXISTS "${WINDEPLOYQT_EXECUTABLE}"
+            AND (NOT CMAKE_CROSSCOMPILING OR WINE_EXECUTABLE))
+        message(STATUS "Staging Qt's runtime with ${WINDEPLOYQT_EXECUTABLE}")
+        install(CODE "
+            execute_process(COMMAND ${_deploy_launcher} \"${WINDEPLOYQT_EXECUTABLE}\"
+                    --qmldir \"${CMAKE_CURRENT_SOURCE_DIR}\"
+                    --no-translations --no-system-d3d-compiler --no-opengl-sw
+                    \"\${CMAKE_INSTALL_PREFIX}/quackchat.exe\"
+                RESULT_VARIABLE _rc)
+            if(NOT _rc EQUAL 0)
+                message(FATAL_ERROR \"windeployqt failed (\${_rc}); the staged \"
+                    \"tree would be missing Qt's DLLs and plugins\")
+            endif()")
+    else()
+        message(WARNING
+            "windeployqt not usable, so `cpack` will produce a tree without Qt's "
+            "runtime. Install wine (cross builds) or pass -DWINDEPLOYQT_EXECUTABLE.")
+    endif()
+
+    # windeployqt stages the gcc runtime *Qt* was built with, but the exe is
+    # linked by this toolchain and imports its symbols - three of them
+    # (__cxa_thread_atexit, std::__get_once_call{,able}) are absent from a
+    # libstdc++-6.dll that old, and the app would fail to load. libssp-0.dll is
+    # not staged at all, since only tacky's -lssp wants it. Copying ours in
+    # afterwards covers both: install() runs in declaration order, so this lands
+    # after windeployqt and overwrites it, and newer is the safe direction - Qt's
+    # own DLLs resolve fine against a runtime later than the one they were built
+    # against. To re-check the staged tree after a toolchain change, diff
+    # `objdump -p` imports against exports for every binary in it.
+    set(_mingw_runtime_dir "${MINGW_SYSROOT}/bin")
+    foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libssp-0.dll)
+        if(EXISTS "${_mingw_runtime_dir}/${_dll}")
+            install(FILES "${_mingw_runtime_dir}/${_dll}" DESTINATION .)
+        else()
+            message(WARNING "${_dll} not found in ${_mingw_runtime_dir}; the "
+                "package will carry Qt's copy, which the exe may outrun.")
+        endif()
+    endforeach()
+endif()
+
+set(CPACK_PACKAGE_NAME quackchat)
+set(CPACK_PACKAGE_VENDOR quackchat)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "An XMPP chat client")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY quackchat)
+set(CPACK_PACKAGE_EXECUTABLES quackchat quackchat)
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+# ZIP is the portable-folder build and needs no host tooling, so it stays the
+# default; NSIS wants makensis on PATH and is opt-in via `cpack -G NSIS`.
+set(CPACK_GENERATOR ZIP)
+set(CPACK_NSIS_PACKAGE_NAME quackchat)
+set(CPACK_NSIS_DISPLAY_NAME quackchat)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set(CPACK_NSIS_MODIFY_PATH OFF)
+include(CPack)
 endif()
