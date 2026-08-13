@@ -362,6 +362,8 @@ private slots:
                 {"size", 2048},
                 {"mime", ""},
                 {"state", state},
+                // What the hint and the retry are worded from.
+                {"direction", state.isEmpty() ? QString() : QStringLiteral("download")},
                 {"loaded", 0},
                 {"total", 0},
                 {"localpath", ""},
@@ -473,6 +475,196 @@ private slots:
             tap(findItem(b.data(), "attachmentChip"));
             QCOMPARE(loaded.count(), 1);
         }
+
+        // Our own share on its way out: the same bar as a download, worded for
+        // the direction, and the picture stays up while its bytes go.
+        {
+            QVariantMap up = attachment("image", "e.png", thumbPath, "active");
+            up["direction"] = "upload";
+            up["loaded"] = 50;
+            up["total"] = 100;
+            QScopedPointer<QQuickItem> b(bubbleWith(up));
+            QVERIFY(!b.isNull());
+            QVERIFY(findItem(b.data(), "attachmentThumb")->isVisible());
+            QVERIFY(findItem(b.data(), "attachmentProgress")->isVisible());
+            QCOMPARE(findItem(b.data(), "attachmentHint")->property("text").toString(),
+                     QString("Uploading…"));
+        }
+
+        // With no message from tacky to show, it still has to say which half of
+        // the trip failed.
+        {
+            QVariantMap up = attachment("file", "doc.pdf", "", "failed");
+            up["direction"] = "upload";
+            QScopedPointer<QQuickItem> b(bubbleWith(up));
+            QVERIFY(!b.isNull());
+            QCOMPARE(findItem(b.data(), "attachmentHint")->property("text").toString(),
+                     QString("Upload failed"));
+        }
+
+        // Everything but Cancel acts on a finished file, so a transfer still
+        // running offers only the way to stop it, and the other way round once
+        // it is done.
+        {
+            QScopedPointer<QQuickItem> b(
+                bubbleWith(attachment("file", "doc.pdf", "", "done")));
+            QVERIFY(!b.isNull());
+            QObject *menu = b->findChild<QObject *>("attachmentMenu");
+            QVERIFY(menu);
+            auto offered = [&](const char *name) {
+                QObject *o = menu->findChild<QObject *>(QLatin1String(name));
+                return o && o->property("offered").toBool();
+            };
+
+            QVariantMap busy = attachment("file", "doc.pdf", "", "active");
+            QVERIFY(QMetaObject::invokeMethod(menu, "openFor", Q_ARG(QVariant, 0),
+                                              Q_ARG(QVariant, QVariant(busy))));
+            QVERIFY(offered("attachmentCancelEntry"));
+            QVERIFY(!offered("attachmentSaveEntry"));
+            QVERIFY(!offered("attachmentUncacheEntry"));
+
+            QVERIFY(QMetaObject::invokeMethod(
+                menu, "openFor", Q_ARG(QVariant, 0),
+                Q_ARG(QVariant, QVariant(attachment("file", "doc.pdf", "", "done")))));
+            QVERIFY(!offered("attachmentCancelEntry"));
+            QVERIFY(offered("attachmentSaveEntry"));
+            QVERIFY(offered("attachmentFolderEntry"));
+            QVERIFY(offered("attachmentUncacheEntry"));
+
+            // And each one asks the page for the attachment it was opened on.
+            QSignalSpy save(b.data(), SIGNAL(attachmentSaveRequested(int)));
+            QVERIFY(QMetaObject::invokeMethod(
+                menu->findChild<QObject *>("attachmentSaveEntry"), "triggered"));
+            QCOMPARE(save.count(), 1);
+            QCOMPARE(save.first().at(0).toInt(), 0);
+        }
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // A failed row picks which half to run again from what tacky said about
+    // the transfer: one that never got its file up has no message to resend.
+    void chatPageSharesFilesAndRetriesTheRightHalf() {
+        QStringList warnings;
+        QQmlEngine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(500, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ChatPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"chatJid", "amy@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *attach = findItem(page, "attachButton");
+        QVERIFY(attach);
+        QVERIFY(attach->isVisible());
+
+        auto isFailedUpload = [&](const QVariant &att) {
+            QVariant out;
+            [&] {
+                QVERIFY(QMetaObject::invokeMethod(page, "isFailedUpload",
+                                                  Q_RETURN_ARG(QVariant, out),
+                                                  Q_ARG(QVariant, att)));
+            }();
+            return out.toBool();
+        };
+        auto transfer = [](const QString &direction, const QString &state) {
+            return QVariant(QVariantMap{{"direction", direction}, {"state", state}});
+        };
+
+        QVERIFY(isFailedUpload(transfer("upload", "failed")));
+        // A fetch that failed is the download's to run again, not the send's.
+        QVERIFY(!isFailedUpload(transfer("download", "failed")));
+        // And one still going out is not a retry at all.
+        QVERIFY(!isFailedUpload(transfer("upload", "active")));
+        // Every failed text message asks this on its way to `resend`.
+        QVERIFY(!isFailedUpload(QVariant()));
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // The ticks say what is in force, and picking one writes it through.
+    void autofetchPolicyIsPickedFromTheOverflowMenu() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        // These entries come from a model, so they are the menu's items rather
+        // than its QObject children, and there are none until it is shown.
+        QObject *menu = page->findChild<QObject *>("overflowMenu");
+        QVERIFY(menu);
+        QVERIFY(QMetaObject::invokeMethod(menu, "open"));
+
+        auto entry = [&](const char *name) -> QObject * {
+            const int count = menu->property("count").toInt();
+            for (int i = 0; i < count; ++i) {
+                QQuickItem *item = nullptr;
+                if (!QMetaObject::invokeMethod(menu, "itemAt",
+                                               Q_RETURN_ARG(QQuickItem *, item),
+                                               Q_ARG(int, i)))
+                    return nullptr;
+                if (item && item->objectName() == QLatin1String(name))
+                    return item;
+            }
+            return nullptr;
+        };
+        auto tick = [&](const char *name) {
+            QObject *o = entry(name);
+            return o ? o->property("trailing").toString() : QStringLiteral("?");
+        };
+
+        // Nothing stored yet, so the ticks show the defaults tacky is applying.
+        QVERIFY(entry("autofetch_everyone"));
+        QCOMPARE(tick("autofetch_everyone"), QString("✓"));
+        QCOMPARE(tick("autofetch_contacts"), QString());
+        QCOMPARE(tick("autofetchMax_5242880"), QString("✓"));
+
+        QVERIFY(QMetaObject::invokeMethod(entry("autofetch_contacts"), "triggered"));
+        QCOMPARE(app->settings()->attachmentAutofetch(), QString("contacts"));
+        QCOMPARE(tick("autofetch_contacts"), QString("✓"));
+        QCOMPARE(tick("autofetch_everyone"), QString());
+
+        // No cap is a cap of 0, which ticks like any other value.
+        QVERIFY(QMetaObject::invokeMethod(entry("autofetchMax_0"), "triggered"));
+        QCOMPARE(app->settings()->attachmentAutofetchMax(), 0LL);
+        QCOMPARE(tick("autofetchMax_0"), QString("✓"));
+        QCOMPARE(tick("autofetchMax_5242880"), QString());
 
         assertNoQmlErrors(warnings);
     }

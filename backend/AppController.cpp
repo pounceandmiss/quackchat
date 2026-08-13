@@ -21,6 +21,7 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     m_avatars.setBackend(&m_backend);
     m_calls.setBackend(&m_backend);
     m_audio.setBackend(&m_backend);
+    m_settings.setBackend(&m_backend);
     m_notifications.setBackend(&m_backend);
     // The per-account models are cached for as long as the account is here, and
     // no longer: an account that has been removed has a roster nobody can reach
@@ -138,6 +139,8 @@ void AppController::startFromEnvironment() {
     // Accounts already on disk auto-connect but never re-emit <Added>, so the
     // rail only sees them if we enumerate.
     m_accounts.refresh();
-    // Same for the audio prefs: they are persisted settings, not events.
+    // Same for the audio prefs and the app's own: they are persisted settings,
+    // not events, so nothing announces them.
     m_audio.refresh();
+    m_settings.refresh();
 }

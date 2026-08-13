@@ -14,6 +14,7 @@
 
 #include "AccountSettings.h"
 #include "AccountsModel.h"
+#include "AppSettings.h"
 #include "AudioDevices.h"
 #include "AvatarController.h"
 #include "CallsModel.h"
@@ -33,6 +34,9 @@ class AppController : public QObject {
     // there is no way to re-enumerate one from the backend.
     Q_PROPERTY(CallsModel *calls READ calls CONSTANT)
     Q_PROPERTY(AudioDevices *audio READ audio CONSTANT)
+    // The preferences that are the app's rather than an account's; tacky keeps
+    // them in one store with no acc on it.
+    Q_PROPERTY(AppSettings *settings READ settings CONSTANT)
     // App-wide for the same reason as calls: an alert names a chat, and which
     // window ends up showing it is decided when the user picks it.
     Q_PROPERTY(NotificationController *notifications READ notifications CONSTANT)
@@ -45,6 +49,7 @@ public:
     AvatarController *avatars() { return &m_avatars; }
     CallsModel *calls() { return &m_calls; }
     AudioDevices *audio() { return &m_audio; }
+    AppSettings *settings() { return &m_settings; }
     NotificationController *notifications() { return &m_notifications; }
 
     // Set by the GUI host, which owns the QImage side. Not owned here, and
@@ -85,6 +90,7 @@ private:
     AvatarController m_avatars;
     CallsModel m_calls;
     AudioDevices m_audio;
+    AppSettings m_settings;
     NotificationController m_notifications;
     const AvatarEncoder *m_encoder = nullptr;
     QHash<QString, ChatListModel *> m_chatLists;

@@ -109,6 +109,11 @@ public:
     Q_INVOKABLE void markRead();
     // replyToTs names the message being answered, 0 for a plain send.
     Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
+    // The row shows at once with the local path standing in for the url; the
+    // PUT and the send that follows it are tacky's.
+    Q_INVOKABLE void sendFile(const QUrl &file);
+    // For a row whose file never went up, where resend() has nothing to send.
+    Q_INVOKABLE void retryUpload(qlonglong ts);
     // Toggles one emoji in our own set for that message, per XEP-0444; the
     // same call again takes it back.
     // Another go at a message that did not get out. plaintext drops this one
@@ -125,6 +130,14 @@ public:
     // Resolve an attachment to a file on disk, downloading it if need be, and
     // report where it landed through attachmentResolved.
     Q_INVOKABLE void openAttachment(qlonglong ts, int idx);
+    // The same resolve, then a copy at `dest` or the folder it sits in.
+    Q_INVOKABLE void saveAttachment(qlonglong ts, int idx, const QUrl &dest);
+    Q_INVOKABLE void revealAttachment(qlonglong ts, int idx);
+    // Either direction; the transfer ends `idle`.
+    Q_INVOKABLE void cancelAttachment(qlonglong ts, int idx);
+    // Deletes the downloaded copy and its thumbnail, leaving the row offering
+    // the fetch again.
+    Q_INVOKABLE void uncacheAttachment(qlonglong ts, int idx);
 
     // Routing and transforms are public so tests can drive them directly.
     void handleEvent(const QString &module, const QString &name,
@@ -159,8 +172,18 @@ signals:
     // Where an attachment the user asked to open ended up, or empty when it
     // could not be fetched. Opening it is the view's job: that needs QtGui.
     void attachmentResolved(const QUrl &url);
+    void attachmentFolder(const QUrl &url);
+    // `error` is empty when the copy landed.
+    void attachmentSaved(const QUrl &dest, const QString &error);
 
 private:
+    // What a resolved download was wanted for: the path it answers with says
+    // nothing about that.
+    struct PendingAction {
+        enum Kind { Open, Folder, Save } kind = Open;
+        QUrl dest; // Save only
+    };
+
     void reload();
     void setAtTail(bool v);
     void setCatchupBusy(bool v);
@@ -181,6 +204,10 @@ private:
     QVariantMap attachmentAt(qlonglong ts, int idx) const;
     void fetchThumbs(const QVariantMap &msg);
     void redrawRowsUsing(const QString &url);
+    void redrawRow(qlonglong ts);
+    // Answers straight away when the file is already on disk.
+    void resolveAttachment(qlonglong ts, int idx, const PendingAction &act);
+    void finishAction(const PendingAction &act, const QString &path);
 
     TackyBackend *m_backend = nullptr;
     QString m_account;
@@ -207,7 +234,10 @@ private:
     // download serves every message quoting the same URL. Dropped on reload -
     // tacky answers a repeat request from its own cache.
     QHash<QString, QVariantMap> m_xfer;   // url -> transfer fields
-    QHash<int, QString> m_pendingOpen;    // token -> url, for openAttachment
+    // Uploads key on the message instead: until the PUT is through the row
+    // carries a local path, which no other row shares.
+    QHash<qlonglong, QVariantMap> m_upload; // ts -> transfer fields
+    QHash<int, PendingAction> m_pendingAction;
 };
 
 #endif // CHATMODEL_H

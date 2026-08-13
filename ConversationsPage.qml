@@ -156,6 +156,7 @@ Page {
     // (Ctrl+N / Ctrl+T) live on the window; this menu is their mouse path.
     AppMenu {
         id: overflow
+        objectName: "overflowMenu"
         width: 190
         MenuEntry {
             objectName: "newChatEntry"
@@ -182,6 +183,37 @@ Page {
             text: "Sort by name"
             trailing: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
             onTriggered: visibleChats.sortMode = ChatListFilter.Name
+        }
+        // The Tk account window's View menu, flattened the way the sort modes
+        // above are. App-wide, like the theme below them.
+        Repeater {
+            model: [
+                { label: "Images from everyone", value: "everyone" },
+                { label: "Images from contacts", value: "contacts" },
+                { label: "Never load images", value: "never" }
+            ]
+            delegate: MenuEntry {
+                required property var modelData
+                objectName: "autofetch_" + modelData.value
+                text: modelData.label
+                trailing: App.settings.attachmentAutofetch === modelData.value ? "✓" : ""
+                onTriggered: App.settings.setAttachmentAutofetch(modelData.value)
+            }
+        }
+        Repeater {
+            model: [
+                { label: "Image limit 1 MB", value: 1048576 },
+                { label: "Image limit 5 MB", value: 5242880 },
+                { label: "Image limit 25 MB", value: 26214400 },
+                { label: "No image limit", value: 0 }
+            ]
+            delegate: MenuEntry {
+                required property var modelData
+                objectName: "autofetchMax_" + modelData.value
+                text: modelData.label
+                trailing: App.settings.attachmentAutofetchMax === modelData.value ? "✓" : ""
+                onTriggered: App.settings.setAttachmentAutofetchMax(modelData.value)
+            }
         }
         MenuEntry {
             text: "New window"

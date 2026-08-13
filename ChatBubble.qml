@@ -26,9 +26,14 @@ Item {
     // transfer by ChatModel. Empty for a plain message.
     property var attachments: []
     // Open what is already on disk; load what is not (a held-back autofetch, a
-    // failed fetch, or a file nobody has asked for yet).
+    // failed fetch, a file nobody has asked for yet, or a share whose upload
+    // did not get out - the page picks which way "again" runs).
     signal attachmentOpenRequested(int idx)
     signal attachmentLoadRequested(int idx)
+    signal attachmentSaveRequested(int idx)
+    signal attachmentFolderRequested(int idx)
+    signal attachmentUncacheRequested(int idx)
+    signal attachmentCancelRequested(int idx)
     property string time: ""
     property bool outgoing: false
     // pending | failed | sent | delivered | read, only drawn for our own
@@ -164,6 +169,54 @@ Item {
             objectName: "viewXmlEntry"
             text: "View XML"
             onTriggered: root.viewXmlRequested()
+        }
+    }
+
+    // The Tk client's attachment menu. One per bubble rather than one per
+    // attachment: openFor() loads it from whichever was clicked.
+    AppMenu {
+        id: attMenu
+        objectName: "attachmentMenu"
+        width: 190
+
+        property int idx: 0
+        // Everything but Cancel acts on a finished file.
+        property bool busy: false
+
+        function openFor(index, att) {
+            attMenu.idx = index
+            attMenu.busy = att.state === "active"
+            attMenu.popup()
+        }
+
+        MenuEntry {
+            text: "Open"
+            offered: !attMenu.busy
+            onTriggered: root.attachmentOpenRequested(attMenu.idx)
+        }
+        MenuEntry {
+            objectName: "attachmentSaveEntry"
+            text: "Save as…"
+            offered: !attMenu.busy
+            onTriggered: root.attachmentSaveRequested(attMenu.idx)
+        }
+        MenuEntry {
+            objectName: "attachmentFolderEntry"
+            text: "Show in folder"
+            offered: !attMenu.busy
+            onTriggered: root.attachmentFolderRequested(attMenu.idx)
+        }
+        MenuEntry {
+            objectName: "attachmentUncacheEntry"
+            text: "Delete from cache"
+            offered: !attMenu.busy
+            onTriggered: root.attachmentUncacheRequested(attMenu.idx)
+        }
+        MenuEntry {
+            objectName: "attachmentCancelEntry"
+            text: "Cancel"
+            offered: attMenu.busy
+            onTriggered: root.attachmentCancelRequested(attMenu.idx)
         }
     }
 
@@ -473,11 +526,14 @@ Item {
                         readonly property bool hasThumb: att.modelData.thumburl != ""
                         readonly property bool busy: att.modelData.state === "active"
                         readonly property bool failed: att.modelData.state === "failed"
+                        readonly property bool sending: att.modelData.direction === "upload"
                         readonly property string hint: {
                             if (att.busy)
-                                return "Downloading…"
+                                return att.sending ? "Uploading…" : "Downloading…"
                             if (att.failed)
-                                return att.modelData.error
+                                return att.modelData.error !== ""
+                                    ? att.modelData.error
+                                    : (att.sending ? "Upload failed" : "Download failed")
                             if (att.isImage && !att.hasThumb)
                                 return "Tap to load"
                             // tacky knows an outgoing file's size up front; an
@@ -501,6 +557,17 @@ Item {
                         spacing: 3
                         Layout.maximumWidth: root.maxBubbleWidth
                         Layout.bottomMargin: 3
+
+                        // The attachment's own menu, not the message's: a press
+                        // on a picture is asking about the picture.
+                        TapHandler {
+                            acceptedButtons: Qt.RightButton
+                            onTapped: attMenu.openFor(att.index, att.modelData)
+                        }
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton
+                            onLongPressed: attMenu.openFor(att.index, att.modelData)
+                        }
 
                         Image {
                             id: thumb
@@ -560,6 +627,7 @@ Item {
                                         elide: Text.ElideMiddle
                                     }
                                     Text {
+                                        objectName: "attachmentHint"
                                         Layout.fillWidth: true
                                         visible: att.hint !== ""
                                         text: att.hint

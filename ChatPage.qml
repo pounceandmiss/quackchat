@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Quack
 
@@ -240,6 +241,77 @@ Page {
             if (url != "")
                 Qt.openUrlExternally(url)
         }
+        // Qt has no "reveal this file", so the folder holding it is opened
+        // instead.
+        function onAttachmentFolder(url) {
+            if (url != "")
+                Qt.openUrlExternally(url)
+        }
+        // By now the dialog that asked has been gone a while, so the reason on
+        // its own ("Destination file exists") would say nothing about what was
+        // being attempted.
+        function onAttachmentSaved(dest, error) {
+            if (error === "")
+                return
+            saveFailed.message = "Save failed: " + error
+            saveFailed.open()
+        }
+    }
+
+    SheetDialog {
+        id: saveFailed
+        objectName: "saveFailedDialog"
+        property alias message: saveFailedText.text
+        standardButtons: Dialog.Ok
+        Text {
+            id: saveFailedText
+            objectName: "saveFailedMessage"
+            width: saveFailed.availableWidth
+            color: Theme.textPrimary
+            wrapMode: Text.WordWrap
+        }
+    }
+
+    // No filters: tacky puts up whatever it is handed.
+    FileDialog {
+        id: attachDialog
+        objectName: "attachDialog"
+        title: "Attach a file"
+        onAccepted: if (page.chatModel)
+            page.chatModel.sendFile(attachDialog.selectedFile)
+    }
+
+    FileDialog {
+        id: saveDialog
+        objectName: "attachmentSaveDialog"
+        title: "Save attachment"
+        fileMode: FileDialog.SaveFile
+        onAccepted: if (page.chatModel)
+            page.chatModel.saveAttachment(page.savingTs, page.savingIdx,
+                                          saveDialog.selectedFile)
+    }
+
+    // The whole page takes them, not just the composer: the gesture is at the
+    // conversation, not at the box you type in.
+    DropArea {
+        id: fileDrop
+        objectName: "fileDrop"
+        anchors.fill: parent
+        enabled: page.hasChat
+        onDropped: (drop) => {
+            if (!drop.hasUrls || !page.chatModel)
+                return
+            for (const url of drop.urls)
+                page.chatModel.sendFile(url)
+            drop.acceptProposedAction()
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: fileDrop.containsDrag
+            color: Theme.accent
+            opacity: 0.12
+        }
     }
     // Land on a message this window may never have shown, carrying tacky's own
     // content.matches so the row can mark which characters were found. `local`
@@ -439,6 +511,42 @@ Page {
     function canResendPlain(outgoing, status, encryption, failReason) {
         return outgoing && status === "failed"
             && encryption === "omemo" && failReason === "encrypt"
+    }
+
+    // Which of the two retries a row wants, from the direction tacky gave the
+    // transfer that failed rather than from anything read off the row itself.
+    // An upload that did not land has no message for `resend` to send.
+    function isFailedUpload(att) {
+        return att !== undefined && att.direction === "upload"
+            && att.state === "failed"
+    }
+    function retryMessage(ts, attachments) {
+        if (!page.chatModel)
+            return
+        if (page.isFailedUpload(attachments[0]))
+            page.chatModel.retryUpload(ts)
+        else
+            page.chatModel.resend(ts, false)
+    }
+    function retryAttachment(ts, attachments, idx) {
+        if (!page.chatModel)
+            return
+        if (page.isFailedUpload(attachments[idx]))
+            page.chatModel.retryUpload(ts)
+        else
+            page.chatModel.loadAttachment(ts, idx)
+    }
+
+    // Which attachment the save dialog is out for; it reports only the path.
+    property real savingTs: 0
+    property int savingIdx: 0
+    function askWhereToSave(ts, attachments, idx) {
+        page.savingTs = ts
+        page.savingIdx = idx
+        const folder = saveDialog.currentFolder.toString()
+        saveDialog.selectedFile = (folder !== "" ? folder + "/" : "")
+                                + attachments[idx].name
+        saveDialog.open()
     }
     function sendCurrent() {
         if (!page.session)
@@ -867,7 +975,13 @@ Page {
                     showAuthor: page.chatGroupchat && !wrap.outgoing
                     attachments: wrap.attachments
                     onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
-                    onAttachmentLoadRequested: (idx) => page.chatModel.loadAttachment(wrap.timestamp, idx)
+                    onAttachmentLoadRequested: (idx) => page.retryAttachment(wrap.timestamp,
+                                                                             wrap.attachments, idx)
+                    onAttachmentSaveRequested: (idx) => page.askWhereToSave(wrap.timestamp,
+                                                                            wrap.attachments, idx)
+                    onAttachmentFolderRequested: (idx) => page.chatModel.revealAttachment(wrap.timestamp, idx)
+                    onAttachmentUncacheRequested: (idx) => page.chatModel.uncacheAttachment(wrap.timestamp, idx)
+                    onAttachmentCancelRequested: (idx) => page.chatModel.cancelAttachment(wrap.timestamp, idx)
                     replyBody: wrap.replyBody
                     replyAuthor: page.selfOrAuthorName(wrap.replyAuthor)
                     highlighted: page.highlightTs === wrap.timestamp
@@ -881,7 +995,7 @@ Page {
                     canRetry: page.canRetry(wrap.outgoing, status)
                     canResendPlain: page.canResendPlain(wrap.outgoing, status,
                                                         wrap.encryption, wrap.failReason)
-                    onRetryRequested: page.chatModel.resend(wrap.timestamp, false)
+                    onRetryRequested: page.retryMessage(wrap.timestamp, wrap.attachments)
                     onResendPlainRequested: page.chatModel.resend(wrap.timestamp, true)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
@@ -1131,6 +1245,16 @@ Page {
                             onTriggered: page.openKeys()
                         }
                     }
+                }
+                IconButton {
+                    objectName: "attachButton"
+                    iconPath: Icons.attachFile
+                    iconSize: 20
+                    glyphColor: Theme.textDim
+                    Accessible.name: qsTr("Attach a file")
+                    visible: page.hasChat
+                    Layout.preferredWidth: visible ? 36 : 0
+                    onClicked: attachDialog.open()
                 }
                 Rectangle {
                     Layout.fillWidth: true

@@ -1,7 +1,9 @@
 #include <QtTest>
+#include <QFile>
 #include <QSignalSpy>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QTemporaryDir>
 
 #include "ChatModel.h"
 #include "MessageMarkup.h"
@@ -78,6 +80,13 @@ private slots:
     void fileEventsFilterByAcc();
     void imageRowsAskForTheirThumbnails();
     void openAttachmentResolvesThroughTheBackend();
+    void uploadProgressReachesTheRowItBelongsTo();
+    void sendFileHandsTackyThePath();
+    void retryUploadNamesTheRow();
+    void cancelUsesTheHandleTheTransferHas();
+    void uncacheForgetsTheFileAndItsThumbnail();
+    void savingCopiesTheFileWhereItWasAsked();
+    void revealAnswersTheFolderTheFileIsIn();
     void catchupGatesLiveInserts();
     void catchupBracketMatching();
     void catchupReconcileRepages();
@@ -903,11 +912,14 @@ void TestChatModel::fileUpdateMergesIntoTheRow() {
     QCOMPARE(chg.first().at(2).value<QList<int>>(),
              QList<int>{ChatModel::AttachmentsRole});
 
-    // An upload update is not ours to read: it keys on the message id, and
-    // matching it by url would credit the wrong row.
-    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
+    // A download says so, which is what tells the two apart on the way out.
+    QCOMPARE(a.value("direction").toString(), QString("download"));
+
+    // An upload keys on the message id, not the url, so one carrying this
+    // row's url but another row's id is not this row's.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":7,
         "direction":"upload","state":"active","loaded":10,"total":99,
-        "url":"","localpath":"","thumbpath":"","error":""}])");
+        "url":"https://h/a.png","localpath":"","thumbpath":"","error":""}])");
     QCOMPARE(att0(m).value("state").toString(), QString("done"));
 }
 
@@ -1054,6 +1066,231 @@ void TestChatModel::openAttachmentResolvesThroughTheBackend() {
     m.openAttachment(100, 4);
     m.openAttachment(999, 0);
     QCOMPARE(opened.count(), 0);
+}
+
+// An outgoing share before its PUT is through: the row carries a local path.
+static const char *kUploadingRow = R"([{"timestamp":100,"is_outgoing":true,
+    "from_jid":"me@h","server_status":"uploading",
+    "content":{"type":"media","caption":"",
+    "attachments":[{"url":"/home/me/a.png","type":"image","name":"a.png",
+                    "size":1234,"mime":"image/png"}]}}])";
+
+// Matched to its message by id, and it must not wipe what the local read that
+// produced the thumbnail left behind.
+void TestChatModel::uploadProgressReachesTheRowItBelongsTo() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(kUploadingRow));
+
+    // That read.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"done","url":"/home/me/a.png","localpath":"/home/me/a.png",
+        "thumbpath":"/cache/a.png"}])");
+
+    QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
+        "direction":"upload","state":"active","loaded":10,"total":99,
+        "url":"","localpath":"","thumbpath":"","error":""}])");
+
+    const QVariantMap a = att0(m);
+    QCOMPARE(a.value("state").toString(), QString("active"));
+    QCOMPARE(a.value("direction").toString(), QString("upload"));
+    QCOMPARE(a.value("loaded").toInt(), 10);
+    QCOMPARE(a.value("total").toInt(), 99);
+    // Still showing while its bytes go out.
+    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
+    QCOMPARE(chg.count(), 1);
+    QCOMPARE(chg.first().at(2).value<QList<int>>(),
+             QList<int>{ChatModel::AttachmentsRole});
+
+    // An upload for a message this window is not showing changes nothing.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":999,
+        "direction":"upload","state":"failed","error":"no upload service"}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("active"));
+
+    // A confirm can relocate the row; the upload has to follow it.
+    m.applyConfirmed(100, 300, QStringLiteral(""));
+    QCOMPARE(att0(m).value("direction").toString(), QString("upload"));
+}
+
+void TestChatModel::sendFileHandsTackyThePath() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.sendFile(QUrl::fromLocalFile("/home/me/a.png"));
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("message"));
+    QCOMPARE(sent.first().at(1).toString(), QString("sendFile"));
+    const QVariantMap args = sent.first().at(2).toMap();
+    QCOMPARE(args.value("acc").toString(), QString("me@h"));
+    QCOMPARE(args.value("chat").toString(), QString("a@h"));
+    // A path, not a url: tacky opens what it is handed from Tcl.
+    QCOMPARE(args.value("path").toString(), QString("/home/me/a.png"));
+    // Nothing else: the encrypt flag is tacky's to decide.
+    QCOMPARE(args.size(), 3);
+
+    // A dialog that was dismissed hands back nothing to send.
+    sent.clear();
+    m.sendFile(QUrl());
+    QCOMPARE(sent.count(), 0);
+}
+
+void TestChatModel::retryUploadNamesTheRow() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(kUploadingRow));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.retryUpload(100);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("message"));
+    QCOMPARE(sent.first().at(1).toString(), QString("retryUpload"));
+    const QVariantMap args = sent.first().at(2).toMap();
+    QCOMPARE(args.value("chat").toString(), QString("a@h"));
+    QCOMPARE(args.value("timestamp").toLongLong(), 100LL);
+}
+
+void TestChatModel::cancelUsesTheHandleTheTransferHas() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([
+        {"timestamp":200,"is_outgoing":false,"content":{"type":"media",
+         "attachments":[{"url":"https://h/a.pdf","type":"file","name":"a.pdf"}]}},
+        {"timestamp":100,"is_outgoing":true,"content":{"type":"media",
+         "attachments":[{"url":"/home/me/b.pdf","type":"file","name":"b.pdf"}]}}
+    ])"));
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
+        "direction":"upload","state":"active","loaded":10,"total":99}])");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    // A download is cancelled by url, which stops it for every row waiting on it.
+    m.cancelAttachment(200, 0);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(1).toString(), QString("cancel"));
+    QCOMPARE(sent.first().at(2).toMap().value("url").toString(),
+             QString("https://h/a.pdf"));
+    QVERIFY(!sent.first().at(2).toMap().contains("id"));
+
+    // An upload has no shared url, so it goes by the message id instead.
+    sent.clear();
+    m.cancelAttachment(100, 0);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(2).toMap().value("id").toLongLong(), 100LL);
+    QVERIFY(!sent.first().at(2).toMap().contains("url"));
+
+    // Nothing pointed at is nothing to stop.
+    sent.clear();
+    m.cancelAttachment(999, 0);
+    QCOMPARE(sent.count(), 0);
+}
+
+// tacky says nothing after deleting them, so the row is walked back here.
+void TestChatModel::uncacheForgetsTheFileAndItsThumbnail() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(kMediaRow));
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"done","url":"https://h/a.png","localpath":"/data/a.png",
+        "thumbpath":"/cache/a.png"}])");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.uncacheAttachment(100, 0);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("file"));
+    QCOMPARE(sent.first().at(1).toString(), QString("uncache"));
+    QCOMPARE(sent.first().at(2).toMap().value("url").toString(),
+             QString("https://h/a.png"));
+
+    const QVariantMap a = att0(m);
+    QVERIFY(a.value("thumburl").toUrl().isEmpty());
+    QVERIFY(a.value("localpath").toString().isEmpty());
+    // Back to the neutral end, which is what offers the fetch again.
+    QCOMPARE(a.value("state").toString(), QString());
+}
+
+void TestChatModel::savingCopiesTheFileWhereItWasAsked() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString src = dir.filePath("a.png");
+    QFile f(src);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("png bytes");
+    f.close();
+
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(kMediaRow));
+    feedEvent(m, QByteArray(R"(["event","file","Update",{"acc":"me@h",
+        "direction":"download","state":"done","url":"https://h/a.png",
+        "localpath":")") + src.toUtf8() + R"("}])");
+
+    QSignalSpy saved(&m, &ChatModel::attachmentSaved);
+    const QString dest = dir.filePath("copy.png");
+    m.saveAttachment(100, 0, QUrl::fromLocalFile(dest));
+    QCOMPARE(saved.count(), 1);
+    QCOMPARE(saved.first().at(0).toUrl(), QUrl::fromLocalFile(dest));
+    QVERIFY(saved.takeFirst().at(1).toString().isEmpty());
+    QCOMPARE(QFile(dest).size(), qint64(9));
+
+    // The dialog asked about overwriting already, so the second save replaces
+    // the first rather than refusing.
+    m.saveAttachment(100, 0, QUrl::fromLocalFile(dest));
+    QCOMPARE(saved.count(), 1);
+    QVERIFY(saved.takeFirst().at(1).toString().isEmpty());
+
+    // A save that failed quietly would read as one that worked.
+    m.saveAttachment(100, 0, QUrl::fromLocalFile(dir.filePath("no/such/x.png")));
+    QCOMPARE(saved.count(), 1);
+    QVERIFY(!saved.takeFirst().at(1).toString().isEmpty());
+
+    // And a dialog that was dismissed asked for nothing.
+    m.saveAttachment(100, 0, QUrl());
+    QCOMPARE(saved.count(), 0);
+}
+
+// Every resolve answers the same local path, so what it was for has to survive
+// the round trip.
+void TestChatModel::revealAnswersTheFolderTheFileIsIn() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // token 1: the initial history request
+    m.applyBatch(msgs(kMediaRow));
+
+    QSignalSpy folder(&m, &ChatModel::attachmentFolder);
+    QSignalSpy opened(&m, &ChatModel::attachmentResolved);
+    m.revealAttachment(100, 0); // token 2
+    m.handleResult(2, QVariant(QString("/data/pics/a.png")));
+    QCOMPARE(opened.count(), 0);
+    QCOMPARE(folder.count(), 1);
+    QCOMPARE(folder.takeFirst().at(0).toUrl(), QUrl("file:///data/pics"));
+
+    // A fetch that came back with nothing has no folder to show either.
+    m.revealAttachment(100, 0); // token 3
+    m.handleResult(3, QVariant(QString()));
+    QCOMPARE(folder.count(), 1);
+    QVERIFY(folder.takeFirst().at(0).toUrl().isEmpty());
+
+    // Nor has one the backend refused outright, which would otherwise leave
+    // the request hanging.
+    m.revealAttachment(100, 0); // token 4
+    m.handleError(4, QStringLiteral("no such account"));
+    QCOMPARE(folder.count(), 1);
+    QVERIFY(folder.takeFirst().at(0).toUrl().isEmpty());
 }
 
 // tacky ships the stanza with the message, so the viewer needs no round trip -
