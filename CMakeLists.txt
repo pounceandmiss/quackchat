@@ -6,6 +6,15 @@ project(quack_qml VERSION 1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Optional compiler cache, since each build tree is otherwise cold on its own.
+# Set here rather than in CMakePresets.json because the android and mingw kits
+# pass their own toolchain and never read the desktop preset.
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+endif()
+
 find_package(Qt6 6.5 REQUIRED
     COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test)
 # Desktop notifications on Linux go over the session bus. Optional: without it
