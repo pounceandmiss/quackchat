@@ -62,10 +62,10 @@ public:
     Q_INVOKABLE AccountSettings *accountSettingsFor(const QString &acc);
 
     // The shared session for one conversation, so every window showing it reads
-    // the same history window and composes into the same draft. `groupchat` only
-    // decides how the session is built, and is ignored once one exists. Returns
-    // nullptr if either half of the key is empty, which is how a window with no
-    // chat open asks.
+    // the same history window and composes into the same draft. `groupchat` is
+    // applied every call, not only when the session is built: a room held as a
+    // 1:1 would offer OMEMO it cannot do. Returns nullptr if either half of the
+    // key is empty, which is how a window with no chat open asks.
     //
     // Sessions are kept for the life of the account, not evicted by age: a
     // long-lived window that visits many chats holds the scrollback of each.

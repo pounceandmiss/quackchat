@@ -60,6 +60,8 @@ ChatSession *AppController::chatFor(const QString &acc, const QString &jid,
     ChatSession *&c = m_chatSessions[acc][jid];
     if (!c)
         c = new ChatSession(&m_backend, acc, jid, groupchat, this);
+    else
+        c->setGroupchat(groupchat);
     return c;
 }
 

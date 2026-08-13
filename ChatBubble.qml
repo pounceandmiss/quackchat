@@ -699,7 +699,11 @@ Item {
                     Text {
                         objectName: "lockBadge"
                         Layout.alignment: Qt.AlignVCenter
-                        text: root.encrypted ? "🔒" : "🔓"
+                        // Nothing to badge about a row in the clear - in a room
+                        // that is every row - and the ones worth remarking on
+                        // are tinted instead.
+                        visible: root.encrypted
+                        text: "🔒"
                         font.pixelSize: 16
                     }
                     Text {

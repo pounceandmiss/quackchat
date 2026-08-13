@@ -1206,7 +1206,10 @@ Page {
                         acceptedButtons: Qt.LeftButton
                         onTapped: page.omemo.enabled = !page.omemo.enabled
                     }
+                    // A touch point carries no button for acceptedButtons to
+                    // filter; touch has the long press below.
                     TapHandler {
+                        acceptedDevices: PointerDevice.Mouse
                         acceptedButtons: Qt.RightButton
                         onTapped: lockMenu.popup()
                     }

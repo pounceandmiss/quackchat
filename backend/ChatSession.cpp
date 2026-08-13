@@ -17,6 +17,11 @@ ChatSession::ChatSession(TackyBackend *backend, const QString &acc,
     m_omemo.setBackend(backend);
 }
 
+void ChatSession::setGroupchat(bool v) {
+    m_messages.setGroupchat(v);
+    m_omemo.setGroupchat(v);
+}
+
 void ChatSession::setDraft(const QString &text) {
     if (m_draft == text)
         return;

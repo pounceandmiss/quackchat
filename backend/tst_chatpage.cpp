@@ -189,6 +189,7 @@ private slots:
     void padlockFollowsTheRowStamp();
     void exposedMessagesFollowTheChatsLock();
     void composerLockIsHiddenInRooms();
+    void aTouchTapOnTheLockOnlyFlipsIt();
     void resendGatingFollowsTheRow();
     void onlyAFailedEncryptionOffersThePlaintextWayOut();
     void viewXmlShowsTheStanzaTheRowCameWith();
@@ -671,6 +672,7 @@ void TestChatPage::padlockFollowsTheRowStamp() {
     QVERIFY(encrypted.row(0));
     QQuickItem *lock = findItem(encrypted.row(0), "lockBadge");
     QVERIFY(lock);
+    QVERIFY(lock->isVisible());
     QCOMPARE(lock->property("text").toString(), QString("🔒"));
 
     const Chat clear = open("clear@example.com");
@@ -679,7 +681,7 @@ void TestChatPage::padlockFollowsTheRowStamp() {
     QVERIFY(clear.row(0));
     QQuickItem *openLock = findItem(clear.row(0), "lockBadge");
     QVERIFY(openLock);
-    QCOMPARE(openLock->property("text").toString(), QString("🔓"));
+    QVERIFY(!openLock->isVisible());
 
     // A chat with encryption turned off got what it asked for, so its messages
     // look like any others - the badge is the only difference.
@@ -948,6 +950,31 @@ void TestChatPage::keysOpenFromTheComposerLock() {
     QVariant none;
     QVERIFY(QMetaObject::invokeMethod(roomPage, "openKeys", Q_RETURN_ARG(QVariant, none)));
     QVERIFY(!none.value<QObject *>());
+}
+
+// A touch point carries no button, so the padlock's right-click handler was
+// offered every tap: on a phone the keys came up over the switch it flipped.
+void TestChatPage::aTouchTapOnTheLockOnlyFlipsIt() {
+    const Chat chat = open("touch@example.com");
+    QVERIFY(chat.win());
+    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
+    QVERIFY(lock);
+    auto *menu = lock->findChild<QObject *>("lockMenu");
+    QVERIFY(menu);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QTRY_VERIFY(page->property("encryptOn").toBool());
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint centre =
+        lock->mapToScene(QPointF(lock->width() / 2, lock->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, centre);
+    QTest::touchEvent(chat.win(), finger).release(0, centre);
+
+    QTRY_VERIFY(!page->property("encryptOn").toBool());
+    settle();
+    QVERIFY2(!menu->property("opened").toBool(),
+             "a tap on the padlock brought up the keys menu");
 }
 
 void TestChatPage::reactionChipsShowTheBackendSet() {

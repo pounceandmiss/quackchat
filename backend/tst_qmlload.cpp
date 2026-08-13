@@ -1483,6 +1483,64 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Opening a room straight after a 1:1 asked for its session with the last
+    // chat's kind and kept that answer, so the room drew a padlock - shut, at
+    // that, since a setting never asked about reads back as tacky's default.
+    void openingARoomAfterAOneToOneLeavesNoPadlock() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+        app->accounts()->applyList({"me@example.com"});
+
+        QQuickWindow win;
+        win.resize(1000, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"},
+             {"width", 1000},
+             {"height", 700}}));
+        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(shell);
+        shell->setParentItem(win.contentItem());
+        QVERIFY(shell->property("wide").toBool());
+
+        QQuickItem *chat = findItem(shell, "chatPane");
+        QVERIFY(chat);
+        QQuickItem *lock = findItem(shell, "omemoToggle");
+        QVERIFY(lock);
+
+        const auto openChat = [&](const QString &jid, bool groupchat) {
+            QVERIFY(QMetaObject::invokeMethod(shell, "openChat",
+                                              Q_ARG(QVariant, QVariant(jid)),
+                                              Q_ARG(QVariant, QVariant(jid)),
+                                              Q_ARG(QVariant, QVariant(groupchat))));
+        };
+
+        openChat("friend@example.com", false);
+        QTRY_VERIFY(lock->isVisible());
+
+        openChat("room@example.com", true);
+        QVERIFY2(!lock->isVisible(), "a room was offered OMEMO");
+        QVERIFY(!chat->property("canEncrypt").toBool());
+
+        // The other way about: a room must not take the 1:1's padlock with it.
+        openChat("friend@example.com", false);
+        QVERIFY(lock->isVisible());
+
+        win.grabWindow();
+        QCoreApplication::processEvents();
+        assertNoQmlErrors(warnings);
+    }
+
     // Every colour in the active palette has to reach the property named after
     // it, and the failure is silent: a QML property whose name starts with "on"
     // followed by a capital reads as a signal handler, so `onAccent` never took
@@ -1780,6 +1838,71 @@ private slots:
                                      {"unread_mentions", 0}});
         QTRY_VERIFY(!mention(1)->isVisible());
         QVERIFY(findItem(rowAt(1), "unreadBadge")->isVisible());
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // A touch point carries no button, so the row's right-click handler was
+    // offered every tap: on a phone the menu came up over the chat it opened.
+    void aTouchTapOnARowOnlyOpensTheChat() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","source":"roster",
+             "last_activity":300}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+        win.grabWindow(); // force the delegates to lay out and bind
+
+        QQuickItem *row = nullptr;
+        QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row),
+                                  Q_ARG(int, 0));
+        QVERIFY(row);
+        QObject *menu = page->findChild<QObject *>("chatRowMenu");
+        QVERIFY(menu);
+        QSignalSpy opened(page, SIGNAL(openChat(QString, QString, bool)));
+
+        static QPointingDevice *finger = QTest::createTouchDevice();
+        const QPoint centre =
+            row->mapToScene(QPointF(row->width() / 2, row->height() / 2)).toPoint();
+        QTest::touchEvent(&win, finger).press(0, centre);
+        QTest::touchEvent(&win, finger).release(0, centre);
+
+        QTRY_COMPARE(opened.count(), 1);
+        QCOMPARE(opened.at(0).at(0).toString(), QString("amy@example.com"));
+        QTest::qWait(300); // longer than it takes a menu to open
+        QVERIFY2(!menu->property("opened").toBool(),
+                 "a tap on a row brought up its menu");
 
         assertNoQmlErrors(warnings);
     }

@@ -203,7 +203,10 @@ Rectangle {
                     acceptedButtons: Qt.LeftButton
                     onTapped: rail.selectAccount(cell.jid)
                 }
+                // A touch point carries no button for acceptedButtons to
+                // filter; touch has the long press below.
                 TapHandler {
+                    acceptedDevices: PointerDevice.Mouse
                     acceptedButtons: Qt.RightButton
                     onTapped: ctx.popup()
                 }

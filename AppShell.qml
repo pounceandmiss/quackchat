@@ -102,11 +102,15 @@ Item {
         openChat(jid, entry.name || jid, entry.groupchat === true)
     }
 
+    // Which chat and what kind of chat are two properties, and the session
+    // binding is re-read between the two writes. Start from no chat open, so no
+    // half-written pair names one.
     function openChat(jid, name, groupchat) {
         popping = false // a pop still running is overtaken, not queued behind
-        currentChatJid = jid
-        currentChatName = name
+        currentChatJid = ""
         currentChatGroupchat = groupchat
+        currentChatName = name
+        currentChatJid = jid
     }
 
     function closeChat() {

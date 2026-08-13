@@ -272,8 +272,11 @@ Page {
             onClicked: page.openChat(jid, name, groupchat)
 
             // Right-click used to pop the chat out; that is one entry in this
-            // menu now, where the rest of the row's verbs are.
+            // menu now, where the rest of the row's verbs are. A touch point
+            // carries no button for acceptedButtons to filter; touch has the
+            // long press below.
             TapHandler {
+                acceptedDevices: PointerDevice.Mouse
                 acceptedButtons: Qt.RightButton
                 onTapped: rowMenu.openFor(row.raw)
             }

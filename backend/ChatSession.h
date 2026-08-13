@@ -42,6 +42,8 @@ public:
     ChatModel *messages() { return &m_messages; }
     OmemoChat *omemo() { return &m_omemo; }
 
+    void setGroupchat(bool v);
+
     QString draft() const { return m_draft; }
     void setDraft(const QString &text);
 
