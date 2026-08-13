@@ -139,7 +139,12 @@ Item {
     implicitWidth: parent ? parent.width : rowContent.width
     implicitHeight: rowContent.height
 
+    // A Menu takes focus when it opens, and on Android the software keyboard
+    // follows focus: opening this one over a half-typed message would drop the
+    // keyboard. Nothing on the touch path needs the focus, so it opens without
+    // it; the mouse path keeps it for arrow keys and Escape.
     function openMenu(pos) {
+        ctxMenu.focus = false
         ctxMenu.popup(root, pos.x, pos.y)
     }
 
@@ -786,7 +791,10 @@ Item {
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
-        onClicked: function(mouse) { ctxMenu.popup(mouse.x, mouse.y) }
+        onClicked: function(mouse) {
+            ctxMenu.focus = true
+            ctxMenu.popup(mouse.x, mouse.y)
+        }
     }
 
     // Disabled outside selection mode, so taps fall through to the handlers above.

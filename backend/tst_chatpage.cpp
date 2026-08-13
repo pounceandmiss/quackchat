@@ -182,6 +182,7 @@ private slots:
     void mouseDragSelectsBodyText();
     void rightClickStillOpensTheBubbleMenu();
     void touchLongPressOpensTheBubbleMenu();
+    void theBubbleMenuLeavesTheComposerFocused();
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
     void plainMessageDrawsNoQuote();
@@ -522,6 +523,37 @@ void TestChatPage::touchLongPressOpensTheBubbleMenu() {
 
     // A held finger must not have counted as a reply swipe.
     QVERIFY(!chat.win()->findChild<QObject *>("chatPane")->property("replying").toBool());
+}
+
+// Android ties the software keyboard to whoever holds focus, so a menu that
+// takes focus for itself drops the keyboard the moment it opens - mid-sentence,
+// with the draft still in the composer.
+void TestChatPage::theBubbleMenuLeavesTheComposerFocused() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    auto *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    QVERIFY(input);
+    input->forceActiveFocus();
+    QVERIFY(input->hasActiveFocus());
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = nullptr;
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
+        menu = at->findChild<QObject *>("bubbleMenu");
+    QVERIFY(menu);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(menu->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    QVERIFY(input->hasActiveFocus());
 }
 
 // The composer used to hold the quoted body and nothing else, so replying sent
