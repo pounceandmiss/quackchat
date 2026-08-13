@@ -1,0 +1,3 @@
+// Configured into the build dir: windres resolves a relative path against its
+// own working directory, not against this file.
+IDI_ICON1 ICON "@QUACK_ICO@"

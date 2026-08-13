@@ -240,6 +240,14 @@ qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp
                             backend/QImageAvatarEncoder.cpp)
 target_link_libraries(quackchat PRIVATE
     quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+
+# BASE is what makes the resource path :/icons/quack-48.png rather than
+# :/icons/icons/quack-48.png.
+qt_add_resources(quackchat "appicon"
+    PREFIX "/icons"
+    BASE icons
+    FILES icons/quack-48.png icons/quack-128.png icons/quack-256.png)
+
 if(WIN32)
     # Mark the PE as GUI-subsystem, or Windows opens a terminal behind the app.
     # Deliberately not WIN32_EXECUTABLE, which routes the entry through
@@ -249,6 +257,13 @@ if(WIN32)
     # argc/argv the same way under either subsystem.
     target_link_options(quackchat PRIVATE
         -Wl,--subsystem,windows -Wl,--entry=mainCRTStartup)
+
+    # The icon on the .exe itself. RC is enabled here rather than in
+    # project(LANGUAGES) so other configures never look for windres.
+    enable_language(RC)
+    set(QUACK_ICO "${CMAKE_CURRENT_SOURCE_DIR}/icons/quack.ico")
+    configure_file(icons/quack.rc.in "${CMAKE_CURRENT_BINARY_DIR}/quack.rc" @ONLY)
+    target_sources(quackchat PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/quack.rc")
 endif()
 if(ANDROID)
     # libtacky-android.a is built against API 30 bionic
@@ -360,6 +375,14 @@ endif()
 # is an apk rather than a staged directory.
 if(NOT ANDROID)
 install(TARGETS quackchat RUNTIME DESTINATION . BUNDLE DESTINATION .)
+
+# Where a desktop entry and a hicolor icon mean something. By name rather than
+# the usual `UNIX AND NOT APPLE`, which is also true of Android and Cygwin.
+if(CMAKE_SYSTEM_NAME MATCHES "Linux|.*BSD|DragonFly|GNU")
+    install(FILES icons/quackchat.desktop DESTINATION share/applications)
+    install(FILES icons/quack.svg DESTINATION share/icons/hicolor/scalable/apps
+            RENAME quackchat.svg)
+endif()
 
 get_target_property(_qt_core_type Qt6::Core TYPE)
 if(WIN32 AND NOT _qt_core_type STREQUAL "STATIC_LIBRARY")

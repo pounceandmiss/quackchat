@@ -5,6 +5,7 @@
 //
 // Without TACKY_ACC it still runs, against a persistent account-less session.
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 
 #include "AppController.h"
@@ -14,10 +15,16 @@
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     // What a notification daemon looks us up by (the `desktop-entry` hint), so
-    // it can find our icon and file the popup under one app. Until an
-    // installed quackchat.desktop exists there is nothing to find, and the
-    // alert simply shows without an icon.
+    // it can find our icon and file the popup under one app. Matches the
+    // basename of icons/quackchat.desktop.
     app.setApplicationName(QStringLiteral("quackchat"));
+
+    // Rasters, not icons/quack.svg: the SVG would need the svg icon engine
+    // plugin deployed alongside.
+    QIcon icon;
+    for (int size : {48, 128, 256})
+        icon.addFile(QStringLiteral(":/icons/quack-%1.png").arg(size));
+    QGuiApplication::setWindowIcon(icon);
 
     // Declared before the engine so it outlives everything holding a pointer
     // to it.

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=quackchat
+GenericName=Chat
+Comment=An XMPP chat client
+Exec=quackchat
+Icon=quackchat
+Terminal=false
+Categories=Network;InstantMessaging;Qt;
+StartupWMClass=quackchat
