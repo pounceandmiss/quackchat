@@ -35,6 +35,9 @@ void AppController::forget(const QString &acc) {
         m->deleteLater();
     if (AccountSettings *s = m_accountSettings.take(acc))
         s->deleteLater();
+    for (ChatSession *c : std::as_const(m_chatSessions[acc]))
+        c->deleteLater();
+    m_chatSessions.remove(acc);
 }
 
 ChatListModel *AppController::chatListFor(const QString &acc) {
@@ -47,6 +50,24 @@ ChatListModel *AppController::chatListFor(const QString &acc) {
         m->setAccount(acc);
     }
     return m;
+}
+
+ChatSession *AppController::chatFor(const QString &acc, const QString &jid,
+                                    bool groupchat) {
+    if (acc.isEmpty() || jid.isEmpty())
+        return nullptr;
+    ChatSession *&c = m_chatSessions[acc][jid];
+    if (!c)
+        c = new ChatSession(&m_backend, acc, jid, groupchat, this);
+    return c;
+}
+
+void AppController::forgetChat(const QString &acc, const QString &jid) {
+    auto it = m_chatSessions.find(acc);
+    if (it == m_chatSessions.end())
+        return;
+    if (ChatSession *c = it->take(jid))
+        c->deleteLater();
 }
 
 AccountSettings *AppController::accountSettingsFor(const QString &acc) {

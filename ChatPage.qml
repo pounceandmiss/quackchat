@@ -88,7 +88,7 @@ Page {
     // The text is handed over rather than bound, so the viewer keeps showing
     // the row as it stood when it was asked for.
     function viewXml(ts) {
-        const xml = chatModel.rawXml(ts)
+        const xml = page.chatModel.rawXml(ts)
         if (Theme.mobile) {
             xmlSheet.xml = xml
             xmlSheet.open()
@@ -126,24 +126,35 @@ Page {
         }
     }
 
-    ChatModel {
-        id: chatModel
-        backend: App.backend
-        account: page.account
-        chat: page.chatJid
-        groupchat: page.chatGroupchat
-        // The palette's literals, since the markup wants CSS colors and the
-        // typed accessors would hand over QColors.
-        quoteColor: Theme.p.quote
-        matchColor: Theme.p.selection
-    }
+    // The conversation itself belongs to the app, not to this view of it: the
+    // shell and a pop-out window on the same chat get the same session, and so
+    // read one history window and compose into one draft. Null until a chat is
+    // open, which every use below has to allow for.
+    readonly property ChatSession session: App.chatFor(page.account, page.chatJid,
+                                                       page.chatGroupchat)
+    readonly property ChatModel chatModel: page.session ? page.session.messages : null
+    readonly property OmemoChat omemo: page.session ? page.session.omemo : null
 
-    OmemoChat {
-        id: omemo
-        backend: App.backend
-        account: page.account
-        jid: page.chatJid
-        groupchat: page.chatGroupchat
+    // What the chrome reads instead of going to the model directly, since there
+    // is no model until a chat is open. The answers an empty pane wants: it is
+    // at the tail, fetching nothing, and encrypting nothing.
+    readonly property bool atTail: page.chatModel ? page.chatModel.atTail : true
+    readonly property bool loadingOlder: page.chatModel ? page.chatModel.loadingOlder : false
+    readonly property bool canEncrypt: page.omemo ? page.omemo.available : false
+    readonly property bool encryptOn: page.omemo ? page.omemo.enabled : false
+
+    // Pushed onto the shared model rather than declared with it. The palette's
+    // literals, since the markup wants CSS colors and the typed accessors would
+    // hand over QColors.
+    Binding {
+        target: page.chatModel
+        property: "quoteColor"
+        value: Theme.p.quote
+    }
+    Binding {
+        target: page.chatModel
+        property: "matchColor"
+        value: Theme.p.selection
     }
 
     // ChatModel has no "selected" role, so selection lives here, keyed by each
@@ -170,20 +181,23 @@ Page {
         clearSelection()
     }
 
-    // The message being answered. Its timestamp is what the backend needs;
-    // the body and direction are only here to draw the composer banner.
-    property real replyTo: 0
-    property string replyBody: ""
-    property bool replyOutgoing: false
-    readonly property bool replying: replyTo !== 0
+    // The message being answered lives on the session, so it survives the chat
+    // being closed and reopened. Read back through here, which is also where the
+    // no-chat-open case is handled once rather than at each use.
+    readonly property bool replying: page.session ? page.session.replying : false
+    readonly property string replyBody: page.session ? page.session.replyBody : ""
+    readonly property bool replyOutgoing: page.session ? page.session.replyOutgoing : false
 
     function startReply(ts, body, outgoing) {
-        replyTo = ts
-        replyBody = body
-        replyOutgoing = outgoing
+        if (!page.session)
+            return
+        page.session.replyToMessage(ts, body, outgoing)
         input.forceActiveFocus()
     }
-    function cancelReply() { replyTo = 0; replyBody = ""; replyOutgoing = false }
+    function cancelReply() {
+        if (page.session)
+            page.session.cancelReply()
+    }
 
     // The row a jump landed on, tinted until the timer below clears it.
     property real highlightTs: 0
@@ -196,18 +210,18 @@ Page {
     // Reading is "this chat is on screen, the app is in front, and the newest
     // message is in view". Anything looser marks a backgrounded window's chat
     // read and swallows its notification.
-    readonly property bool reading: page.hasChat && visible
+    readonly property bool reading: page.session !== null && visible
                                     && Qt.application.state === Qt.ApplicationActive // qmllint disable missing-property
-                                    && chatModel.atTail
-    onReadingChanged: if (reading) chatModel.markRead()
+                                    && page.atTail
+    onReadingChanged: if (reading) page.chatModel.markRead()
 
     Connections {
-        target: chatModel
+        target: page.chatModel
         // Every new row while the chat is being read moves the watermark; tacky
         // holds its alert briefly so this lands first and nothing fires.
         function onRowsInserted() {
             if (page.reading)
-                chatModel.markRead()
+                page.chatModel.markRead()
         }
 
         // A resolved jump either kept the window and scrolled, or replaced it;
@@ -236,8 +250,8 @@ Page {
     function jumpTo(ts, matches) {
         if (!ts)
             return
-        chatModel.highlightMatches(ts, matches)
-        chatModel.gotoTimestamp(ts, "local")
+        page.chatModel.highlightMatches(ts, matches)
+        page.chatModel.gotoTimestamp(ts, "local")
     }
 
     // Finding a message in this conversation. The hits are walked one at a time
@@ -300,7 +314,10 @@ Page {
         page.hitIndex = -1
         page.hitPending = false
         chatSearch.clear()
-        chatModel.highlightMatches(0, [])
+        // Reachable with no chat open: the field's own onTextChanged calls this
+        // when it is cleared.
+        if (page.chatModel)
+            page.chatModel.highlightMatches(0, [])
     }
 
     // The model drops includeServer where the archive advertises no full-text
@@ -365,7 +382,7 @@ Page {
     }
 
     function scrollToHighlight() {
-        const row = chatModel.rowOfTimestamp(page.highlightTs)
+        const row = page.chatModel.rowOfTimestamp(page.highlightTs)
         if (row >= 0)
             feed.positionViewAtIndex(row, ListView.Center)
     }
@@ -424,12 +441,20 @@ Page {
             && encryption === "omemo" && failReason === "encrypt"
     }
     function sendCurrent() {
-        const t = input.text.trim()
-        if (t.length === 0) return
-        chatModel.send(t, page.replyTo)
+        if (!page.session)
+            return
+        // The session holds the draft and the reply it answers, so it does the
+        // whole send and clears both; the field only has to catch up.
+        page.session.sendDraft()
         input.clear()
-        cancelReply()
     }
+
+    // The field is seeded from the session's draft and writes back to it, rather
+    // than being bound both ways: typing has to break a binding on `text`, so a
+    // live one would not survive the first keystroke. Re-seeding on every change
+    // of session is what carries a half-written message from the shell into a
+    // pop-out - and what keeps it from following you into the next chat.
+    onSessionChanged: input.text = page.session ? page.session.draft : ""
 
     header: PageHeader {
         // No chat, no header - the empty pane draws its own invitation.
@@ -726,7 +751,7 @@ Page {
             objectName: "chatFeed"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: chatModel
+            model: page.chatModel
             clip: true
             spacing: 10
             topMargin: 14
@@ -776,11 +801,11 @@ Page {
                     return
                 if (olderBuffer() >= fillThreshold)
                     return
-                chatModel.loadOlder()
+                page.chatModel.loadOlder()
             }
 
             Connections {
-                target: chatModel
+                target: page.chatModel
                 // A reload (chat/account switch) empties the window; a fresh chat
                 // may again be under-tall, so clear the exhausted latch and refill.
                 function onChatChanged() { feed.olderExhausted = false }
@@ -841,30 +866,30 @@ Page {
                     // named by the header and the bubble side.
                     showAuthor: page.chatGroupchat && !wrap.outgoing
                     attachments: wrap.attachments
-                    onAttachmentOpenRequested: (idx) => chatModel.openAttachment(wrap.timestamp, idx)
-                    onAttachmentLoadRequested: (idx) => chatModel.loadAttachment(wrap.timestamp, idx)
+                    onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
+                    onAttachmentLoadRequested: (idx) => page.chatModel.loadAttachment(wrap.timestamp, idx)
                     replyBody: wrap.replyBody
                     replyAuthor: page.selfOrAuthorName(wrap.replyAuthor)
                     highlighted: page.highlightTs === wrap.timestamp
-                    onQuoteTapped: chatModel.gotoReplyTarget(wrap.timestamp)
+                    onQuoteTapped: page.chatModel.gotoReplyTarget(wrap.timestamp)
                     outgoing: wrap.outgoing
                     time: page.fmtTime(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)
                     encrypted: wrap.encryption === "omemo"
                     // A room never encrypts, so nothing in one is remarkable.
-                    chatEncrypting: omemo.available && omemo.enabled
+                    chatEncrypting: page.canEncrypt && page.encryptOn
                     canRetry: page.canRetry(wrap.outgoing, status)
                     canResendPlain: page.canResendPlain(wrap.outgoing, status,
                                                         wrap.encryption, wrap.failReason)
-                    onRetryRequested: chatModel.resend(wrap.timestamp, false)
-                    onResendPlainRequested: chatModel.resend(wrap.timestamp, true)
+                    onRetryRequested: page.chatModel.resend(wrap.timestamp, false)
+                    onResendPlainRequested: page.chatModel.resend(wrap.timestamp, true)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     reactions: wrap.reactions
                     onToggleRequested: page.toggle(wrap.timestamp, wrap.label)
                     onCopyRequested: Clipboard.setText(wrap.label)
                     onReplyRequested: page.startReply(wrap.timestamp, wrap.label, wrap.outgoing)
-                    onReactRequested: (emoji) => chatModel.react(wrap.timestamp, emoji)
+                    onReactRequested: (emoji) => page.chatModel.react(wrap.timestamp, emoji)
                     onViewXmlRequested: page.viewXml(wrap.timestamp)
                 }
             }
@@ -881,8 +906,8 @@ Page {
                 topUp()
                 // Nothing newer to page for while the window holds the tail:
                 // live <New> events land there on their own.
-                if (!chatModel.atTail && newerBuffer() < fillThreshold)
-                    chatModel.loadNewer()
+                if (!page.atTail && newerBuffer() < fillThreshold)
+                    page.chatModel.loadNewer()
             }
 
             // Jumping to a reply's target leaves the tail, and paging back is a
@@ -899,7 +924,7 @@ Page {
                 radius: 19
                 color: Theme.surface
                 border.color: Theme.hairline
-                opacity: chatModel.atTail ? 0 : 1
+                opacity: page.atTail ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
@@ -909,7 +934,7 @@ Page {
                     color: Theme.textDim
                     size: 22
                 }
-                TapHandler { onTapped: chatModel.resetToBottom() }
+                TapHandler { onTapped: page.chatModel.resetToBottom() }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
 
@@ -931,7 +956,7 @@ Page {
                 height: 26
                 radius: 13
                 color: Theme.surface
-                opacity: chatModel.loadingOlder && !feed.olderExhausted ? 0.95 : 0
+                opacity: page.loadingOlder && !feed.olderExhausted ? 0.95 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
@@ -1052,20 +1077,20 @@ Page {
                 // and its own press handling would swallow the long press.
                 Item {
                     objectName: "omemoToggle"
-                    visible: omemo.available && page.hasChat
+                    visible: page.canEncrypt && page.hasChat
                     Layout.preferredWidth: visible ? 32 : 0
                     Layout.fillHeight: true
                     Text {
                         anchors.centerIn: parent
                         // As on the bubbles: the colour form of the glyph, so
                         // the shape carries the state rather than a tint.
-                        text: omemo.enabled ? "🔒" : "🔓"
-                        opacity: omemo.enabled ? 1 : 0.55
+                        text: page.encryptOn ? "🔒" : "🔓"
+                        opacity: page.encryptOn ? 1 : 0.55
                         font.pixelSize: 20
                     }
                     TapHandler {
                         acceptedButtons: Qt.LeftButton
-                        onTapped: omemo.enabled = !omemo.enabled
+                        onTapped: page.omemo.enabled = !page.omemo.enabled
                     }
                     TapHandler {
                         acceptedButtons: Qt.RightButton
@@ -1128,6 +1153,7 @@ Page {
                         // press still lands here as accepted).
                         EnterKey.type: Qt.EnterKeySend
                         onAccepted: page.sendCurrent()
+                        onTextChanged: if (page.session) page.session.draft = text
                     }
                 }
                 Rectangle {

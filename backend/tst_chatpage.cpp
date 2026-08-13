@@ -112,7 +112,16 @@ class TestChatPage : public QObject {
         return nullptr;
     }
 
+    // Opens a chat from scratch: sessions are cached app-wide and shared by
+    // every window on a chat, so one an earlier test left loaded would hand this
+    // one a feed already full of history.
     Chat open(const QString &jid, bool groupchat = false) {
+        m_app->forgetChat(kAcc, jid);
+        return alsoOpen(jid, groupchat);
+    }
+
+    // A second window on a chat that is already open, sharing its session.
+    Chat alsoOpen(const QString &jid, bool groupchat = false) {
         Chat chat;
         chat.window.reset(m_component->createWithInitialProperties(
             {{"account", kAcc},
@@ -186,6 +195,7 @@ private slots:
     void keysOpenFromTheComposerLock();
     void reactionChipsShowTheBackendSet();
     void senderNamesComeFromAuthorGet();
+    void oneSessionServesEveryWindowOnAChat();
 };
 
 void TestChatPage::initTestCase() {
@@ -202,6 +212,7 @@ void TestChatPage::initTestCase() {
 
     seed("friend@example.com", kSeeded);
     seed("quiet@example.com", kQuiet);
+    seed("shared@example.com", kQuiet);
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "styled@example.com"},
@@ -976,6 +987,42 @@ void TestChatPage::senderNamesComeFromAuthorGet() {
     QQuickItem *quietLine = findItem(direct.row(0), "authorLine");
     QVERIFY(quietLine);
     QVERIFY(!quietLine->isVisible());
+}
+
+// A conversation belongs to the app, not to a window showing it. Two windows on
+// one chat read the same model - two would mean two paging cursors over the same
+// history - and the message half-typed into one is waiting in the next, which is
+// what carries a draft out of the shell and into a pop-out.
+//
+// The draft is per chat for the same reason: the composer used to keep whatever
+// was in it when you left, and hand it to whoever you opened next.
+void TestChatPage::oneSessionServesEveryWindowOnAChat() {
+    const QString jid = QStringLiteral("shared@example.com");
+    const Chat first = open(jid);
+    QVERIFY(first.feed);
+    QTRY_COMPARE(first.count(), kQuiet);
+
+    auto *input = first.win()->findChild<QObject *>("messageInput");
+    QVERIFY(input);
+    input->setProperty("text", "half a thought");
+
+    const Chat second = alsoOpen(jid);
+    QVERIFY(second.feed);
+    QTRY_VERIFY(second.model() != nullptr);
+    QCOMPARE(second.model(), first.model());
+
+    auto *echo = second.win()->findChild<QObject *>("messageInput");
+    QVERIFY(echo);
+    QCOMPARE(echo->property("text").toString(), QString("half a thought"));
+
+    // Point the first window at another conversation and the composer is that
+    // one's, empty - not the thought left behind in this one.
+    first.window->setProperty("chatJid", "elsewhere@example.com");
+    QTRY_COMPARE(input->property("text").toString(), QString());
+
+    // Which is still there for the chat it was written in.
+    first.window->setProperty("chatJid", jid);
+    QTRY_COMPARE(input->property("text").toString(), QString("half a thought"));
 }
 
 QTEST_MAIN(TestChatPage)

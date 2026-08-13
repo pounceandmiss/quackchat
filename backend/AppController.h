@@ -18,6 +18,7 @@
 #include "AvatarController.h"
 #include "CallsModel.h"
 #include "ChatListModel.h"
+#include "ChatSession.h"
 #include "NotificationController.h"
 #include "TackyBackend.h"
 
@@ -55,6 +56,22 @@ public:
     Q_INVOKABLE ChatListModel *chatListFor(const QString &acc);
     Q_INVOKABLE AccountSettings *accountSettingsFor(const QString &acc);
 
+    // The shared session for one conversation, so every window showing it reads
+    // the same history window and composes into the same draft. `groupchat` only
+    // decides how the session is built, and is ignored once one exists. Returns
+    // nullptr if either half of the key is empty, which is how a window with no
+    // chat open asks.
+    //
+    // Sessions are kept for the life of the account, not evicted by age: a
+    // long-lived window that visits many chats holds the scrollback of each.
+    Q_INVOKABLE ChatSession *chatFor(const QString &acc, const QString &jid,
+                                     bool groupchat = false);
+
+    // Let go of one conversation's session, so the next chatFor() builds it
+    // afresh. Only safe once nothing is showing the chat: every view of it holds
+    // the session this drops.
+    Q_INVOKABLE void forgetChat(const QString &acc, const QString &jid);
+
     // Start a persistent on-disk backend and sign in TACKY_ACC if it is set.
     // No-op once started.
     Q_INVOKABLE void startFromEnvironment();
@@ -72,6 +89,8 @@ private:
     const AvatarEncoder *m_encoder = nullptr;
     QHash<QString, ChatListModel *> m_chatLists;
     QHash<QString, AccountSettings *> m_accountSettings;
+    // acc -> jid -> session, so dropping an account drops its chats with it.
+    QHash<QString, QHash<QString, ChatSession *>> m_chatSessions;
     bool m_started = false;
 };
 
