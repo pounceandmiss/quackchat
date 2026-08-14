@@ -18,14 +18,25 @@ Dialog {
     modal: true
     width: Math.min(preferredWidth, parent ? parent.width - 24 : preferredWidth)
 
+    // Android measures the keyboard in physical pixels while the scene it
+    // covers is laid out in device-independent ones; every other platform
+    // reports the rectangle in the scene's own units already.
+    readonly property real keyboardScale: parent ? parent.Screen.devicePixelRatio : 1
+
+    // The keyboard's top edge in window coordinates, or -1 while it is down.
+    property real keyboardTop: {
+        if (!Qt.inputMethod.visible) // qmllint disable missing-property
+            return -1
+        const top = Qt.inputMethod.keyboardRectangle.y // qmllint disable missing-property
+        return Qt.platform.os === "android" ? top / sheet.keyboardScale : top
+    }
+
     // The height of the window strip the keyboard leaves showing.
     readonly property real clearHeight: {
         if (!parent)
             return 0
-        if (!Qt.inputMethod.visible) // qmllint disable missing-property
-            return parent.height
-        const kbTop = Qt.inputMethod.keyboardRectangle.y // qmllint disable missing-property
-        return kbTop > 0 ? Math.min(kbTop, parent.height) : parent.height
+        return sheet.keyboardTop > 0 ? Math.min(sheet.keyboardTop, parent.height)
+                                     : parent.height
     }
     x: Math.round((parent ? parent.width - width : 0) / 2)
     y: Math.max(12, Math.round((sheet.clearHeight - height) / 2))

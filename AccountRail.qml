@@ -245,7 +245,7 @@ Rectangle {
         }
     }
 
-    AddAccountSheet { id: addSheet }
+    AddAccountSheet { id: addSheet; objectName: "addAccountSheet" }
 
     // Full-screen rather than a centred dialog: the form plus a device list of
     // unknown length is a screenful.

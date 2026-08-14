@@ -2342,6 +2342,63 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Android lays the keyboard over the window instead of resizing it, so a
+    // dialog centres in the strip left above it. The rectangle Android reports
+    // is in physical pixels, and clamped against a window measured in
+    // device-independent ones it read as the whole window - leaving the sheet
+    // dead centre under the keyboard. Nothing raises a keyboard on a headless
+    // platform, so the top edge is placed by hand.
+    void aDialogCentresInTheStripTheKeyboardLeaves() {
+        QStringList warnings;
+        QQmlEngine e;
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        QQuickWindow win;
+        win.resize(360, 800);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AccountRail");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"width", win.width()}, {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *rail = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(rail);
+        rail->setParentItem(win.contentItem());
+
+        QObject *sheet = rail->findChild<QObject *>("addAccountSheet");
+        QVERIFY(sheet);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+        QTRY_VERIFY(sheet->property("opened").toBool());
+
+        const qreal h = sheet->property("height").toReal();
+        // Short enough that a keyboard over the bottom half still leaves a
+        // strip it fits in, or the top margin is what would be measured below.
+        QVERIFY2(h > 0 && h < 380, qPrintable(QString("sheet is %1 high").arg(h)));
+
+        // Keyboard down: dead centre of the window.
+        QCOMPARE(sheet->property("keyboardTop").toReal(), qreal(-1));
+        QTRY_COMPARE(sheet->property("y").toReal(),
+                     qreal(qRound((win.height() - h) / 2)));
+
+        // Keyboard up over the bottom half: centred in what is left of the
+        // window, and wholly above the keyboard.
+        sheet->setProperty("keyboardTop", 400);
+        QTRY_COMPARE(sheet->property("y").toReal(), qreal(qRound((400 - h) / 2)));
+        QVERIFY(sheet->property("y").toReal() + h <= 400);
+
+        // A strip too short to hold it: pinned under the top margin rather than
+        // centred off the top of the window.
+        sheet->setProperty("keyboardTop", 40);
+        QTRY_COMPARE(sheet->property("y").toReal(), qreal(12));
+
+        assertNoQmlErrors(warnings);
+    }
+
     // The per-account models are cached on the App singleton, so nothing else
     // would ever let go of one for an account that has been removed.
     void removingAnAccountDropsWhatWasCachedForIt() {
