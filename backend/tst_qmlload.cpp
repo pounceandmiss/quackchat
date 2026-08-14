@@ -779,6 +779,49 @@ private slots:
                  "the corner was not rounded off");
     }
 
+    // The overflow button is an ellipsis, and drew as a single dot for as long
+    // as its path chained the three by relative moves. Nothing about the path
+    // says which it is, so count the runs of ink across the button.
+    void theOverflowGlyphResolvesAsThreeDots() {
+        if (QGuiApplication::platformName() == QLatin1String("offscreen"))
+            QSKIP("Shape needs a renderer the offscreen platform lacks");
+
+        QQmlEngine e;
+        auto *icons = e.singletonInstance<QObject *>("Quack", "Icons");
+        QVERIFY(icons);
+
+        QQuickWindow win;
+        win.setColor(Qt::white);
+        win.resize(48, 48);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "IconButton");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"iconPath", icons->property("moreHoriz")},
+             {"glyphColor", QColor(Qt::black)}}));
+        QVERIFY(!obj.isNull());
+        auto *btn = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(btn);
+        btn->setParentItem(win.contentItem());
+        QCoreApplication::processEvents();
+
+        const QImage shot = win.grabWindow();
+        QVERIFY(!shot.isNull());
+        // Down the middle of the button, which is where all three dots lie.
+        const int y = qRound(btn->height() / 2 * shot.height() / win.height());
+        int dots = 0;
+        bool inDot = false;
+        for (int x = 0; x < shot.width(); ++x) {
+            const bool ink = shot.pixelColor(x, y).valueF() < 0.5;
+            if (ink && !inDot)
+                ++dots;
+            inDot = ink;
+        }
+        QCOMPARE(dots, 3);
+    }
+
     void loadsAccountSettings() {
         QStringList warnings;
         QQmlEngine e;

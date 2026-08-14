@@ -30,9 +30,12 @@ QtObject {
     readonly property string close:
         "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41" +
         " 17.59 19 19 17.59 13.41 12z"
+    // Not a paste: upstream chains its three dots with moves relative to a
+    // closed subpath and they draw here as one. Same circles, absolute starts.
     readonly property string moreHoriz:
-        "M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" +
-        "m-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+        "M4 12a2 2 0 1 0 4 0 2 2 0 1 0-4 0z" +
+        "M10 12a2 2 0 1 0 4 0 2 2 0 1 0-4 0z" +
+        "M16 12a2 2 0 1 0 4 0 2 2 0 1 0-4 0z"
     readonly property string openInNew:
         "M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7z" +
         "M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"
