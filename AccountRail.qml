@@ -249,16 +249,9 @@ Rectangle {
 
     // Full-screen rather than a centred dialog: the form plus a device list of
     // unknown length is a screenful.
-    Dialog {
+    FullScreenSheet {
         id: settingsSheet
         property alias account: settingsPage.account
-        parent: Overlay.overlay
-        modal: true
-        padding: 0
-        x: 0
-        y: 0
-        width: parent ? parent.width : 0
-        height: parent ? parent.height : 0
         // The sheet outlives each visit, so start from what is stored rather
         // than from whatever was typed and abandoned last time.
         onAboutToShow: settingsPage.bindAccount()

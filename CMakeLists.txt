@@ -194,6 +194,7 @@ qt_add_qml_module(quack
         AccountRail.qml
         AccountBadge.qml
         SheetDialog.qml
+        FullScreenSheet.qml
         PageHeader.qml
         AddAccountSheet.qml
         AccountSettingsPage.qml

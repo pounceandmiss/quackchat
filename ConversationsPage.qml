@@ -456,16 +456,9 @@ Page {
     }
 
     // Full-screen rather than centred: a page of settings is a screenful.
-    Dialog {
+    FullScreenSheet {
         id: prefsSheet
         objectName: "preferencesSheet"
-        parent: Overlay.overlay
-        modal: true
-        padding: 0
-        x: 0
-        y: 0
-        width: parent ? parent.width : 0
-        height: parent ? parent.height : 0
 
         AppSettingsPage {
             anchors.fill: parent

@@ -15,7 +15,9 @@
 #include <QGuiApplication>
 #include <QSignalSpy>
 #include <QQmlComponent>
+#include <QQmlContext>
 #include <QQmlEngine>
+#include <QQmlExpression>
 #include <QQuickItem>
 #include <QQuickWindow>
 
@@ -168,6 +170,32 @@ class TestChatPage : public QObject {
         QTRY_VERIFY(xmlViewerWindow() == nullptr);
     }
 
+    // The item every popup is parented into. Created by the templates in C++
+    // with no objectName of its own, so it goes by its class.
+    static QQuickItem *overlayOf(QQuickWindow *win) {
+        const auto kids = win->contentItem()->childItems();
+        for (QQuickItem *kid : kids)
+            if (kid->inherits("QQuickOverlay"))
+                return kid;
+        return nullptr;
+    }
+
+    // A status bar and a gesture bar, the way Android reports them. No platform
+    // here has either, so they are added to the overlay's safe area - the same
+    // margins the real insets would land in, and where the app reads them from.
+    static bool fakeSystemBars(QQuickWindow *win, qreal top, qreal bottom) {
+        QQuickItem *overlay = overlayOf(win);
+        if (!overlay)
+            return false;
+        QQmlExpression expr(qmlContext(win), overlay,
+                            QStringLiteral("SafeArea.additionalMargins = "
+                                           "({left: 0, top: %1, right: 0, bottom: %2})")
+                                    .arg(top)
+                                    .arg(bottom));
+        expr.evaluate();
+        return !expr.hasError();
+    }
+
 private slots:
     void initTestCase();
     void cleanupTestCase();
@@ -194,6 +222,7 @@ private slots:
     void resendGatingFollowsTheRow();
     void onlyAFailedEncryptionOffersThePlaintextWayOut();
     void viewXmlShowsTheStanzaTheRowCameWith();
+    void aSheetKeepsItsPageClearOfTheSystemBars();
     void togglingTheComposerLockChangesWhatIsSent();
     void keysOpenFromTheComposerLock();
     void reactionChipsShowTheBackendSet();
@@ -238,6 +267,12 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "xml@example.com"},
                                          {"body", "look at my stanza"}});
+    // The chat the system bars are measured against: one row, since what is
+    // being placed is the sheet over it rather than the feed.
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "bars@example.com"},
+                                         {"body", "under the status bar"}});
 
     // clear@ turns OMEMO off before its send, so it is the one chat whose rows
     // come back unstamped - every other send here is encrypted by default.
@@ -921,6 +956,37 @@ void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
     auto *inSheet = chat.win()->findChild<QQuickItem *>("xmlText");
     QVERIFY(inSheet);
     QCOMPARE(inSheet->property("text").toString(), laidOut);
+    QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
+}
+
+// A sheet is parented to the overlay, which the window's own safe-area inset
+// never reaches: on Android that put the XML viewer's header, Copy button and
+// all, underneath the status bar. The sheet still covers the window - only the
+// page inside it moves in.
+void TestChatPage::aSheetKeepsItsPageClearOfTheSystemBars() {
+    const Chat chat = open("bars@example.com");
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    auto *sheet = chat.win()->findChild<QObject *>("xmlSheet");
+    QVERIFY(sheet);
+    QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+    QTRY_VERIFY(sheet->property("opened").toBool());
+
+    auto *shown = chat.win()->findChild<QQuickItem *>("messageXmlPage");
+    QVERIFY(shown);
+    QCOMPARE(shown->mapToScene(QPointF(0, 0)).y(), 0.0);
+
+    constexpr qreal kStatusBar = 60;
+    constexpr qreal kGestureBar = 90;
+    QVERIFY(fakeSystemBars(chat.win(), kStatusBar, kGestureBar));
+
+    QTRY_COMPARE(shown->mapToScene(QPointF(0, 0)).y(), kStatusBar);
+    QCOMPARE(shown->height(), chat.win()->height() - kStatusBar - kGestureBar);
+    // The background keeps painting behind the bars, so the window does not
+    // band where the page stops.
+    QCOMPARE(sheet->property("height").toReal(), qreal(chat.win()->height()));
+
     QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
 }
 

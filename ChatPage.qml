@@ -65,16 +65,9 @@ Page {
         return true
     }
 
-    Dialog {
+    FullScreenSheet {
         id: keysSheet
         objectName: "keysSheet"
-        parent: Overlay.overlay
-        modal: true
-        padding: 0
-        x: 0
-        y: 0
-        width: parent ? parent.width : 0
-        height: parent ? parent.height : 0
 
         OmemoKeysPage {
             anchors.fill: parent
@@ -106,16 +99,9 @@ Page {
         return true
     }
 
-    Dialog {
+    FullScreenSheet {
         id: xmlSheet
         objectName: "xmlSheet"
-        parent: Overlay.overlay
-        modal: true
-        padding: 0
-        x: 0
-        y: 0
-        width: parent ? parent.width : 0
-        height: parent ? parent.height : 0
 
         // "" for a message that never had a stanza built.
         property alias xml: xmlPage.xml
