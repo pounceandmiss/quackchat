@@ -180,6 +180,7 @@ qt_add_qml_module(quack
         MessageXmlWindow.qml
         AppShell.qml
         AccountRail.qml
+        AccountBadge.qml
         SheetDialog.qml
         PageHeader.qml
         AddAccountSheet.qml

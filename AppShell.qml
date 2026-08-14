@@ -4,10 +4,10 @@ import QtQuick
 import QtQuick.Controls
 import Quack
 
-// Wide window: rail | list | chat side by side. Narrow: one column showing the
-// list, or the open chat pushed over it with a back button, with the rail moved
-// into a pull-out drawer - 64px of permanent chrome is a sixth of a phone's
-// width. One instance per window.
+// Wide window: list | chat side by side. Narrow: one column showing the list,
+// or the open chat pushed over it with a back button. The account rail is a
+// pull-out drawer at either width, reached from the list's header. One instance
+// per window.
 Item {
     id: shell
     objectName: "appShell"
@@ -19,19 +19,16 @@ Item {
 
     readonly property bool wide: width >= 720
 
-    // Where the columns start. Stacked there is no rail in the layout - it is in
-    // the drawer - so the list and chat each begin at the left edge.
-    readonly property real railWidth: wide ? accountRail.width : 0
     // `listWidth` is what the divider was last dragged to, `listSpan` what the
     // shell can actually give it. Keeping them apart lets a window too narrow to
     // honour the drag squeeze the column without forgetting what it was asked
     // for.
     property real listWidth: 320
     readonly property real listSpan: wide ? clampListWidth(listWidth) : width
-    // Narrower than this stops being a conversation list; wider than half of
-    // what the rail leaves takes the larger share from the chat.
+    // Narrower than this stops being a conversation list; wider than half the
+    // window takes the larger share from the chat.
     function clampListWidth(w) {
-        return Math.max(220, Math.min(w, (width - railWidth) * 0.5))
+        return Math.max(220, Math.min(w, width * 0.5))
     }
 
     // Fall back to the first available account when none is selected (or the
@@ -148,10 +145,6 @@ Item {
         searching = false
     }
 
-    // Back over the breakpoint the rail is in the layout again, which would
-    // leave the drawer holding a second copy of it.
-    onWideChanged: if (wide) railDrawer.close()
-
     // Android's system back arrives as a close request. Unwind one navigation
     // step instead: message selection first, then the open chat in the
     // stacked layout. Returns false when there's nothing left to pop.
@@ -184,30 +177,16 @@ Item {
         return false
     }
 
-    // Takes its own compact width; `railWidth` reads it back off the rail rather
-    // than repeating it.
-    AccountRail {
-        id: accountRail
-        height: shell.height
-        // Narrow, the same rail is in the drawer instead.
-        visible: shell.wide
-        currentAccount: shell.currentAccount
-        onSelectAccount: (jid) => shell.currentAccount = jid
-    }
-
     ConversationsPage {
         // Stacked, drifts left under the arriving chat rather than sitting
         // still, so the two do not read as one sheet.
-        x: shell.wide ? shell.railWidth : -shell.slide * shell.width * 0.22
+        x: shell.wide ? 0 : -shell.slide * shell.width * 0.22
         width: shell.listSpan
         height: shell.height
         // Hidden once a chat is open in the narrow layout - but not before the
         // push lands, or there would be no list for the chat to slide over.
         visible: !shell.searching && (shell.wide || shell.listUp)
         account: shell.currentAccount
-        // The list is the only pane the rail is missing from that can still
-        // reach it, so its header carries the way in.
-        showAccounts: !shell.wide
         onOpenAccounts: railDrawer.open()
         onOpenChat: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
         onPopOutChat: (jid, name, groupchat) => {
@@ -221,7 +200,6 @@ Item {
         id: searchPane
         // Stacked, it takes the whole width from the open chat; side by side it
         // takes the conversations list's column.
-        x: shell.railWidth
         width: shell.listSpan
         height: shell.height
         visible: shell.searching
@@ -266,13 +244,12 @@ Item {
         }
     }
 
-    // Wide, the chat is the column past the divider, taking whatever the rail
-    // and the list leave. Stacked, it is a card pushed over the list, so it
-    // takes the full width and rides in from the right edge.
+    // Wide, the chat is the column past the divider, taking whatever the list
+    // leaves. Stacked, it is a card pushed over the list, so it takes the full
+    // width and rides in from the right edge.
     ChatPage {
         id: chatPage
-        x: shell.wide ? shell.railWidth + shell.listSpan + 1
-                      : (1 - shell.slide) * shell.width
+        x: shell.wide ? shell.listSpan + 1 : (1 - shell.slide) * shell.width
         width: shell.wide ? shell.width - x : shell.width
         height: shell.height
         visible: shell.wide || (shell.chatUp && !shell.searching)
@@ -296,7 +273,7 @@ Item {
     // landing in the chat behind it.
     Item {
         id: divider
-        x: shell.railWidth + shell.listSpan
+        x: shell.listSpan
         // Reaches to the right of the hairline only, so it is grabbable by touch
         // without covering the list's scrollbar.
         width: 18
@@ -357,9 +334,9 @@ Item {
         }
     }
 
-    // The narrow layout's rail. A Drawer parents to the window overlay, so it
-    // covers the whole window rather than the shell's inset area; the rail reads
-    // the safe margins back for itself.
+    // A Drawer parents to the window overlay, so it covers the whole window
+    // rather than the shell's inset area; the rail reads the safe margins back
+    // for itself.
     Drawer {
         id: railDrawer
         objectName: "accountDrawer"
@@ -373,10 +350,9 @@ Item {
         // window overlay.
         height: parent ? parent.height : 0
         padding: 0
-        // Draggable only where the rail would otherwise be: wide it is in the
-        // layout already, and over an open chat the left edge belongs to going
-        // back to the list.
-        interactive: !shell.wide && shell.currentChatJid === ""
+        // Over a chat pushed on top of the list, the left edge belongs to going
+        // back rather than to the rail.
+        interactive: !shell.chatOnTop
         background: Rectangle {
             // Matches the rail filling it, so the slide shows no seam.
             color: Theme.rail
@@ -389,7 +365,6 @@ Item {
 
         AccountRail {
             anchors.fill: parent
-            expanded: true
             currentAccount: shell.currentAccount
             // It covers the list the pick was made for, so it closes behind you.
             onSelectAccount: (jid) => {

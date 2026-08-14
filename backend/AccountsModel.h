@@ -40,9 +40,10 @@ public:
     // (Re)enumerate accounts from the backend (all + the enabled subset).
     Q_INVOKABLE void refresh();
 
-    // Bumped on every conn-state change. connStateFor() is a plain call, so a
-    // QML binding on it has nothing to re-evaluate against; reading this in the
-    // same binding gives it the dependency.
+    // Bumped whenever an account's connection state or enabled flag changes.
+    // connStateFor() and isEnabled() are plain calls, so a QML binding on them
+    // has nothing to re-evaluate against; reading this in the same binding gives
+    // it the dependency.
     int connRev() const { return m_connRev; }
 
     // Per-JID lookups; the rail keys everything off the JID.

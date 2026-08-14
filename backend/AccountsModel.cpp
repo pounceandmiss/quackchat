@@ -214,6 +214,8 @@ void AccountsModel::applyEnabledList(const QVariantList &jids) {
         const bool en = m_enabledJids.contains(m_accounts.at(i).jid);
         if (m_accounts[i].enabled != en) {
             m_accounts[i].enabled = en;
+            ++m_connRev;
+            emit connRevChanged();
             const QModelIndex idx = index(i);
             emit dataChanged(idx, idx, {EnabledRole});
         }
@@ -260,6 +262,8 @@ void AccountsModel::setEnabled(const QString &jid, bool enabled) {
     if (i < 0 || m_accounts.at(i).enabled == enabled)
         return;
     m_accounts[i].enabled = enabled;
+    ++m_connRev;
+    emit connRevChanged();
     const QModelIndex idx = index(i);
     emit dataChanged(idx, idx, {EnabledRole});
 }

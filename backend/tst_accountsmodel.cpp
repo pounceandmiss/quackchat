@@ -90,11 +90,19 @@ void TestAccountsModel::addedRemovedEvents() {
 void TestAccountsModel::enableDisableEvents() {
     AccountsModel m;
     m.applyList(QVariantList{"amy@h"});
+    // isEnabled() is a call, so a QML binding on it re-runs off connRev or not
+    // at all - the header badge would sit on a colour that stopped being true.
+    QSignalSpy rev(&m, &AccountsModel::connRevChanged);
     QVERIFY(!enabledAt(m, 0));
     m.handleEvent("account", "Enabled", QVariantMap{{"acc", "amy@h"}});
     QVERIFY(enabledAt(m, 0));
+    QCOMPARE(rev.count(), 1);
     m.handleEvent("account", "Disabled", QVariantMap{{"acc", "amy@h"}});
     QVERIFY(!enabledAt(m, 0));
+    QCOMPARE(rev.count(), 2);
+    m.applyEnabledList(QVariantList{"amy@h"});
+    QVERIFY(enabledAt(m, 0));
+    QCOMPARE(rev.count(), 3);
 }
 
 // An <Enabled> for an account not yet listed still surfaces it (fresh add race).

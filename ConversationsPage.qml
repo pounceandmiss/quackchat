@@ -11,9 +11,6 @@ Page {
     id: page
     objectName: "conversationsPane"
     property string account: ""
-    // Set in the narrow layout, where the account rail is a drawer rather than
-    // a column of its own and this header is the way to it.
-    property bool showAccounts: false
     signal openChat(string jid, string name, bool groupchat)
     signal popOutChat(string jid, string name, bool groupchat)
     signal startSearch()
@@ -25,6 +22,17 @@ Page {
     // why the handlers check it rather than assume the row they came from.
     readonly property ChatListModel chatList:
         account !== "" ? App.chatListFor(account) : null
+
+    // connRev is read purely to give these a dependency: both lookups are calls,
+    // so nothing would re-run them otherwise.
+    readonly property string connState: {
+        App.accounts.connRev
+        return App.accounts.connStateFor(page.account)
+    }
+    readonly property bool accountEnabled: {
+        App.accounts.connRev
+        return App.accounts.isEnabled(page.account)
+    }
 
     // What the list actually shows: the account's chats, narrowed by the filter
     // box and in the order this window was asked for. Per view, so typing here
@@ -49,18 +57,33 @@ Page {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 60
-                // The glyph button carries its own padding, so the text lines
-                // up with the title either way.
-                Layout.leftMargin: page.showAccounts ? 4 : 16
+                // Lines the badge up with the avatars in the rows below it.
+                Layout.leftMargin: 16
                 Layout.rightMargin: 8
                 spacing: 8
-                IconButton {
+                // The way to the rail, which is a drawer. The account's own face
+                // rather than a hamburger: with the rail shut, this dot is the
+                // only standing sign of a dropped connection.
+                ToolButton {
+                    id: accountsBtn
                     objectName: "accountsButton"
-                    iconPath: Icons.menu
+                    Layout.preferredWidth: 40
+                    Layout.preferredHeight: 40
+                    padding: 5
                     Accessible.name: qsTr("Accounts")
-                    glyphColor: Theme.textDim
-                    visible: page.showAccounts
                     onClicked: page.openAccounts()
+                    contentItem: AccountBadge {
+                        objectName: "accountStatusBadge"
+                        jid: page.account
+                        connState: page.connState
+                        acctEnabled: page.accountEnabled
+                        dotSize: 11
+                        ringColor: Theme.surface
+                    }
+                    background: Rectangle {
+                        color: accountsBtn.hovered ? Theme.menuHover : "transparent"
+                        radius: 6
+                    }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -498,20 +521,17 @@ Page {
         font.pixelSize: 14
         text: {
             if (page.account === "")
-                return "No account selected.\nUse + on the left to add one."
+                return "No account selected.\nUse the accounts button above to add one."
             // A filter hiding everything is not an empty account, and saying
             // "no conversations yet" over a typed query reads as a wrong answer.
             if (visibleChats.totalCount > 0)
                 return "Nothing here matches \"" + filterField.text + "\"."
-            // connRev is read purely to give this binding a dependency:
-            // connStateFor is a call, so nothing would re-run it otherwise.
-            App.accounts.connRev
             // A load that failed leaves the list as empty as one that succeeded
             // with nothing in it, so say which happened.
             const failure = page.chatList ? page.chatList.loadError : ""
             if (failure !== "")
                 return "Couldn't load conversations.\n" + failure
-            switch (App.accounts.connStateFor(page.account)) {
+            switch (page.connState) {
             case "connected":
                 return "Connected as " + page.account + ".\nNo conversations yet."
             case "auth-error":

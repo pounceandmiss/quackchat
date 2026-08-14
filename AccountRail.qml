@@ -5,36 +5,24 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quack
 
-// Discord/Element-style rail: one avatar per account, bound to App.accounts.
-//
-// Two densities from the one component: compact (the default) is the 64px strip
-// beside the conversations list, expanded is what the narrow layout's drawer
-// shows, where there is room for the JID, the connection state and a
-// per-account menu button.
+// One row per account, bound to App.accounts: avatar, JID, connection state and
+// a per-account menu button. Lives in the shell's drawer rather than beside the
+// conversations list - a column narrow enough to leave permanently has room for
+// avatars and nothing else.
 Rectangle {
     id: rail
     objectName: "accountRail"
     property string currentAccount: ""
-    property bool expanded: false
     signal selectAccount(string jid)
 
-    // Its own fill rather than Theme.background: beside a near-white chat list
+    // Its own fill rather than Theme.background: over a near-white chat list
     // the app background is a percent or two off and the two read as one pane.
     color: Theme.rail
-    implicitWidth: expanded ? 280 : 64
+    implicitWidth: 280
 
-    // In the drawer this spans the window, system bars included; inline it sits
-    // within the shell, which ShellWindow has already kept clear - so 0 there.
+    // The drawer spans the window, system bars included.
     readonly property real topInset: SafeArea.margins.top
     readonly property real bottomInset: SafeArea.margins.bottom
-
-    // The rail's own edge as a column; in the drawer, the drawer draws it.
-    Rectangle {
-        anchors.right: parent.right
-        width: 1; height: parent.height
-        color: Theme.hairline
-        visible: !rail.expanded
-    }
 
     // Android and iOS are single-window, so there the details get a full-screen
     // sheet over the shell instead of a window of their own.
@@ -47,23 +35,8 @@ Rectangle {
         }
     }
 
-    // Maps a connState string to the status-dot color.
-    function stateColor(state, enabled) {
-        if (!enabled)
-            return Theme.textDim
-        switch (state) {
-        case "connected": return Theme.positive
-        case "auth-error":
-        case "conn-error": return Theme.negative
-        case "waiting":
-        case "disconnected": return Theme.warning
-        case "": return Theme.textDim
-        default: return Theme.accent2 // connecting / authenticating / binding
-        }
-    }
-
-    // The same states in words, for the expanded rows: one red dot cannot say
-    // whether the server is unreachable or the password was rejected.
+    // The state in words beside the badge's dot: one red dot cannot say whether
+    // the server is unreachable or the password was rejected.
     function stateText(state, enabled) {
         if (!enabled)
             return "disabled"
@@ -90,7 +63,7 @@ Rectangle {
             model: App.accounts
             clip: true
             topMargin: 10 + rail.topInset
-            spacing: rail.expanded ? 2 : 8
+            spacing: 2
 
             delegate: Item {
                 id: cell
@@ -102,12 +75,10 @@ Rectangle {
                 readonly property string connState: cell.model.connState
                 readonly property bool acctEnabled: cell.model.enabled
                 width: ListView.view.width
-                height: rail.expanded ? 64 : 56
+                height: 64
 
                 readonly property bool current: cell.jid === rail.currentAccount
 
-                // Expanded rows have the width to take a full wash; compact has
-                // only the accent tab to mark the current account with.
                 Rectangle {
                     anchors.fill: parent
                     anchors.leftMargin: 6
@@ -116,7 +87,7 @@ Rectangle {
                     anchors.bottomMargin: 2
                     radius: 10
                     color: Theme.menuHover
-                    visible: rail.expanded && cell.current
+                    visible: cell.current
                 }
 
                 // Tall accent tab for the current account, a small nub otherwise.
@@ -131,41 +102,22 @@ Rectangle {
                     Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                 }
 
-                // Circle that squares off into a rounded tile while current.
-                Avatar {
+                AccountBadge {
                     id: badge
-                    x: rail.expanded ? 16 : (cell.width - width) / 2
+                    x: 16
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 44; height: 44
-                    radius: cell.current ? 12 : 22
-                    opacity: cell.acctEnabled ? 1.0 : 0.45
-                    Behavior on radius { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                    account: cell.jid
                     jid: cell.jid
-                    label: cell.jid
+                    connState: cell.connState
+                    acctEnabled: cell.acctEnabled
+                    current: cell.current
                 }
 
-                Rectangle {
-                    anchors.right: badge.right
-                    anchors.bottom: badge.bottom
-                    width: 13; height: 13
-                    radius: 6.5
-                    color: rail.stateColor(cell.connState, cell.acctEnabled)
-                    border.width: 2
-                    // Punches the dot out of the rail it sits on, so it tracks
-                    // the rail's fill rather than the window's.
-                    border.color: Theme.rail
-                }
-
-                // Compact reaches this menu by right-click or long press, which
-                // an expanded row has the width to spell out as a button.
                 IconButton {
                     id: moreBtn
                     objectName: "accountRowMenuButton"
                     anchors.right: parent.right
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: rail.expanded
                     iconPath: Icons.moreHoriz
                     Accessible.name: qsTr("Account actions")
                     glyphColor: Theme.textDim
@@ -178,7 +130,6 @@ Rectangle {
                     anchors.right: moreBtn.left
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 1
-                    visible: rail.expanded
 
                     Text {
                         objectName: "accountRowJid"
@@ -193,7 +144,7 @@ Rectangle {
                         objectName: "accountRowState"
                         Layout.fillWidth: true
                         text: rail.stateText(cell.connState, cell.acctEnabled)
-                        color: rail.stateColor(cell.connState, cell.acctEnabled)
+                        color: badge.stateColor
                         font.pixelSize: 11
                         elide: Text.ElideRight
                     }
@@ -249,13 +200,10 @@ Rectangle {
             }
         }
 
-        // Expanded only: in the compact strip the ＋ is one more circle in the
-        // column, and a rule above it would read as a break in the list.
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
             color: Theme.hairline
-            visible: rail.expanded
         }
 
         ToolButton {
@@ -270,7 +218,7 @@ Rectangle {
             contentItem: Item {
                 Rectangle {
                     id: plus
-                    x: rail.expanded ? 16 : (parent.width - width) / 2
+                    x: 16
                     y: (parent.height - rail.bottomInset - height) / 2
                     width: 44; height: 44
                     radius: 22
@@ -288,7 +236,6 @@ Rectangle {
                     anchors.left: plus.right
                     anchors.leftMargin: 12
                     anchors.verticalCenter: plus.verticalCenter
-                    visible: rail.expanded
                     text: "Add account"
                     color: Theme.textPrimary
                     font.pixelSize: 14

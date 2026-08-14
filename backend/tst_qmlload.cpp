@@ -1215,11 +1215,10 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
-    // Narrow, the account rail is not a column but a pull-out drawer: 64px of
-    // permanent chrome is a sixth of a phone's width. The list header's ☰ is
-    // the way in, back is the way out, and widening past the breakpoint puts
-    // the rail back in the layout with nothing left for the drawer to show.
-    void narrowLayoutMovesTheAccountRailIntoADrawer() {
+    // The account rail is a pull-out drawer at every width, never a column: the
+    // list header's badge is the way in and back is the way out, at 400px and at
+    // 1000px alike.
+    void theAccountRailIsADrawerAtEveryWidth() {
         QStringList warnings;
         QQmlEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -1253,14 +1252,26 @@ private slots:
         shell->setParentItem(win.contentItem());
         QVERIFY(!shell->property("wide").toBool());
 
-        // The inline rail is out of the layout, and the list header has picked
-        // up the only way back to it.
-        QQuickItem *inlineRail = findItem(shell, "accountRail");
-        QVERIFY(inlineRail);
-        QVERIFY(!inlineRail->isVisible());
-        QQuickItem *hamburger = findItem(shell, "accountsButton");
-        QVERIFY(hamburger);
-        QVERIFY(hamburger->isVisible());
+        // No rail among the shell's own items at either width: the only copy is
+        // the drawer's, and the list header holds the way to it.
+        QVERIFY2(!findItem(shell, "accountRail"), "the rail is back in the layout");
+        QQuickItem *accountsBtn = findItem(shell, "accountsButton");
+        QVERIFY(accountsBtn);
+        QVERIFY(accountsBtn->isVisible());
+
+        // The button wears the current account, and its dot follows the
+        // connection - with the rail shut nothing else shows it.
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        QQuickItem *badge = findItem(shell, "accountStatusBadge");
+        QVERIFY(badge);
+        QCOMPARE(badge->property("jid").toString(), QString("me@example.com"));
+        QCOMPARE(badge->property("stateColor").value<QColor>(),
+                 theme->property("positive").value<QColor>());
+        app->accounts()->setConnState("me@example.com", "auth-error");
+        QTRY_COMPARE(badge->property("stateColor").value<QColor>(),
+                     theme->property("negative").value<QColor>());
+        app->accounts()->setConnState("me@example.com", "connected");
 
         // A Drawer hangs off the window overlay rather than the shell's own
         // items, so it is the QObject tree that finds it.
@@ -1269,22 +1280,21 @@ private slots:
         QVERIFY(!drawer->property("opened").toBool());
 
         const QPoint tap = win.contentItem()
-                               ->mapFromItem(hamburger,
-                                             QPointF(hamburger->width() / 2,
-                                                     hamburger->height() / 2))
+                               ->mapFromItem(accountsBtn,
+                                             QPointF(accountsBtn->width() / 2,
+                                                     accountsBtn->height() / 2))
                                .toPoint();
         QTest::mouseClick(&win, Qt::LeftButton, Qt::NoModifier, tap);
         QTRY_VERIFY2(drawer->property("opened").toBool(),
                      "the header button did not pull the drawer out");
 
-        // The same component at its expanded density.
         auto *drawerRail = drawer->findChild<QQuickItem *>("accountRail");
         QVERIFY(drawerRail);
-        QVERIFY(drawerRail->property("expanded").toBool());
+        // Wide enough to spell the accounts out, which is the whole reason the
+        // rail is a drawer rather than a strip of avatars.
         QVERIFY2(drawerRail->width() > 200,
                  qPrintable(QString("drawer rail is only %1 wide")
                                 .arg(drawerRail->width())));
-        QVERIFY(!inlineRail->property("expanded").toBool());
 
         // A Drawer sizes to its content, and this rail is built from anchors, so
         // it offers no implicit height. Left alone the drawer opens zero-height:
@@ -1359,21 +1369,28 @@ private slots:
         QVERIFY(!drawer->property("interactive").toBool());
         QVERIFY(QMetaObject::invokeMethod(shell, "closeChat"));
 
-        // Wide, the rail is a column again and the header's way in goes with it.
+        // Wide changes nothing about the rail: same drawer, same button, and
+        // the list still starts at the window's edge with no column in front
+        // of it.
         shell->setWidth(1000);
         QTRY_VERIFY(shell->property("wide").toBool());
-        QVERIFY(inlineRail->isVisible());
-        QVERIFY(!hamburger->isVisible());
-
-        // Growing while it is open leaves two copies of the rail on screen,
-        // so the drawer has to let go on the way past the breakpoint.
-        shell->setWidth(400);
-        QTRY_VERIFY(!shell->property("wide").toBool());
+        QVERIFY(accountsBtn->isVisible());
+        QQuickItem *list = findItem(shell, "conversationsPane");
+        QVERIFY(list);
+        QTRY_COMPARE(list->x(), qreal(0));
         QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
         QTRY_VERIFY(drawer->property("opened").toBool());
+
+        // Crossing the breakpoint leaves it be: there is no second copy of the
+        // rail for it to double.
+        shell->setWidth(400);
+        QTRY_VERIFY(!shell->property("wide").toBool());
+        QVERIFY(drawer->property("opened").toBool());
         shell->setWidth(1000);
-        QTRY_VERIFY2(!drawer->property("opened").toBool(),
-                     "the drawer stayed out after the rail came back inline");
+        QTRY_VERIFY(shell->property("wide").toBool());
+        QVERIFY(drawer->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(drawer, "close"));
+        QTRY_VERIFY(!drawer->property("opened").toBool());
 
         win.grabWindow();
         QCoreApplication::processEvents();
@@ -1589,9 +1606,9 @@ private slots:
         }
     }
 
-    // The rail stands beside the chat list wide, and slides over it narrow, so
-    // the two fills have to be different paint. They cannot be told apart at
-    // all if a palette hands both the same value.
+    // The rail slides over the chat list, so the two fills have to be different
+    // paint. They cannot be told apart at all if a palette hands both the same
+    // value.
     void theRailNeverSharesAFillWithTheChatList() {
         QQmlEngine e;
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
