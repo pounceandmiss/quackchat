@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Qt's template, plus the cache. Opening a file is an ACTION_VIEW on a
+     content:// url from this provider, and a path listed here is the only kind
+     it can hand out - which includes the copy of a picked document, under
+     QStandardPaths::CacheLocation. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- For getFilesDirectory(), where tacky keeps its attachments -->
+    <files-path name="files_path" path="/"/>
+    <!-- For getCacheDir() -->
+    <cache-path name="cache_path" path="/"/>
+    <!-- For getExternalStorageDirectory() -->
+    <external-path name="external_path" path="/"/>
+    <!-- For getExternalFilesDir() -->
+    <external-files-path name="external_files_path" path="/"/>
+    <!-- For getExternalCacheDir() -->
+    <external-cache-path name="external_cache_path" path="/"/>
+</paths>
