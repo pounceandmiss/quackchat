@@ -43,11 +43,6 @@ Item {
         function onCountChanged() { shell.ensureAccount() }
     }
 
-    // The account-wide search stands in for the conversations list rather than
-    // opening beside it, so it works the same in the wide and stacked layouts.
-    // Searching inside one chat happens in the chat's own header.
-    property bool searching: false
-
     // Stacked, opening a chat is a push: it arrives from the right over the
     // conversations list, which drifts the other way underneath it. While it
     // runs both panes are on screen at full width, which is why they are placed
@@ -116,7 +111,6 @@ Item {
         const list = App.chatListFor(account)
         const entry = list ? list.entryFor(jid) : ({})
         currentAccount = account
-        searching = false
         openChat(jid, entry.name || jid, entry.groupchat === true)
     }
 
@@ -139,19 +133,14 @@ Item {
         clearChat()
     }
 
-    function openSearch() {
-        searching = true
-        searchPane.focusInput()
-    }
-
     // Where Ctrl+F lands: an open conversation is what you are most likely
     // looking through, and the whole account is what you mean when there is
-    // none.
+    // none - which is the list's own box, since it searches the archive too.
     function startFind() {
         if (currentChatJid !== "")
             chatPage.openSearch()
         else
-            openSearch()
+            conversations.focusSearch()
     }
 
     onCurrentAccountChanged: {
@@ -165,7 +154,6 @@ Item {
         popping = false
         clearChat()
         easeSlide = true
-        searching = false
     }
 
     // Android's system back arrives as a close request. Unwind one navigation
@@ -187,12 +175,6 @@ Item {
             chatPage.clearSelection()
             return true
         }
-        // Search sits on top of the chat in the stacked layout, so it unwinds
-        // first - the order things were opened in.
-        if (searching) {
-            searching = false
-            return true
-        }
         if (!wide && currentChatJid !== "") {
             closeChat()
             return true
@@ -201,6 +183,7 @@ Item {
     }
 
     ConversationsPage {
+        id: conversations
         // Stacked, drifts left under the arriving chat rather than sitting
         // still, so the two do not read as one sheet.
         x: shell.chatOnTop ? -shell.width * 0.22 : 0
@@ -208,7 +191,7 @@ Item {
         height: shell.height
         // Hidden once a chat is open in the narrow layout - but not before the
         // push lands, or there would be no list for the chat to slide over.
-        visible: !shell.searching && (shell.wide || shell.listUp)
+        visible: shell.wide || shell.listUp
         Behavior on x {
             enabled: !shell.wide && shell.easeSlide
             XAnimator {
@@ -224,21 +207,10 @@ Item {
             if (!Theme.mobile)
                 AppWindows.popOut(shell.currentAccount, jid, name, groupchat)
         }
-        onStartSearch: shell.openSearch()
-    }
-
-    SearchPage {
-        id: searchPane
-        // Stacked, it takes the whole width from the open chat; side by side it
-        // takes the conversations list's column.
-        width: shell.listSpan
-        height: shell.height
-        visible: shell.searching
-        account: shell.currentAccount
-        onClosed: shell.searching = false
-        // The hit names its own chat, which need not be the open one. Whether
+        // A hit names its own chat, which need not be the open one. Whether
         // that chat is a room is the chat list's answer, not a reading of the
-        // JID.
+        // JID. Stacked, opening it is the same push a row is; the query is
+        // still typed behind it on the way back.
         onOpenHit: (jid, ts, matches) => {
             if (jid !== shell.currentChatJid) {
                 const list = App.chatListFor(shell.currentAccount)
@@ -246,10 +218,6 @@ Item {
                 shell.openChat(jid, entry.name ?? "", entry.groupchat === true)
             }
             chatPage.jumpTo(ts, matches)
-            // Stacked, the results are covering the message they point at; side
-            // by side both are on screen and the list stays.
-            if (!shell.wide)
-                shell.searching = false
         }
     }
 
@@ -280,7 +248,7 @@ Item {
         // From the column, not from this pane's own x, which lags the animator.
         width: shell.wide ? shell.width - shell.listSpan - 1 : shell.width
         height: shell.height
-        visible: shell.wide || (shell.chatUp && !shell.searching)
+        visible: shell.wide || shell.chatUp
         Behavior on x {
             enabled: !shell.wide && shell.easeSlide
             XAnimator {

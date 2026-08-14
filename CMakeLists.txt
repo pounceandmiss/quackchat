@@ -214,7 +214,8 @@ qt_add_qml_module(quack
         JoinRoomSheet.qml
         TextPromptDialog.qml
         ConfirmDialog.qml
-        SearchPage.qml
+        MessageHits.qml
+        SectionLabel.qml
         ChatPage.qml
         ChatBubble.qml
         Avatar.qml

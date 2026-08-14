@@ -7,13 +7,20 @@ import Quack
 
 // The conversations list for one account. `account` selects which per-account
 // ChatListModel to bind (App.chatListFor); an empty account yields an empty list.
+//
+// One box searches both halves of what a chat is: the typed word narrows this
+// list to the conversations it names, and the archive hits it matches inside
+// them follow underneath (MessageHits). Chats first, since a name is the
+// likelier thing to be after and the cheaper thing to answer with.
 Page {
     id: page
     objectName: "conversationsPane"
     property string account: ""
     signal openChat(string jid, string name, bool groupchat)
     signal popOutChat(string jid, string name, bool groupchat)
-    signal startSearch()
+    // A message the search found, which names its own chat. matches travels
+    // with it so the chat can mark the same run the row marked.
+    signal openHit(string chatJid, real ts, var matches)
     signal openAccounts()
     background: Rectangle { color: Theme.surface }
 
@@ -34,14 +41,21 @@ Page {
         return App.accounts.isEnabled(page.account)
     }
 
-    // What the list actually shows: the account's chats, narrowed by the filter
+    // What the list actually shows: the account's chats, narrowed by the search
     // box and in the order this window was asked for. Per view, so typing here
     // leaves the same account's other windows alone.
     ChatListFilter {
         id: visibleChats
         objectName: "chatListFilter"
         source: page.chatList
-        query: filterField.text
+        query: searchField.text
+    }
+
+    // Where Ctrl+F lands with no chat open, and what the shell hands the focus
+    // to when it wants a search started.
+    function focusSearch() {
+        searchField.forceActiveFocus()
+        searchField.selectAll()
     }
 
     header: PageHeader {
@@ -113,16 +127,6 @@ Page {
                     onClicked: newChatSheet.open()
                 }
                 IconButton {
-                    objectName: "searchButton"
-                    iconPath: Icons.search
-                    iconSize: 20
-                    Accessible.name: qsTr("Search all chats")
-                    glyphColor: Theme.textDim
-                    enabled: page.account !== ""
-                    opacity: enabled ? 1 : 0.4
-                    onClicked: page.startSearch()
-                }
-                IconButton {
                     id: overflowBtn
                     iconPath: Icons.moreHoriz
                     Accessible.name: qsTr("More")
@@ -133,44 +137,45 @@ Page {
                 }
             }
 
-            // The Tk list's search entry: it narrows what is already here,
-            // which is a different question from the magnifier above it (search
-            // every message in the account). Permanent rather than revealed, as
-            // it is there.
+            // The Tk list's search entry, asking both of the questions a typed
+            // word can mean: it narrows the list to the chats it names, and the
+            // archive search under the list answers for the messages. Permanent
+            // rather than revealed, as it is there.
             TextField {
-                id: filterField
-                objectName: "chatFilter"
+                id: searchField
+                objectName: "searchField"
                 Layout.fillWidth: true
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.bottomMargin: 8
                 Layout.preferredHeight: 34
-                placeholderText: "Filter chats"
+                placeholderText: "Search chats and messages"
                 enabled: page.account !== ""
+                inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 font.pixelSize: 13
                 leftPadding: 10
-                rightPadding: clearFilter.visible ? clearFilter.width + 6 : 10
+                rightPadding: clearSearch.visible ? clearSearch.width + 6 : 10
                 background: Rectangle {
                     radius: 8
                     color: Theme.field
                     border.width: 1
-                    border.color: filterField.activeFocus ? Theme.accent
+                    border.color: searchField.activeFocus ? Theme.accent
                                                           : Theme.hairline
                 }
                 IconButton {
-                    id: clearFilter
-                    objectName: "clearFilterButton"
+                    id: clearSearch
+                    objectName: "clearSearchButton"
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 28
                     height: 28
                     iconPath: Icons.close
-                    Accessible.name: qsTr("Clear filter")
+                    Accessible.name: qsTr("Clear search")
                     glyphColor: Theme.textDim
-                    visible: filterField.text !== ""
-                    onClicked: filterField.clear()
+                    visible: searchField.text !== ""
+                    onClicked: searchField.clear()
                 }
-                Keys.onEscapePressed: filterField.clear()
+                Keys.onEscapePressed: searchField.clear()
             }
         }
     }
@@ -261,6 +266,16 @@ Page {
                 opacity: listScroll.pressed ? 0.8 : listScroll.active ? 0.5 : 0.25
                 Behavior on opacity { NumberAnimation { duration: 150 } }
             }
+        }
+
+        // With nothing typed the list is just the chats, and a heading over the
+        // only thing there is says nothing. It earns its place once the archive
+        // hits are underneath it.
+        header: SectionLabel {
+            width: listView.width
+            text: "Chats"
+            visible: searchField.text !== "" && listView.count > 0
+            height: visible ? implicitHeight : 0
         }
 
         delegate: ItemDelegate {
@@ -398,6 +413,17 @@ Page {
                 }
             }
         }
+
+        // The same word asked of the archive, answered under the chats it
+        // named. In the foot of this list rather than beside it, so one flick
+        // carries both halves and the chats keep the top.
+        footer: MessageHits {
+            width: listView.width
+            account: page.account
+            query: searchField.text
+            chatMatches: listView.count
+            onOpenHit: (chatJid, ts, matches) => page.openHit(chatJid, ts, matches)
+        }
     }
 
     // Everything a row can be asked to do. The menu holds the row it was opened
@@ -513,10 +539,12 @@ Page {
     }
 
     // Empty state, reflecting the real connection state (not just "empty").
+    // Only with nothing typed: what a query found is the search's own answer,
+    // and it is given under the list rather than over it.
     Text {
         objectName: "emptyHint"
         anchors.centerIn: parent
-        visible: listView.count === 0
+        visible: listView.count === 0 && searchField.text === ""
         width: parent.width - 60
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
@@ -525,10 +553,6 @@ Page {
         text: {
             if (page.account === "")
                 return "No account selected.\nUse the accounts button above to add one."
-            // A filter hiding everything is not an empty account, and saying
-            // "no conversations yet" over a typed query reads as a wrong answer.
-            if (visibleChats.totalCount > 0)
-                return "Nothing here matches \"" + filterField.text + "\"."
             // A load that failed leaves the list as empty as one that succeeded
             // with nothing in it, so say which happened.
             const failure = page.chatList ? page.chatList.loadError : ""

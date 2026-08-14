@@ -22,6 +22,7 @@
 #include "AppController.h"
 #include "AvatarEncoder.h"
 #include "CallsModel.h"
+#include "ChatListFilter.h"
 #include "ChatListModel.h"
 #include "OmemoDevicesModel.h"
 #include "SearchModel.h"
@@ -181,8 +182,9 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
-    // Results are drawn from several chats at once, each of which brings its
-    // own name cache - the part of the page that only runs with rows in it.
+    // Message hits stand in the foot of the conversations list, drawn from
+    // several chats at once - each of which brings its own name cache, the part
+    // of the section that only runs with rows in it.
     void drawsSearchResults() {
         QStringList warnings;
         QQmlEngine e;
@@ -197,7 +199,7 @@ private slots:
         win.show();
         QVERIFY(QTest::qWaitForWindowExposed(&win));
 
-        QQmlComponent comp(&e, "Quack", "SearchPage");
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
         QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
         QScopedPointer<QObject> obj(comp.createWithInitialProperties(
             {{"account", "me@example.com"},
@@ -208,8 +210,10 @@ private slots:
         QVERIFY(page);
         page->setParentItem(win.contentItem());
 
-        auto *model = page->findChild<SearchModel *>();
-        QVERIFY(model);
+        // The section lives in the list's footer, which the view builds on its
+        // first layout rather than with the page.
+        SearchModel *model = nullptr;
+        QTRY_VERIFY((model = page->findChild<SearchModel *>()));
         model->setQuery("pizza");
         model->search(); // the backend is unstarted, so nothing answers it
         model->applyResult(
@@ -223,14 +227,59 @@ private slots:
                 .toVariantMap(),
             false);
 
-        QQuickItem *list = findItem(win.contentItem(), "searchResults");
-        QVERIFY(list);
-        QTRY_COMPARE(list->property("count").toInt(), 2);
+        QQuickItem *hits = findItem(win.contentItem(), "messageHits");
+        QVERIFY(hits);
+        QTRY_COMPARE(hits->property("count").toInt(), 2);
         // One name cache per chat the results touch, built as they arrive.
-        QTRY_COMPARE(page->property("authorsByChat").toMap().size(), 2);
+        QTRY_COMPARE(hits->property("authorsByChat").toMap().size(), 2);
         win.grabWindow(); // force the delegates to lay out and bind
         QCoreApplication::processEvents();
         assertNoQmlErrors(warnings);
+    }
+
+    // One box, both halves of what a typed word can mean: the chats it names
+    // are narrowed to at once, and the archive is asked for the messages behind
+    // them once the typing settles.
+    void oneBoxSearchesChatsAndMessages() {
+        QQmlEngine e;
+        e.singletonInstance<AppController *>("Quack", "App");
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *field = findItem(win.contentItem(), "searchField");
+        QVERIFY(field);
+        field->setProperty("text", "pizza");
+
+        // The list narrows on the keystroke; nothing is waited on for that.
+        auto *filter = page->findChild<ChatListFilter *>();
+        QVERIFY(filter);
+        QCOMPARE(filter->query(), QStringLiteral("pizza"));
+
+        // The archive is a round trip, so it comes after the pause. The backend
+        // is unstarted, so the request only ever goes out.
+        SearchModel *model = nullptr;
+        QTRY_VERIFY((model = page->findChild<SearchModel *>()));
+        QCOMPARE(model->query(), QStringLiteral("pizza"));
+        QTRY_VERIFY(model->searching());
+
+        // And emptying the box calls it off rather than searching for nothing.
+        field->setProperty("text", "");
+        QTRY_VERIFY(!model->searching());
+        QCOMPARE(filter->query(), QString());
     }
 
     // Searching inside a chat walks the hits in the feed instead of listing
