@@ -37,6 +37,7 @@ private slots:
     void sortByNameUsesWhatTheRowShows();
     void switchingBackToRecentRestoresTheSourceOrder();
     void totalCountSeesPastTheFilter();
+    void countFollowsTheFilterAndNotifies();
     void filteringOneViewLeavesTheModelAlone();
 };
 
@@ -122,6 +123,33 @@ void TestChatListFilter::totalCountSeesPastTheFilter() {
 
 // Every window on an account shares one ChatListModel, which is the whole
 // reason the filter is a proxy: typing in one list must not touch another.
+// What the view above the rows is sized from - a heading only stands while
+// there is something under it - so it has to notify on the filter's own account
+// and not just on the source's.
+void TestChatListFilter::countFollowsTheFilterAndNotifies() {
+    ChatListModel m;
+    seed(m);
+    ChatListFilter f;
+    f.setSource(&m);
+    QCOMPARE(f.count(), 3);
+
+    QSignalSpy changed(&f, &ChatListFilter::countChanged);
+    f.setQuery("am");
+    QCOMPARE(f.count(), 1);
+    QVERIFY(changed.count() > 0);
+
+    // Nothing left is still a change, and it arrives as one.
+    changed.clear();
+    f.setQuery("nothing matches this");
+    QCOMPARE(f.count(), 0);
+    QVERIFY(changed.count() > 0);
+
+    changed.clear();
+    f.setQuery("");
+    QCOMPARE(f.count(), 3);
+    QVERIFY(changed.count() > 0);
+}
+
 void TestChatListFilter::filteringOneViewLeavesTheModelAlone() {
     ChatListModel m;
     seed(m);

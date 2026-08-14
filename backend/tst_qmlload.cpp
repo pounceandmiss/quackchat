@@ -130,7 +130,11 @@ class TestQmlLoad : public QObject {
                 // gives up after two passes and leaves whatever it had, so this
                 // is a real defect that otherwise only shows as a stray line on
                 // stderr.
-                w.contains("recursive rearrange"))
+                w.contains("recursive rearrange") ||
+                // A property that feeds itself. Qt breaks the cycle wherever it
+                // happens to notice, so what is left on screen is whichever
+                // pass got there last - the same defect, one property wide.
+                w.contains("Binding loop"))
                 QFAIL(qPrintable("QML error: " + w));
     }
 
@@ -235,6 +239,153 @@ private slots:
         win.grabWindow(); // force the delegates to lay out and bind
         QCoreApplication::processEvents();
         assertNoQmlErrors(warnings);
+    }
+
+    // The two headings come and go with what is under them, which moves the
+    // rows below by their height - and a view writes to the very properties a
+    // heading of its own would want to bind. Layout it drives must not answer
+    // back, so this drives the whole cycle and fails on the warning.
+    void sectionHeadingsDoNotFightTheList() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"a@example.com","name":"Amy","last_activity":300},
+            {"jid":"b@example.com","name":"Bob","last_activity":200}
+        ])")
+                             .array()
+                             .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 2);
+        win.grabWindow();
+
+        // Nothing typed: the chats are the only thing here, so neither heading
+        // is standing.
+        QQuickItem *field = findItem(win.contentItem(), "searchField");
+        QVERIFY(field);
+        field->setProperty("text", "Amy");
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+        win.grabWindow();
+        QCoreApplication::processEvents();
+
+        // And the hits arriving grow the section under them.
+        SearchModel *model = nullptr;
+        QTRY_VERIFY((model = page->findChild<SearchModel *>()));
+        model->applyResult(
+            QJsonDocument::fromJson(R"({"messages":[
+                {"timestamp":400,"chat_jid":"a@example.com","from_jid":"a@example.com",
+                 "is_outgoing":false,"content":{"type":"text","body":"amsterdam"}}],
+                "complete":true,"last":"400 a@example.com"})")
+                .object()
+                .toVariantMap(),
+            false);
+        QQuickItem *hits = findItem(win.contentItem(), "messageHits");
+        QVERIFY(hits);
+        QTRY_COMPARE(hits->property("count").toInt(), 1);
+        win.grabWindow();
+        QCoreApplication::processEvents();
+
+        // Typing on leaves no chat matching, so the chats heading goes again
+        // while the messages one stays.
+        field->setProperty("text", "Amyx");
+        QTRY_COMPARE(list->property("count").toInt(), 0);
+        win.grabWindow();
+        QCoreApplication::processEvents();
+
+        assertNoQmlErrors(warnings);
+    }
+
+    // The chat list arrives from the server whole, so a search typed before it
+    // lands - or during any later reload - is standing on a model that resets
+    // under it. The hits must not go with it.
+    void searchResultsSurviveAChatListReload() {
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(
+                             R"([{"jid":"a@example.com","name":"Amy","last_activity":300}])")
+                             .array()
+                             .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+        win.grabWindow();
+
+        QQuickItem *field = findItem(win.contentItem(), "searchField");
+        QVERIFY(field);
+        field->setProperty("text", "Amy");
+
+        SearchModel *model = nullptr;
+        QTRY_VERIFY((model = page->findChild<SearchModel *>()));
+        model->applyResult(
+            QJsonDocument::fromJson(R"({"messages":[
+                {"timestamp":400,"chat_jid":"a@example.com","from_jid":"a@example.com",
+                 "is_outgoing":false,"content":{"type":"text","body":"amy said so"}}],
+                "complete":true,"last":"400 a@example.com"})")
+                .object()
+                .toVariantMap(),
+            false);
+        QTRY_COMPARE(findItem(win.contentItem(), "messageHits")->property("count").toInt(), 1);
+
+        // The reload a fresh roster is: every row replaced at once.
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"a@example.com","name":"Amy","last_activity":300},
+            {"jid":"b@example.com","name":"Bob","last_activity":200}
+        ])")
+                             .array()
+                             .toVariantList());
+        win.grabWindow();
+        QCoreApplication::processEvents();
+
+        // Same model still answering, and the hit still on it: rebuilding the
+        // section would have dropped the results and gone back to the archive
+        // for them.
+        QCOMPARE(page->findChild<SearchModel *>(), model);
+        QQuickItem *hits = findItem(win.contentItem(), "messageHits");
+        QVERIFY(hits);
+        QCOMPARE(hits->property("count").toInt(), 1);
     }
 
     // One box, both halves of what a typed word can mean: the chats it names

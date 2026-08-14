@@ -123,12 +123,12 @@ Column {
         return d.toLocaleDateString(Qt.locale(), Locale.ShortFormat) + " " + hm
     }
 
-    // Every child is hidden with no query, which is what collapses the whole
-    // section to nothing: a Column measures the ones that are showing.
+    // Every child stands down with no query, which is what collapses the whole
+    // section to nothing: a Column measures what its children ask for.
     SectionLabel {
         width: section.width
         text: "Messages"
-        visible: results.count > 0
+        shown: results.count > 0
     }
 
     // A Repeater rather than a list of its own: this is the foot of a list

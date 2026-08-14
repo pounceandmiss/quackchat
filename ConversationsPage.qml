@@ -274,8 +274,7 @@ Page {
         header: SectionLabel {
             width: listView.width
             text: "Chats"
-            visible: searchField.text !== "" && listView.count > 0
-            height: visible ? implicitHeight : 0
+            shown: searchField.text !== "" && visibleChats.count > 0
         }
 
         delegate: ItemDelegate {
@@ -421,7 +420,7 @@ Page {
             width: listView.width
             account: page.account
             query: searchField.text
-            chatMatches: listView.count
+            chatMatches: visibleChats.count
             onOpenHit: (chatJid, ts, matches) => page.openHit(chatJid, ts, matches)
         }
     }
