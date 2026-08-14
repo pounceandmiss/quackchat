@@ -15,6 +15,17 @@ if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
 endif()
 
+# The tests link one binary per suite, which no compiler cache covers, so the
+# linker is what a rebuild waits on. mold is ELF-only and the NDK already hands
+# us lld, so this is the desktop Linux kit alone; mingw and macOS keep theirs.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    find_program(MOLD_PROGRAM mold)
+    if(MOLD_PROGRAM)
+        add_link_options(-fuse-ld=mold)
+    endif()
+endif()
+
 find_package(Qt6 6.5 REQUIRED
     COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test)
 # Desktop notifications on Linux go over the session bus. Optional: without it
