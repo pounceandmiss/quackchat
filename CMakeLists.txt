@@ -187,6 +187,7 @@ qt_add_qml_module(quack
         ShellWindow.qml
         ChatWindow.qml
         AccountSettingsWindow.qml
+        AppSettingsWindow.qml
         OmemoKeysWindow.qml
         MessageXmlWindow.qml
         AppShell.qml
@@ -196,6 +197,7 @@ qt_add_qml_module(quack
         PageHeader.qml
         AddAccountSheet.qml
         AccountSettingsPage.qml
+        AppSettingsPage.qml
         TrustPicker.qml
         TrustList.qml
         Card.qml

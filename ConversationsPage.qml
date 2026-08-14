@@ -175,6 +175,15 @@ Page {
         }
     }
 
+    // Android and iOS are single-window, so there the preferences get a sheet
+    // over the shell rather than a window, as AccountRail does for the account.
+    function openPreferences() {
+        if (Theme.mobile)
+            prefsSheet.open()
+        else
+            AppWindows.preferences()
+    }
+
     // Window-level actions, previously a global toolbar. The keyboard shortcuts
     // (Ctrl+N / Ctrl+T) live on the window; this menu is their mouse path.
     AppMenu {
@@ -207,36 +216,12 @@ Page {
             trailing: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
             onTriggered: visibleChats.sortMode = ChatListFilter.Name
         }
-        // The Tk account window's View menu, flattened the way the sort modes
-        // above are. App-wide, like the theme below them.
-        Repeater {
-            model: [
-                { label: "Images from everyone", value: "everyone" },
-                { label: "Images from contacts", value: "contacts" },
-                { label: "Never load images", value: "never" }
-            ]
-            delegate: MenuEntry {
-                required property var modelData
-                objectName: "autofetch_" + modelData.value
-                text: modelData.label
-                trailing: App.settings.attachmentAutofetch === modelData.value ? "✓" : ""
-                onTriggered: App.settings.setAttachmentAutofetch(modelData.value)
-            }
-        }
-        Repeater {
-            model: [
-                { label: "Image limit 1 MB", value: 1048576 },
-                { label: "Image limit 5 MB", value: 5242880 },
-                { label: "Image limit 25 MB", value: 26214400 },
-                { label: "No image limit", value: 0 }
-            ]
-            delegate: MenuEntry {
-                required property var modelData
-                objectName: "autofetchMax_" + modelData.value
-                text: modelData.label
-                trailing: App.settings.attachmentAutofetchMax === modelData.value ? "✓" : ""
-                onTriggered: App.settings.setAttachmentAutofetchMax(modelData.value)
-            }
+        // The Tk account window's View menu, which is a page of its own here:
+        // flattened into this one it buried the actions it sat among.
+        MenuEntry {
+            objectName: "preferencesEntry"
+            text: "Preferences…"
+            onTriggered: page.openPreferences()
         }
         MenuEntry {
             text: "New window"
@@ -451,6 +436,24 @@ Page {
             removeBookmarkConfirm.subject = jid
             removeBookmarkConfirm.message = "Remove the bookmark for " + jid + "?"
             removeBookmarkConfirm.open()
+        }
+    }
+
+    // Full-screen rather than centred: a page of settings is a screenful.
+    Dialog {
+        id: prefsSheet
+        objectName: "preferencesSheet"
+        parent: Overlay.overlay
+        modal: true
+        padding: 0
+        x: 0
+        y: 0
+        width: parent ? parent.width : 0
+        height: parent ? parent.height : 0
+
+        AppSettingsPage {
+            anchors.fill: parent
+            onDone: prefsSheet.close()
         }
     }
 

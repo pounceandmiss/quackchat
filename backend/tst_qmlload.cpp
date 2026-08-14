@@ -598,8 +598,9 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
-    // The ticks say what is in force, and picking one writes it through.
-    void autofetchPolicyIsPickedFromTheOverflowMenu() {
+    // The image settings left the overflow menu for a page of their own. The
+    // dots say what is in force, and picking one writes it through.
+    void imageSettingsArePickedFromThePreferencesPage() {
         QStringList warnings;
         QQmlEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -625,8 +626,7 @@ private slots:
         QVERIFY(page);
         page->setParentItem(win.contentItem());
 
-        // These entries come from a model, so they are the menu's items rather
-        // than its QObject children, and there are none until it is shown.
+        // A menu's rows are its items, and there are none until it is shown.
         QObject *menu = page->findChild<QObject *>("overflowMenu");
         QVERIFY(menu);
         QVERIFY(QMetaObject::invokeMethod(menu, "open"));
@@ -644,27 +644,95 @@ private slots:
             }
             return nullptr;
         };
-        auto tick = [&](const char *name) {
-            QObject *o = entry(name);
-            return o ? o->property("trailing").toString() : QStringLiteral("?");
+
+        // One entry where seven settings were.
+        QVERIFY(entry("preferencesEntry"));
+        QVERIFY2(!entry("autofetch_everyone"),
+                 "the image settings are still flattened into the menu");
+        QVERIFY2(!entry("autofetchMax_0"),
+                 "the size cap is still flattened into the menu");
+
+        // And this is where they went.
+        QQmlComponent prefsComp(&e, "Quack", "AppSettingsWindow");
+        QVERIFY2(prefsComp.isReady(), qPrintable(prefsComp.errorString()));
+        QScopedPointer<QObject> prefs(prefsComp.create());
+        QVERIFY(!prefs.isNull());
+        auto *prefsWin = qobject_cast<QQuickWindow *>(prefs.data());
+        QVERIFY(prefsWin);
+        // Taller than the shipped window so both cards are in the viewport at
+        // once: the theme chip below is clicked where it lies rather than
+        // scrolled to.
+        prefsWin->setHeight(900);
+        QVERIFY(QTest::qWaitForWindowExposed(prefsWin));
+        prefsWin->grabWindow(); // force a render so the cards' bindings evaluate
+        QCoreApplication::processEvents();
+
+        auto option = [&](const char *name) {
+            return findItem(prefsWin->contentItem(), name);
+        };
+        auto selected = [&](const char *name) {
+            QQuickItem *row = option(name);
+            return row && row->property("selected").toBool();
         };
 
-        // Nothing stored yet, so the ticks show the defaults tacky is applying.
-        QVERIFY(entry("autofetch_everyone"));
-        QCOMPARE(tick("autofetch_everyone"), QString("✓"));
-        QCOMPARE(tick("autofetch_contacts"), QString());
-        QCOMPARE(tick("autofetchMax_5242880"), QString("✓"));
+        // Nothing stored yet, so the dots show the defaults tacky is applying.
+        QVERIFY(option("autofetch_everyone"));
+        QVERIFY(selected("autofetch_everyone"));
+        QVERIFY(!selected("autofetch_contacts"));
+        QVERIFY(selected("autofetchMax_5242880"));
 
-        QVERIFY(QMetaObject::invokeMethod(entry("autofetch_contacts"), "triggered"));
+        QVERIFY(QMetaObject::invokeMethod(option("autofetch_contacts"), "clicked"));
         QCOMPARE(app->settings()->attachmentAutofetch(), QString("contacts"));
-        QCOMPARE(tick("autofetch_contacts"), QString("✓"));
-        QCOMPARE(tick("autofetch_everyone"), QString());
+        QVERIFY(selected("autofetch_contacts"));
+        QVERIFY(!selected("autofetch_everyone"));
 
-        // No cap is a cap of 0, which ticks like any other value.
-        QVERIFY(QMetaObject::invokeMethod(entry("autofetchMax_0"), "triggered"));
+        // No cap is a cap of 0, which is picked like any other value.
+        QVERIFY(QMetaObject::invokeMethod(option("autofetchMax_0"), "clicked"));
         QCOMPARE(app->settings()->attachmentAutofetchMax(), 0LL);
-        QCOMPARE(tick("autofetchMax_0"), QString("✓"));
-        QCOMPARE(tick("autofetchMax_5242880"), QString());
+        QVERIFY(selected("autofetchMax_0"));
+        QVERIFY(!selected("autofetchMax_5242880"));
+
+        // The chips mark the theme in force, and a tap on one picks it.
+        auto *appTheme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(appTheme);
+        appTheme->setProperty("name", "plum");
+        QCoreApplication::processEvents();
+        QQuickItem *plum = option("theme_plum");
+        QQuickItem *midnight = option("theme_midnight");
+        QVERIFY(plum);
+        QVERIFY(midnight);
+        QVERIFY(plum->property("current").toBool());
+        QVERIFY(!midnight->property("current").toBool());
+
+        const QPoint at = prefsWin->contentItem()
+                              ->mapFromItem(midnight, QPointF(midnight->width() / 2,
+                                                              midnight->height() / 2))
+                              .toPoint();
+        QVERIFY2(prefsWin->contentItem()->boundingRect().contains(at),
+                 qPrintable(QString("theme chip at %1,%2 in a %3x%4 viewport")
+                                .arg(at.x()).arg(at.y())
+                                .arg(prefsWin->contentItem()->width())
+                                .arg(prefsWin->contentItem()->height())));
+        QTest::mouseClick(prefsWin, Qt::LeftButton, Qt::NoModifier, at);
+        QTRY_COMPARE(appTheme->property("name").toString(), QString("midnight"));
+        QVERIFY(midnight->property("current").toBool());
+        QVERIFY(!plum->property("current").toBool());
+
+        // App-wide settings, so every window's menu leads to the same one.
+        auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
+        QVERIFY(mgr);
+        QVariant first, again;
+        QVERIFY(QMetaObject::invokeMethod(mgr, "preferences",
+                                          Q_RETURN_ARG(QVariant, first)));
+        QVERIFY(first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(mgr, "preferences",
+                                          Q_RETURN_ARG(QVariant, again)));
+        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
+        QCoreApplication::processEvents();
+
+        prefs.reset();
+        QCoreApplication::processEvents();
 
         assertNoQmlErrors(warnings);
     }

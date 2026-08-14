@@ -21,10 +21,13 @@ QtObject {
     readonly property var _settingsWindows: ({})
     // account|jid -> its open key window, for the same reason.
     readonly property var _keysWindows: ({})
+    // The app's own preferences, which there is only one set of.
+    property var _prefsWindow: null
 
     property Component _shellComp: Component { ShellWindow {} }
     property Component _chatComp: Component { ChatWindow {} }
     property Component _settingsComp: Component { AccountSettingsWindow {} }
+    property Component _prefsComp: Component { AppSettingsWindow {} }
     property Component _keysComp: Component { OmemoKeysWindow {} }
     property Component _xmlComp: Component { MessageXmlWindow {} }
 
@@ -130,6 +133,8 @@ QtObject {
         for (const key in mgr._keysWindows)
             if (mgr._keysWindows[key] === w)
                 delete mgr._keysWindows[key]
+        if (mgr._prefsWindow === w)
+            mgr._prefsWindow = null
         w.destroy()
     }
 
@@ -161,6 +166,15 @@ QtObject {
         if (w)
             mgr._settingsWindows[account] = w
         return w
+    }
+
+    // The app's preferences. App-wide, so every window's menu leads to the one
+    // window rather than to a view of its own.
+    function preferences() {
+        if (mgr._prefsWindow)
+            return _raise(mgr._prefsWindow)
+        mgr._prefsWindow = _track(mgr._prefsComp.createObject(null))
+        return mgr._prefsWindow
     }
 
     // One contact's OMEMO keys. Trust is written as it is picked, so two
