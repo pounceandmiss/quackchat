@@ -22,10 +22,9 @@ class ChatListFilter : public QSortFilterProxyModel {
     // Rows the filter is hiding. The difference between "no conversations" and
     // "none matching what you typed", which the two need different words for.
     Q_PROPERTY(int totalCount READ totalCount NOTIFY totalCountChanged)
-    // Rows that survived it. A view has a count of its own, but that one is an
-    // answer given mid-layout: anything sized off it that the view then has to
-    // lay out - a heading over the rows, say - asks the question again while
-    // the first answer is still being acted on, which is a binding loop.
+    // Rows that survived it. A view has a count of its own, but reading that
+    // one from something the view lays out - a heading over the rows, say - is
+    // a binding loop.
     Q_PROPERTY(int count READ count NOTIFY countChanged)
 
 public:

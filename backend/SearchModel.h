@@ -6,6 +6,10 @@
 // Newest-first, like the store returns them. Results are deliberately not chat
 // content - they carry no formatting spans and no attachments, just enough to
 // recognise a hit and jump to it.
+//
+// A search replaces the last one's results when its own arrive rather than when
+// it is asked for: the callers re-search on every pause in typing, and a list
+// that emptied itself in between would spend most of a typed word blank.
 #ifndef SEARCHMODEL_H
 #define SEARCHMODEL_H
 
@@ -111,12 +115,16 @@ signals:
     void failedChanged();
     void resultChatsChanged();
     void countChanged();
+    // A page of results has replaced or extended what was here.
+    void resultsArrived();
 
 private:
     void issue(bool append);
     void cancel();
     void clearInflight();
-    void reset();          // drop the results and everything describing them
+    void reset();      // drop the results and everything describing them
+    void clearRows();  // the results alone
+    void forgetPage(); // everything describing them alone
     void askRemoteSupport();
     void setComplete(bool v);
     void setRemoteAvailable(bool v);
@@ -126,7 +134,7 @@ private:
     QString m_account;
     QString m_chat;
     QString m_query;   // what is typed
-    QString m_matched; // what the displayed results answer, held for paging
+    QString m_matched; // what the last search went out with, held for paging
     QString m_cursor;  // `last`, resent verbatim: account-wide it is a pair
     QString m_tag;     // ours alone, so one window's cancel spares the others
     bool m_alsoRemote = false;

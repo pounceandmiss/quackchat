@@ -123,9 +123,8 @@ void TestChatListFilter::totalCountSeesPastTheFilter() {
 
 // Every window on an account shares one ChatListModel, which is the whole
 // reason the filter is a proxy: typing in one list must not touch another.
-// What the view above the rows is sized from - a heading only stands while
-// there is something under it - so it has to notify on the filter's own account
-// and not just on the source's.
+// A heading above the rows is sized from this, so it has to notify on the
+// filter's own account and not just on the source's.
 void TestChatListFilter::countFollowsTheFilterAndNotifies() {
     ChatListModel m;
     seed(m);

@@ -38,6 +38,8 @@ private slots:
     void rowsComeOffTheResult();
     void searchReplacesTheDisplayedResults();
     void loadMoreAppendsBehindThem();
+    void aFreshSearchKeepsTheRowsButNotTheCursor();
+    void everyPageThatLandsIsAnnounced();
     void cursorIsResentVerbatim();
     void accountWideCursorKeepsItsPair();
     void pagingNeverAsksTheServer();
@@ -97,11 +99,14 @@ void TestSearchModel::searchReplacesTheDisplayedResults() {
                              "complete":false,"last":"300"})"));
     QCOMPARE(m.rowCount(), 1);
 
-    // A second search is a fresh question: the old answer goes with it, and so
-    // does the cursor that would have paged it.
+    // A second search is a fresh question, but the last answer holds the floor
+    // until this one has something to say.
     m.setQuery("pasta");
     m.search();
-    QCOMPARE(m.rowCount(), 0);
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(m.data(m.index(0), SearchModel::TimestampRole).toLongLong(), 300);
+    QVERIFY(m.searching());
+
     m.handleResult(3, res(R"({"messages":[{"timestamp":900,"chat_jid":"a@h"}],
                              "complete":true,"last":"900"})"));
     QCOMPARE(m.rowCount(), 1);
@@ -128,6 +133,53 @@ void TestSearchModel::loadMoreAppendsBehindThem() {
     QCOMPARE(m.data(m.index(0), SearchModel::TimestampRole).toLongLong(), 300);
     QCOMPARE(m.data(m.index(1), SearchModel::TimestampRole).toLongLong(), 200);
     QVERIFY(m.complete());
+}
+
+// The rows outlive the question they answered, but nothing else does - or the
+// new search's first page would arrive as the old one's second.
+void TestSearchModel::aFreshSearchKeepsTheRowsButNotTheCursor() {
+    TackyBackend backend;
+    SearchModel m;
+    scopeTo(m, backend, "a@h");
+    m.setQuery("pizza");
+    m.search();
+    m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
+                             "complete":false,"last":"300"})"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.setQuery("pasta");
+    m.search();
+
+    QCOMPARE(m.rowCount(), 1);
+    const QVariantMap a = lastSearch(sent);
+    QCOMPARE(a.value("query").toString(), QString("pasta"));
+    QVERIFY(!a.contains("before"));
+    // The last search ran out of pages; this one has not been asked yet.
+    QVERIFY(!m.complete());
+}
+
+// What a view stepping through the hits waits on: three hits replaced by three
+// others leaves the count where it was.
+void TestSearchModel::everyPageThatLandsIsAnnounced() {
+    TackyBackend backend;
+    SearchModel m;
+    scopeTo(m, backend, "a@h");
+    m.setQuery("pizza");
+    m.search();
+    QSignalSpy arrived(&m, &SearchModel::resultsArrived);
+    QSignalSpy counted(&m, &SearchModel::countChanged);
+    m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
+                             "complete":true,"last":"300"})"));
+    QCOMPARE(arrived.count(), 1);
+
+    counted.clear();
+    m.setQuery("pasta");
+    m.search();
+    m.handleResult(3, res(R"({"messages":[{"timestamp":900,"chat_jid":"a@h"}],
+                             "complete":true,"last":"900"})"));
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(counted.count(), 0); // one hit for one hit
+    QCOMPARE(arrived.count(), 2);
 }
 
 void TestSearchModel::cursorIsResentVerbatim() {
@@ -238,12 +290,19 @@ void TestSearchModel::failedSearchSaysSoRatherThanShowingNothing() {
     scopeTo(m, backend, "a@h");
     m.setQuery("pizza");
     m.search();
+    m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
+                             "complete":false,"last":"300"})"));
+    QCOMPARE(m.rowCount(), 1);
+
     // error/unsupported sit outside the declared JSON schema, so they arrive as
     // the string "1" rather than a bool - which is how they are written here.
-    m.handleResult(2, res(R"({"messages":[],"complete":false,"last":"",
+    m.setQuery("pasta");
+    m.search();
+    m.handleResult(3, res(R"({"messages":[],"complete":false,"last":"",
                               "error":"1","unsupported":"1"})"));
     QVERIFY(m.failed());
     QVERIFY(m.complete()); // no cursor, so nothing to offer behind it
+    // Nothing replaced them, so they would be read as this search's answer.
     QCOMPARE(m.rowCount(), 0);
 }
 

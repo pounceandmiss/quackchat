@@ -4,13 +4,11 @@
 
 ChatListFilter::ChatListFilter(QObject *parent) : QSortFilterProxyModel(parent) {
     setDynamicSortFilter(true);
-    // Off our own signals, not the source's: a query is a row count change here
-    // and no change at all there. A filter that lets nothing through arrives as
-    // a reset rather than as removals.
+    // Off our own signals, not the source's: a query changes how many rows are
+    // here without changing anything there.
     connect(this, &QAbstractItemModel::rowsInserted, this, &ChatListFilter::countChanged);
     connect(this, &QAbstractItemModel::rowsRemoved, this, &ChatListFilter::countChanged);
     connect(this, &QAbstractItemModel::modelReset, this, &ChatListFilter::countChanged);
-    connect(this, &QAbstractItemModel::layoutChanged, this, &ChatListFilter::countChanged);
 }
 
 int ChatListFilter::totalCount() const {

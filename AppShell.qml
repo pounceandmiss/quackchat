@@ -134,8 +134,7 @@ Item {
     }
 
     // Where Ctrl+F lands: an open conversation is what you are most likely
-    // looking through, and the whole account is what you mean when there is
-    // none - which is the list's own box, since it searches the archive too.
+    // looking through, and the list's own box when there is none.
     function startFind() {
         if (currentChatJid !== "")
             chatPage.openSearch()
@@ -209,8 +208,7 @@ Item {
         }
         // A hit names its own chat, which need not be the open one. Whether
         // that chat is a room is the chat list's answer, not a reading of the
-        // JID. Stacked, opening it is the same push a row is; the query is
-        // still typed behind it on the way back.
+        // JID.
         onOpenHit: (jid, ts, matches) => {
             if (jid !== shell.currentChatJid) {
                 const list = App.chatListFor(shell.currentAccount)

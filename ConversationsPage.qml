@@ -8,18 +8,15 @@ import Quack
 // The conversations list for one account. `account` selects which per-account
 // ChatListModel to bind (App.chatListFor); an empty account yields an empty list.
 //
-// One box searches both halves of what a chat is: the typed word narrows this
-// list to the conversations it names, and the archive hits it matches inside
-// them follow underneath (MessageHits). Chats first, since a name is the
-// likelier thing to be after and the cheaper thing to answer with.
+// One box asks both halves of what a typed word can mean: the chats it names,
+// and the messages it matches inside them (MessageHits, under the list).
 Page {
     id: page
     objectName: "conversationsPane"
     property string account: ""
     signal openChat(string jid, string name, bool groupchat)
     signal popOutChat(string jid, string name, bool groupchat)
-    // A message the search found, which names its own chat. matches travels
-    // with it so the chat can mark the same run the row marked.
+    // matches travels with the hit so the chat can mark the run the row marked.
     signal openHit(string chatJid, real ts, var matches)
     signal openAccounts()
     background: Rectangle { color: Theme.surface }
@@ -51,8 +48,6 @@ Page {
         query: searchField.text
     }
 
-    // Where Ctrl+F lands with no chat open, and what the shell hands the focus
-    // to when it wants a search started.
     function focusSearch() {
         searchField.forceActiveFocus()
         searchField.selectAll()
@@ -137,10 +132,8 @@ Page {
                 }
             }
 
-            // The Tk list's search entry, asking both of the questions a typed
-            // word can mean: it narrows the list to the chats it names, and the
-            // archive search under the list answers for the messages. Permanent
-            // rather than revealed, as it is there.
+            // The Tk list's search entry. Permanent rather than revealed, as
+            // it is there.
             TextField {
                 id: searchField
                 objectName: "searchField"
@@ -268,9 +261,8 @@ Page {
             }
         }
 
-        // With nothing typed the list is just the chats, and a heading over the
-        // only thing there is says nothing. It earns its place once the archive
-        // hits are underneath it.
+        // A heading over the only thing here says nothing; it earns its place
+        // once the hits are underneath it.
         header: SectionLabel {
             width: listView.width
             text: "Chats"
@@ -413,9 +405,8 @@ Page {
             }
         }
 
-        // The same word asked of the archive, answered under the chats it
-        // named. In the foot of this list rather than beside it, so one flick
-        // carries both halves and the chats keep the top.
+        // In the foot of this list rather than beside it, so one flick carries
+        // both halves and the chats keep the top.
         footer: MessageHits {
             width: listView.width
             account: page.account
@@ -538,12 +529,11 @@ Page {
     }
 
     // Empty state, reflecting the real connection state (not just "empty").
-    // Only with nothing typed: what a query found is the search's own answer,
-    // and it is given under the list rather than over it.
+    // What a query found is answered under the list instead.
     Text {
         objectName: "emptyHint"
         anchors.centerIn: parent
-        visible: listView.count === 0 && searchField.text === ""
+        visible: visibleChats.count === 0 && searchField.text === ""
         width: parent.width - 60
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap

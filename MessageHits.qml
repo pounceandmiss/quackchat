@@ -5,10 +5,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quack
 
-// The message half of the conversations list's search: what the typed query
-// matches inside the archive, under the chats it matches by name. Sized to its
-// own rows rather than scrolling, so the list it sits at the foot of carries
-// both halves under one scrollbar.
+// The message half of the conversations list's search, sized to its own rows so
+// the list it sits at the foot of scrolls both halves as one.
 //
 // Results are deliberately not chat content - a hit is a pointer to a message,
 // and opening it hands the chat the jump. Searching inside one chat is the
@@ -20,16 +18,10 @@ Column {
     id: section
     objectName: "messageHits"
     property string account: ""
-    // What the list above is narrowed by; typing runs a search behind it.
     property string query: ""
-    // How many chats the same query matched by name. Read only to word the
-    // empty answer: with nothing above either, this line speaks for the search
-    // as a whole rather than for its message half.
+    // What the same query matched by name above, which words the empty answer:
+    // with nothing there either, this line speaks for the search as a whole.
     property int chatMatches: 0
-
-    // How many hits are standing under the chats. The rows are a Repeater's, so
-    // there is no view to read a count off.
-    readonly property int count: results.count
 
     // matches travels with the hit so the chat can mark the same run this row
     // marks, without asking what the query was.
@@ -42,17 +34,16 @@ Column {
         query: section.query
     }
 
-    // The list above narrows as you type; the archive is a round trip, so it
-    // waits out a burst of typing first.
+    // Long enough that a burst of typing is one search. It need not be longer:
+    // an answer landing mid-word replaces the last one where it stands.
     Timer {
         id: debounce
-        interval: 250
+        interval: 150
         onTriggered: results.search()
     }
 
-    // Emptying the box ends the search rather than searching for nothing: the
-    // rows would otherwise stand under a list that has already gone back to
-    // showing every chat.
+    // Emptying the box ends the search rather than searching for nothing, which
+    // would leave hits under a list already back to showing every chat.
     onQueryChanged: {
         if (section.query === "") {
             debounce.stop()
@@ -123,8 +114,6 @@ Column {
         return d.toLocaleDateString(Qt.locale(), Locale.ShortFormat) + " " + hm
     }
 
-    // Every child stands down with no query, which is what collapses the whole
-    // section to nothing: a Column measures what its children ask for.
     SectionLabel {
         width: section.width
         text: "Messages"
@@ -132,9 +121,7 @@ Column {
     }
 
     // A Repeater rather than a list of its own: this is the foot of a list
-    // already, and two scrolling areas one inside the other would fight over
-    // the same flick. Bounded by the page size, which is why it can afford to
-    // build every row it holds.
+    // already, and two scrolling areas would fight over the same flick.
     Repeater {
         model: results
 
@@ -199,8 +186,8 @@ Column {
         }
     }
 
-    // One line for every state the rows themselves cannot show. Silent before
-    // the pause is out, so a half-typed word does not answer for itself.
+    // One line for every state the rows cannot show, and silent until the first
+    // search is out, so a half-typed word does not answer for itself.
     Item {
         width: section.width
         height: 44

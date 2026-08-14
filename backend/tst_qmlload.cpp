@@ -131,9 +131,9 @@ class TestQmlLoad : public QObject {
                 // is a real defect that otherwise only shows as a stray line on
                 // stderr.
                 w.contains("recursive rearrange") ||
-                // A property that feeds itself. Qt breaks the cycle wherever it
-                // happens to notice, so what is left on screen is whichever
-                // pass got there last - the same defect, one property wide.
+                // A property that feeds itself. Qt breaks the cycle wherever
+                // it notices, so what is on screen is whichever pass got there
+                // last.
                 w.contains("Binding loop"))
                 QFAIL(qPrintable("QML error: " + w));
     }
@@ -186,9 +186,8 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
-    // Message hits stand in the foot of the conversations list, drawn from
-    // several chats at once - each of which brings its own name cache, the part
-    // of the section that only runs with rows in it.
+    // Hits are drawn from several chats at once, each of which brings its own
+    // name cache - the part of the section that only runs with rows in it.
     void drawsSearchResults() {
         QStringList warnings;
         QQmlEngine e;
@@ -214,8 +213,8 @@ private slots:
         QVERIFY(page);
         page->setParentItem(win.contentItem());
 
-        // The section lives in the list's footer, which the view builds on its
-        // first layout rather than with the page.
+        // The section is the list's footer, which the view builds on its first
+        // layout rather than with the page.
         SearchModel *model = nullptr;
         QTRY_VERIFY((model = page->findChild<SearchModel *>()));
         model->setQuery("pizza");
@@ -231,9 +230,9 @@ private slots:
                 .toVariantMap(),
             false);
 
+        QCOMPARE(model->rowCount(), 2);
         QQuickItem *hits = findItem(win.contentItem(), "messageHits");
         QVERIFY(hits);
-        QTRY_COMPARE(hits->property("count").toInt(), 2);
         // One name cache per chat the results touch, built as they arrive.
         QTRY_COMPARE(hits->property("authorsByChat").toMap().size(), 2);
         win.grabWindow(); // force the delegates to lay out and bind
@@ -241,10 +240,9 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
-    // The two headings come and go with what is under them, which moves the
-    // rows below by their height - and a view writes to the very properties a
-    // heading of its own would want to bind. Layout it drives must not answer
-    // back, so this drives the whole cycle and fails on the warning.
+    // A heading stands only while there is something under it, so it changes
+    // height as the list it is in re-lays out. Nothing it reads may come back
+    // from that layout.
     void sectionHeadingsDoNotFightTheList() {
         QStringList warnings;
         QQmlEngine e;
@@ -285,12 +283,15 @@ private slots:
         QTRY_COMPARE(list->property("count").toInt(), 2);
         win.grabWindow();
 
-        // Nothing typed: the chats are the only thing here, so neither heading
-        // is standing.
+        QQuickItem *heading = list->property("headerItem").value<QQuickItem *>();
+        QVERIFY(heading);
+        QCOMPARE(heading->height(), 0.0); // nothing typed, nothing to head
+
         QQuickItem *field = findItem(win.contentItem(), "searchField");
         QVERIFY(field);
         field->setProperty("text", "Amy");
         QTRY_COMPARE(list->property("count").toInt(), 1);
+        QTRY_COMPARE(heading->height(), 28.0);
         win.grabWindow();
         QCoreApplication::processEvents();
 
@@ -305,25 +306,22 @@ private slots:
                 .object()
                 .toVariantMap(),
             false);
-        QQuickItem *hits = findItem(win.contentItem(), "messageHits");
-        QVERIFY(hits);
-        QTRY_COMPARE(hits->property("count").toInt(), 1);
+        QCOMPARE(model->rowCount(), 1);
         win.grabWindow();
         QCoreApplication::processEvents();
 
-        // Typing on leaves no chat matching, so the chats heading goes again
-        // while the messages one stays.
+        // Typing on leaves no chat matching, so that heading goes again.
         field->setProperty("text", "Amyx");
         QTRY_COMPARE(list->property("count").toInt(), 0);
+        QTRY_COMPARE(heading->height(), 0.0);
         win.grabWindow();
         QCoreApplication::processEvents();
 
         assertNoQmlErrors(warnings);
     }
 
-    // The chat list arrives from the server whole, so a search typed before it
-    // lands - or during any later reload - is standing on a model that resets
-    // under it. The hits must not go with it.
+    // The roster arrives whole, so a search standing when one lands is standing
+    // on a model that resets under it.
     void searchResultsSurviveAChatListReload() {
         QQmlEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -367,7 +365,7 @@ private slots:
                 .object()
                 .toVariantMap(),
             false);
-        QTRY_COMPARE(findItem(win.contentItem(), "messageHits")->property("count").toInt(), 1);
+        QCOMPARE(model->rowCount(), 1);
 
         // The reload a fresh roster is: every row replaced at once.
         chats->applyList(QJsonDocument::fromJson(R"([
@@ -379,18 +377,16 @@ private slots:
         win.grabWindow();
         QCoreApplication::processEvents();
 
-        // Same model still answering, and the hit still on it: rebuilding the
-        // section would have dropped the results and gone back to the archive
-        // for them.
+        // Rebuilding the section would have dropped the results and gone back
+        // to the archive for them.
         QCOMPARE(page->findChild<SearchModel *>(), model);
-        QQuickItem *hits = findItem(win.contentItem(), "messageHits");
-        QVERIFY(hits);
-        QCOMPARE(hits->property("count").toInt(), 1);
+        QCOMPARE(model->rowCount(), 1);
+        QVERIFY(findItem(win.contentItem(), "messageHits"));
     }
 
-    // One box, both halves of what a typed word can mean: the chats it names
-    // are narrowed to at once, and the archive is asked for the messages behind
-    // them once the typing settles.
+    // One box, both halves of what a typed word can mean: the chats it names,
+    // narrowed to at once, and the messages behind them once the typing
+    // settles.
     void oneBoxSearchesChatsAndMessages() {
         QQmlEngine e;
         e.singletonInstance<AppController *>("Quack", "App");
@@ -415,13 +411,13 @@ private slots:
         QVERIFY(field);
         field->setProperty("text", "pizza");
 
-        // The list narrows on the keystroke; nothing is waited on for that.
+        // The list narrows on the keystroke.
         auto *filter = page->findChild<ChatListFilter *>();
         QVERIFY(filter);
         QCOMPARE(filter->query(), QStringLiteral("pizza"));
 
-        // The archive is a round trip, so it comes after the pause. The backend
-        // is unstarted, so the request only ever goes out.
+        // The archive is a round trip, so it comes after the pause. The
+        // backend is unstarted, so the request only ever goes out.
         SearchModel *model = nullptr;
         QTRY_VERIFY((model = page->findChild<SearchModel *>()));
         QCOMPARE(model->query(), QStringLiteral("pizza"));

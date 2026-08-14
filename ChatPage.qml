@@ -444,8 +444,10 @@ Page {
     Connections {
         target: chatSearch
         // Both the first page and every page after it land here: whatever was
-        // waiting for a hit to exist takes the next one along.
-        function onCountChanged() {
+        // waiting for a hit to exist takes the next one along. Off the
+        // arrival, not the count: a re-search that finds as many hits as it
+        // replaces never changes it.
+        function onResultsArrived() {
             if (!page.hitPending || chatSearch.count <= page.hitIndex + 1)
                 return
             page.hitPending = false
@@ -736,7 +738,9 @@ Page {
                 color: Theme.textDim
                 font.pixelSize: 12
                 text: {
-                    if (chatSearch.searching && chatSearch.count === 0)
+                    // A re-search leaves the last one's hits up, so what says
+                    // there is nothing to count yet is the step, not the count.
+                    if (chatSearch.searching && page.hitIndex < 0)
                         return "…"
                     if (chatSearch.failed)
                         return "!"

@@ -123,7 +123,7 @@ void SearchModel::search() {
     if (!m_backend || m_account.isEmpty() || m_query.isEmpty())
         return;
     cancel();
-    reset();
+    forgetPage();
     m_matched = m_query;
     m_searched = true;
     emit searchedChanged();
@@ -192,6 +192,15 @@ void SearchModel::clearInflight() {
 }
 
 void SearchModel::reset() {
+    clearRows();
+    forgetPage();
+    if (m_searched) {
+        m_searched = false;
+        emit searchedChanged();
+    }
+}
+
+void SearchModel::clearRows() {
     if (!m_msgs.isEmpty()) {
         beginResetModel();
         m_msgs.clear();
@@ -199,13 +208,14 @@ void SearchModel::reset() {
         emit countChanged();
     }
     rebuildResultChats();
+}
+
+// What the next answer supersedes, short of the rows themselves: the question
+// asked, the cursor that would page it, and how the last attempt ended.
+void SearchModel::forgetPage() {
     m_matched.clear();
     m_cursor.clear();
     setComplete(false);
-    if (m_searched) {
-        m_searched = false;
-        emit searchedChanged();
-    }
     if (m_failed) {
         m_failed = false;
         emit failedChanged();
@@ -242,6 +252,10 @@ void SearchModel::handleResult(int token, const QVariant &data) {
 // over as the string "1" rather than a bool; QVariant reads either as true.
 void SearchModel::applyResult(const QVariantMap &result, bool append) {
     if (result.value(QStringLiteral("error")).toBool()) {
+        // Nothing replaced them, so the rows a first page was holding on to
+        // would read as its answer. A page-back keeps what it was extending.
+        if (!append)
+            clearRows();
         m_failed = true;
         emit failedChanged();
         setComplete(true);
@@ -271,6 +285,9 @@ void SearchModel::applyResult(const QVariantMap &result, bool append) {
     setComplete(result.value(QStringLiteral("complete")).toBool() ||
                 m_cursor.isEmpty());
     rebuildResultChats();
+    // Not countChanged: three hits replaced by three others is every row new
+    // and the count where it was.
+    emit resultsArrived();
 }
 
 void SearchModel::setComplete(bool v) {
