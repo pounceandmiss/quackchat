@@ -30,6 +30,7 @@ void AvatarController::onRunningChanged() {
     if (m_backend && m_backend->isRunning())
         return;
     m_visible.clear(); // the backend holding them is gone
+    m_metaPending.clear();
     const QHash<int, AvatarSink *> pending = m_pending;
     m_pending.clear();
     for (AvatarSink *sink : pending)
@@ -53,10 +54,13 @@ QString AvatarController::hashFor(const QString &acc, const QString &jid) {
     return m_hash.value(key(acc, jid));
 }
 
-// `visible` is get + subscribe: tacky re-emits `avatar <Update>` for an already
-// cached avatar and pushes one on every change, so listening is enough for
-// rooms and contacts alike. We never send `invisible`; tacky holds the avatar
-// for the session and reclaiming it isn't worth the bookkeeping yet.
+// `visible` subscribes, and primes the hash from tacky's cache - but only for a
+// JID nobody had marked yet, and those marks outlive this process. A re-mark is
+// then a no-op with no <Update> behind it, so the `metadata` read beside it is
+// what answers: a cache lookup, no mark, no network.
+//
+// We never send `invisible`. A mark left standing only means tacky keeps that
+// JID's avatar current, and reclaiming it isn't worth the bookkeeping yet.
 void AvatarController::ensureVisible(const QString &acc, const QString &jid) {
     if (!m_backend || !m_backend->isRunning() || acc.isEmpty() || jid.isEmpty())
         return;
@@ -65,9 +69,12 @@ void AvatarController::ensureVisible(const QString &acc, const QString &jid) {
     if (m_visible.contains(k))
         return;
     m_visible.insert(k);
-    m_backend->notify(QStringLiteral("avatar"), QStringLiteral("visible"),
-                      QVariantMap{{QStringLiteral("acc"), acc},
-                                  {QStringLiteral("jid"), nj}});
+    const QVariantMap args{{QStringLiteral("acc"), acc},
+                           {QStringLiteral("jid"), nj}};
+    m_backend->notify(QStringLiteral("avatar"), QStringLiteral("visible"), args);
+    const int tok = m_backend->request(QStringLiteral("avatar"),
+                                       QStringLiteral("metadata"), args);
+    m_metaPending.insert(tok, k);
 }
 
 void AvatarController::refresh(const QString &acc, const QString &jid) {
@@ -114,6 +121,15 @@ void AvatarController::fetch(const QString &acc, const QString &jid,
 }
 
 void AvatarController::onResult(int token, const QVariant &data) {
+    if (const QString k = m_metaPending.take(token); !k.isNull()) {
+        // An empty reply is "nothing cached", not the removal an <Update>
+        // carries: it must not unset a hash we already know.
+        const QString hash =
+            data.toMap().value(QStringLiteral("hash")).toString();
+        if (!hash.isEmpty())
+            applyHash(k, hash);
+        return;
+    }
     AvatarSink *sink = m_pending.take(token);
     if (!sink)
         return; // not one of ours
@@ -122,6 +138,8 @@ void AvatarController::onResult(int token, const QVariant &data) {
 }
 
 void AvatarController::onError(int token, const QString &message) {
+    if (m_metaPending.remove(token))
+        return; // no hash to record; the <Update> route still stands
     AvatarSink *sink = m_pending.take(token);
     if (!sink)
         return;
@@ -141,9 +159,12 @@ void AvatarController::handleEvent(const QString &module, const QString &name,
     const QString jid = a.value(QStringLiteral("jid")).toString();
     if (jid.isEmpty())
         return;
-    const QString k = key(a.value(QStringLiteral("acc")).toString(), jid);
     // A removal arrives as an empty hash.
-    const QString hash = a.value(QStringLiteral("hash")).toString();
+    applyHash(key(a.value(QStringLiteral("acc")).toString(), jid),
+              a.value(QStringLiteral("hash")).toString());
+}
+
+void AvatarController::applyHash(const QString &k, const QString &hash) {
     if (hash.isEmpty())
         m_hash.remove(k);
     else

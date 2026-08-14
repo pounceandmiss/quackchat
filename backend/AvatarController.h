@@ -3,6 +3,11 @@
 // current hash per (acc,jid) for cache invalidation, and bridging the async
 // `avatar data` fetch to an AvatarSink.
 //
+// Hashes arrive two ways: `avatar <Update>` pushes every change, and an
+// `avatar metadata` read answers for what the backend held before we started.
+// The read is what a frontend outlived by its backend needs - on Android the
+// interpreter belongs to a service the activity does not take with it.
+//
 // Core/Qml only, no QImage - the sink does the decoding, so the headless model
 // tests never pull in QtGui.
 #ifndef AVATARCONTROLLER_H
@@ -67,13 +72,17 @@ private:
     static QString key(const QString &acc, const QString &jid);
     static QString normJid(const QString &jid);
     void ensureVisible(const QString &acc, const QString &jid);
-    // tacky drops its visible set on every <Disconnect>, resumed or not, so
-    // `acc`'s subscriptions have to be placed again from scratch on <Ready>.
+    // Records the hash and tells QML, from either route.
+    void applyHash(const QString &k, const QString &hash);
+    // tacky keeps its visible marks across a <Disconnect>, so a reconnect
+    // re-primes nothing on its own. Re-read the hashes instead: one may have
+    // moved while `acc` was offline, with no one here to hear the <Update>.
     void resubscribe(const QString &acc);
 
     TackyBackend *m_backend = nullptr;
     QHash<QString, QString> m_hash;     // "acc\njid" -> hash
     QHash<int, AvatarSink *> m_pending; // request token -> waiting sink
+    QHash<int, QString> m_metaPending;  // request token -> "acc\njid"
     QSet<QString> m_visible;
     int m_rev = 0;
 };

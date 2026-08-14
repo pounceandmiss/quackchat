@@ -5,6 +5,7 @@
 #include <QCryptographicHash>
 #include <QSignalSpy>
 
+#include "AvatarController.h"
 #include "ChatListModel.h"
 #include "ChatModel.h"
 #include "MessageMarkup.h"
@@ -18,6 +19,15 @@ void addAccount(TackyBackend &b, const QString &acc) {
                          {"password", "x"},
                          {"domain", acc.section('@', 1)},
                          {"username", acc.section('@', 0, 0)}});
+}
+
+// The reply to `token`, or an invalid QVariant while it is still in flight.
+// Replies from every requester land in the same spy, so the token sorts them.
+QVariant resultFor(const QSignalSpy &spy, int token) {
+    for (const QList<QVariant> &row : spy)
+        if (row.at(0).toInt() == token)
+            return row.at(1);
+    return {};
 }
 } // namespace
 
@@ -42,6 +52,8 @@ private slots:
     void searchFindsWhatWasStored();
     // Avatar bytes survive the JSON transport unchanged.
     void avatarBytesSurviveTheWire();
+    // A fresh frontend under a session that kept running learns its hashes.
+    void avatarHashSurvivesAFrontendRestart();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -346,6 +358,51 @@ void TestIntegration::avatarBytesSurviveTheWire() {
     QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty(), 5000);
     QCOMPARE(QByteArray::fromBase64(results.first().at(1).toString().toLatin1()),
              bytes);
+
+    backend.stop();
+}
+
+// The Android reopen: the interpreter belongs to a service the activity does
+// not take with it, so a second frontend meets JIDs the session already has
+// marked visible. That re-mark is a no-op with no <Update> behind it, leaving
+// the `metadata` read as the only thing carrying the hash across the restart.
+void TestIntegration::avatarHashSurvivesAFrontendRestart() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    QSignalSpy results(&backend, &TackyBackend::result);
+
+    // The avatar a previous run had already fetched and cached.
+    const int inject = backend.request(
+        "avatar", "inject",
+        QVariantMap{{"acc", "me@example.com"},
+                    {"jid", "bob@example.com"},
+                    {"data", QString::fromLatin1(QByteArray("bobsface").toBase64())}});
+    QTRY_VERIFY_WITH_TIMEOUT(resultFor(results, inject).isValid(), 5000);
+    const QString hash = resultFor(results, inject).toString();
+    QVERIFY(!hash.isEmpty());
+
+    // The mark that run left behind.
+    AvatarController first;
+    first.setBackend(&backend);
+    first.hashFor("me@example.com", "bob@example.com"); // the read subscribes
+    // Requests are answered in order, so a reply to a later one proves the mark
+    // has landed. It also pins the reply shape the controller reads: an object
+    // keyed by field, not a bare string.
+    const int barrier =
+        backend.request("avatar", "metadata",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "bob@example.com"}});
+    QTRY_VERIFY_WITH_TIMEOUT(resultFor(results, barrier).isValid(), 5000);
+    QCOMPARE(resultFor(results, barrier).toMap().value("hash").toString(), hash);
+
+    // The UI process dies; the session does not.
+    AvatarController second;
+    second.setBackend(&backend);
+    QCOMPARE(second.hashFor("me@example.com", "bob@example.com"), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(
+        second.hashFor("me@example.com", "bob@example.com"), hash, 5000);
 
     backend.stop();
 }

@@ -21,12 +21,14 @@ class TestAvatar : public QObject {
         return {{"acc", acc}, {"jid", jid}, {"hash", hash}};
     }
 
-    // The `avatar visible` JIDs in `spy`, in order, for one account.
-    static QStringList visibleJids(const QSignalSpy &spy, const QString &acc) {
+    // The JIDs `spy` saw an `avatar <method>` call for, in order, for one
+    // account.
+    static QStringList jidsAsked(const QSignalSpy &spy, const QString &method,
+                                 const QString &acc) {
         QStringList jids;
         for (const QList<QVariant> &call : spy) {
             if (call.at(0).toString() != QLatin1String("avatar") ||
-                call.at(1).toString() != QLatin1String("visible"))
+                call.at(1).toString() != method)
                 continue;
             const QVariantMap a = call.at(2).toMap();
             if (a.value("acc").toString() == acc)
@@ -115,9 +117,29 @@ private slots:
         QVERIFY(!r.errorString().isEmpty());
     }
 
-    // tacky drops its visible set on every <Disconnect>, so a reconnect has to
-    // re-send the subscriptions or ensureVisible() short-circuits on its own
-    // bookkeeping and the hashes never update again.
+    // Every subscribe carries an `avatar metadata` read: tacky's visible marks
+    // outlive this process, so a re-mark is a no-op with no <Update> behind it,
+    // and without the read a restarted frontend has no hash at all.
+    void subscribeReadsTheCachedHash() {
+        TackyBackend backend;
+        QVERIFY(backend.start());
+        AvatarController c;
+        c.setBackend(&backend);
+
+        QSignalSpy sent(&backend, &TackyBackend::sent);
+        c.hashFor("me@h", "bob@h");
+        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
+        QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{"bob@h"});
+
+        // One read per subscription, not one per binding evaluation.
+        sent.clear();
+        c.hashFor("me@h", "bob@h");
+        QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{});
+    }
+
+    // A reconnect re-reads what it was showing: tacky keeps its visible marks,
+    // so nothing re-primes on its own, and a hash that moved while the account
+    // was offline had no one here to hear the <Update>.
     void resubscribesOnReady() {
         TackyBackend backend; // in-memory session
         QVERIFY(backend.start());
@@ -126,16 +148,17 @@ private slots:
 
         QSignalSpy sent(&backend, &TackyBackend::sent);
         c.hashFor("me@h", "bob@h"); // the read is what subscribes
-        QCOMPARE(visibleJids(sent, "me@h"), QStringList{"bob@h"});
+        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
 
         // A second read must not re-ask while the subscription still stands.
         sent.clear();
         c.hashFor("me@h", "bob@h");
-        QCOMPARE(visibleJids(sent, "me@h"), QStringList{});
+        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{});
 
         sent.clear();
         c.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
-        QCOMPARE(visibleJids(sent, "me@h"), QStringList{"bob@h"});
+        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
+        QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{"bob@h"});
     }
 
     // <Ready> for one account must not disturb another's subscriptions.
@@ -149,8 +172,8 @@ private slots:
 
         QSignalSpy sent(&backend, &TackyBackend::sent);
         c.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
-        QCOMPARE(visibleJids(sent, "me@h"), QStringList{"bob@h"});
-        QCOMPARE(visibleJids(sent, "other@h"), QStringList{});
+        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
+        QCOMPARE(jidsAsked(sent, "visible", "other@h"), QStringList{});
     }
 
     // Nothing times out an avatar request, so a backend that stops has to fail
