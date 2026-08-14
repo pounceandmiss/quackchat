@@ -84,6 +84,7 @@ private slots:
     void uploadProgressReachesTheRowItBelongsTo();
     void sendFileHandsTackyThePath();
     void aPickedDocumentIsNamedAfterItself();
+    void anUploadedShareEndsUpSent();
     void retryUploadNamesTheRow();
     void cancelUsesTheHandleTheTransferHas();
     void uncacheForgetsTheFileAndItsThumbnail();
@@ -1166,6 +1167,51 @@ void TestChatModel::aPickedDocumentIsNamedAfterItself() {
     // A local file is sent where it lies.
     QCOMPARE(pickedfile::localPath(QUrl::fromLocalFile("/home/me/a.png")),
              QString("/home/me/a.png"));
+}
+
+// A share's whole life, in order: the optimistic row, the local read behind
+// its thumbnail, the PUT, then the send. One sequence because every step
+// patches the same row, and what it must leave is an ordinary sent message.
+void TestChatModel::anUploadedShareEndsUpSent() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.setChat("a@h");
+
+    feedEvent(m, R"(["event","message","New",{"acc":"me@h","jid":"a@h",
+        "message":{"timestamp":100,"is_outgoing":true,"from_jid":"me@h",
+        "server_status":"uploading","remote_status":"none","encryption":"omemo",
+        "content":{"type":"media","caption":"","attachments":[
+            {"url":"/home/me/a.png","type":"image","name":"a.png",
+             "size":1234,"mime":"image/png"}]}}}])");
+    QCOMPARE(m.rowCount(), 1);
+
+    // The file module reads the local source in place to derive the thumbnail.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"done","loaded":1234,"total":1234,"url":"/home/me/a.png",
+        "localpath":"/home/me/a.png","thumbpath":"/cache/a.png","error":""}])");
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
+        "direction":"upload","state":"active","loaded":600,"total":1234,
+        "url":"","localpath":"/home/me/a.png","thumbpath":"","error":""}])");
+    QCOMPARE(att0(m).value("state").toString(), QString("active"));
+
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
+        "direction":"upload","state":"done","loaded":1234,"total":1234,
+        "url":"https://h/a.png","localpath":"/home/me/a.png","thumbpath":"",
+        "error":""}])");
+    // The send the finished PUT sets off, then the server's ack for it.
+    feedEvent(m, R"(["event","message","Status",{"acc":"me@h","jid":"a@h",
+        "timestamp":100,"server_status":"pending"}])");
+    feedEvent(m, R"(["event","message","Confirmed",{"acc":"me@h","jid":"a@h",
+        "timestamp":100,"newtimestamp":100,"server_status":""}])");
+
+    QCOMPARE(m.data(m.index(0), ChatModel::ServerStatusRole).toString(), QString());
+    // The stamp is not a casualty of the patches.
+    QCOMPARE(m.data(m.index(0), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+    // Nothing still transferring, and the picture still on screen.
+    const QVariantMap a = att0(m);
+    QCOMPARE(a.value("state").toString(), QString("done"));
+    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
 }
 
 void TestChatModel::retryUploadNamesTheRow() {
