@@ -196,6 +196,16 @@ class TestChatPage : public QObject {
         return !expr.hasError();
     }
 
+    // A popup's y is in its parent item's coordinates, which for a menu is
+    // whatever it was popped up over.
+    static qreal sceneBottom(QObject *popup) {
+        auto *anchor = popup->property("parent").value<QQuickItem *>();
+        if (!anchor)
+            return qQNaN();
+        const qreal y = popup->property("y").toReal();
+        return anchor->mapToScene(QPointF(0, y + popup->property("height").toReal())).y();
+    }
+
 private slots:
     void initTestCase();
     void cleanupTestCase();
@@ -223,6 +233,7 @@ private slots:
     void onlyAFailedEncryptionOffersThePlaintextWayOut();
     void viewXmlShowsTheStanzaTheRowCameWith();
     void aSheetKeepsItsPageClearOfTheSystemBars();
+    void aMenuNearTheBottomOpensClearOfTheSystemBars();
     void togglingTheComposerLockChangesWhatIsSent();
     void keysOpenFromTheComposerLock();
     void reactionChipsShowTheBackendSet();
@@ -267,12 +278,16 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "xml@example.com"},
                                          {"body", "look at my stanza"}});
-    // The chat the system bars are measured against: one row, since what is
-    // being placed is the sheet over it rather than the feed.
+    // The two chats the system bars are measured against: one row each, since
+    // what is being placed is a sheet and a menu rather than the feed.
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "bars@example.com"},
                                          {"body", "under the status bar"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "lowmenu@example.com"},
+                                         {"body", "at the bottom"}});
 
     // clear@ turns OMEMO off before its send, so it is the one chat whose rows
     // come back unstamped - every other send here is encrypted by default.
@@ -988,6 +1003,40 @@ void TestChatPage::aSheetKeepsItsPageClearOfTheSystemBars() {
     QCOMPARE(sheet->property("height").toReal(), qreal(chat.win()->height()));
 
     QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
+}
+
+// Qt keeps a menu inside the window, which on Android runs under the gesture
+// bar - so a menu opened from a row near the bottom was cut off by it rather
+// than moved above it.
+void TestChatPage::aMenuNearTheBottomOpensClearOfTheSystemBars() {
+    const Chat chat = open("lowmenu@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    constexpr qreal kGestureBar = 90;
+    QVERIFY(fakeSystemBars(chat.win(), 60, kGestureBar));
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = nullptr;
+    QQuickItem *bubble = nullptr;
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem()) {
+        menu = at->findChild<QObject *>("bubbleMenu");
+        bubble = at;
+    }
+    QVERIFY(menu);
+
+    // A long press right at the bottom edge of the window, which is where the
+    // last row's bubble sits: the menu's own height is what does not fit.
+    const QPointF atEdge = bubble->mapFromScene(QPointF(0, chat.win()->height() - 4));
+    QVERIFY(QMetaObject::invokeMethod(bubble, "openMenu",
+                                      Q_ARG(QVariant, QVariant::fromValue(atEdge))));
+    QTRY_VERIFY(menu->property("opened").toBool());
+
+    QVERIFY(menu->property("height").toReal() > 0.0);
+    QVERIFY(sceneBottom(menu) <= chat.win()->height() - kGestureBar);
+    QVERIFY(QMetaObject::invokeMethod(menu, "close"));
 }
 
 // The whole path in one go: the padlock in the composer, through tacky's stored
