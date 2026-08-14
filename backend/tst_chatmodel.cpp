@@ -8,6 +8,7 @@
 #include "ChatModel.h"
 #include "MessageMarkup.h"
 #include "MessageXml.h"
+#include "PickedFile.h"
 #include "TackyBackend.h"
 
 static void feedEvent(ChatModel &m, const QByteArray &json) {
@@ -82,6 +83,7 @@ private slots:
     void openAttachmentResolvesThroughTheBackend();
     void uploadProgressReachesTheRowItBelongsTo();
     void sendFileHandsTackyThePath();
+    void aPickedDocumentIsNamedAfterItself();
     void retryUploadNamesTheRow();
     void cancelUsesTheHandleTheTransferHas();
     void uncacheForgetsTheFileAndItsThumbnail();
@@ -1137,6 +1139,33 @@ void TestChatModel::sendFileHandsTackyThePath() {
     sent.clear();
     m.sendFile(QUrl());
     QCOMPARE(sent.count(), 0);
+}
+
+// The extension is what everything after the copy reads the kind from, so a
+// document the provider names without one is given the one its type implies.
+void TestChatModel::aPickedDocumentIsNamedAfterItself() {
+    const QUrl picked(
+        "content://com.android.providers.media.documents/document/image%3A34");
+
+    QCOMPARE(pickedfile::nameFor(picked, "sheet.png", "image/png"),
+             QString("sheet.png"));
+    QCOMPARE(pickedfile::nameFor(picked, "Screenshot", "image/png"),
+             QString("Screenshot.png"));
+    // Nothing to go on but the url, whose last segment is the provider's id.
+    QCOMPARE(pickedfile::nameFor(picked, "", "image/png"),
+             QString("image_34.png"));
+    QCOMPARE(pickedfile::nameFor(picked, "", ""), QString("image_34"));
+
+    // A name is a name: no directory of the provider's choosing comes with it.
+    QCOMPARE(pickedfile::nameFor(picked, "../../etc/passwd", ""),
+             QString("passwd"));
+    QCOMPARE(pickedfile::nameFor(picked, ".profile", ""), QString("profile"));
+    QCOMPARE(pickedfile::nameFor(QUrl("content://x/"), "", ""),
+             QString("attachment"));
+
+    // A local file is sent where it lies.
+    QCOMPARE(pickedfile::localPath(QUrl::fromLocalFile("/home/me/a.png")),
+             QString("/home/me/a.png"));
 }
 
 void TestChatModel::retryUploadNamesTheRow() {

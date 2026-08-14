@@ -222,6 +222,7 @@ qt_add_qml_module(quack
         backend/SocketTransport.cpp backend/SocketTransport.h
         backend/ChatModel.cpp backend/ChatModel.h
         backend/ChatSession.cpp backend/ChatSession.h
+        backend/PickedFile.cpp backend/PickedFile.h
         backend/MessageMarkup.cpp backend/MessageMarkup.h
         backend/MessageXml.cpp backend/MessageXml.h
         backend/AuthorNames.cpp backend/AuthorNames.h

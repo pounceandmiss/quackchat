@@ -1,12 +1,11 @@
 #include "ChatModel.h"
 
-#include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QStandardPaths>
 
 #include "MessageMarkup.h"
 #include "MessageXml.h"
+#include "PickedFile.h"
 #include "TackyBackend.h"
 
 ChatModel::ChatModel(QObject *parent) : QAbstractListModel(parent) {}
@@ -447,32 +446,12 @@ void ChatModel::send(const QString &body, qlonglong replyToTs) {
     m_backend->notify(QStringLiteral("message"), QStringLiteral("send"), a);
 }
 
-// FileDialog hands back file:// on desktop and content:// on Android, which
-// tacky cannot open from Tcl. Qt's own file engine can, so that one is copied
-// into the cache and the copy is what gets sent.
-static QString sendablePath(const QUrl &file) {
-    if (file.isLocalFile())
-        return file.toLocalFile();
-    if (file.scheme().isEmpty())
-        return file.path(); // a bare path, as a fixture would pass
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
-        QStringLiteral("/outgoing");
-    if (!QDir().mkpath(dir))
-        return {};
-    const QString name = file.fileName().isEmpty() ? QStringLiteral("attachment")
-                                                   : file.fileName();
-    const QString dest = dir + QLatin1Char('/') + name;
-    QFile::remove(dest);
-    return QFile::copy(file.toString(), dest) ? dest : QString();
-}
-
 // Whether the file is encrypted before the PUT follows the chat's own OMEMO
 // switch, which tacky reads on the way past.
 void ChatModel::sendFile(const QUrl &file) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
         return;
-    const QString path = sendablePath(file);
+    const QString path = pickedfile::localPath(file);
     if (path.isEmpty())
         return;
     m_backend->notify(QStringLiteral("message"), QStringLiteral("sendFile"),
