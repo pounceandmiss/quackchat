@@ -33,6 +33,8 @@ const QString kAcc = QStringLiteral("me@example.com");
 constexpr int kPage = 50;               // tacky's default history limit
 constexpr int kSeeded = 2 * kPage + 40; // two whole local pages, then a short one
 constexpr int kQuiet = 3;               // shorter than any viewport
+constexpr qreal kStatusBar = 60;        // the system bars, as Android reports them
+constexpr qreal kGestureBar = 90;
 const QString kStyled = QStringLiteral("*bold* and plain");
 const QString kOriginal = QStringLiteral("the original");
 // Long enough that a drag across the bubble lands mid-word at both ends.
@@ -170,8 +172,8 @@ class TestChatPage : public QObject {
         QTRY_VERIFY(xmlViewerWindow() == nullptr);
     }
 
-    // The item every popup is parented into. Created by the templates in C++
-    // with no objectName of its own, so it goes by its class.
+    // The item every popup is parented into. It carries no objectName, so it
+    // goes by its class.
     static QQuickItem *overlayOf(QQuickWindow *win) {
         const auto kids = win->contentItem()->childItems();
         for (QQuickItem *kid : kids)
@@ -180,9 +182,8 @@ class TestChatPage : public QObject {
         return nullptr;
     }
 
-    // A status bar and a gesture bar, the way Android reports them. No platform
-    // here has either, so they are added to the overlay's safe area - the same
-    // margins the real insets would land in, and where the app reads them from.
+    // No platform here has system bars, so they are added to the overlay's safe
+    // area - the margins Android's insets land in, and where the app reads them.
     static bool fakeSystemBars(QQuickWindow *win, qreal top, qreal bottom) {
         QQuickItem *overlay = overlayOf(win);
         if (!overlay)
@@ -196,8 +197,7 @@ class TestChatPage : public QObject {
         return !expr.hasError();
     }
 
-    // A popup's y is in its parent item's coordinates, which for a menu is
-    // whatever it was popped up over.
+    // A popup's y is in the coordinates of whatever it was popped up over.
     static qreal sceneBottom(QObject *popup) {
         auto *anchor = popup->property("parent").value<QQuickItem *>();
         if (!anchor)
@@ -278,8 +278,6 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "xml@example.com"},
                                          {"body", "look at my stanza"}});
-    // The two chats the system bars are measured against: one row each, since
-    // what is being placed is a sheet and a menu rather than the feed.
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "bars@example.com"},
@@ -974,10 +972,9 @@ void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
     QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
 }
 
-// A sheet is parented to the overlay, which the window's own safe-area inset
-// never reaches: on Android that put the XML viewer's header, Copy button and
-// all, underneath the status bar. The sheet still covers the window - only the
-// page inside it moves in.
+// A sheet is parented to the overlay, past the inset the window applies to its
+// own content: on Android that put the XML viewer's header under the status
+// bar. The sheet still covers the window - only the page inside it moves in.
 void TestChatPage::aSheetKeepsItsPageClearOfTheSystemBars() {
     const Chat chat = open("bars@example.com");
     QVERIFY(chat.win());
@@ -992,43 +989,35 @@ void TestChatPage::aSheetKeepsItsPageClearOfTheSystemBars() {
     QVERIFY(shown);
     QCOMPARE(shown->mapToScene(QPointF(0, 0)).y(), 0.0);
 
-    constexpr qreal kStatusBar = 60;
-    constexpr qreal kGestureBar = 90;
     QVERIFY(fakeSystemBars(chat.win(), kStatusBar, kGestureBar));
-
     QTRY_COMPARE(shown->mapToScene(QPointF(0, 0)).y(), kStatusBar);
     QCOMPARE(shown->height(), chat.win()->height() - kStatusBar - kGestureBar);
-    // The background keeps painting behind the bars, so the window does not
-    // band where the page stops.
+    // The background still paints behind the bars, so nothing bands.
     QCOMPARE(sheet->property("height").toReal(), qreal(chat.win()->height()));
 
     QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
 }
 
 // Qt keeps a menu inside the window, which on Android runs under the gesture
-// bar - so a menu opened from a row near the bottom was cut off by it rather
-// than moved above it.
+// bar - so one opened near the bottom was cut off by it rather than moved up.
 void TestChatPage::aMenuNearTheBottomOpensClearOfTheSystemBars() {
     const Chat chat = open("lowmenu@example.com");
     QVERIFY(chat.feed);
     QVERIFY(chat.win());
     QTRY_COMPARE(chat.count(), 1);
-
-    constexpr qreal kGestureBar = 90;
-    QVERIFY(fakeSystemBars(chat.win(), 60, kGestureBar));
+    QVERIFY(fakeSystemBars(chat.win(), kStatusBar, kGestureBar));
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
     QObject *menu = nullptr;
-    QQuickItem *bubble = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem()) {
+    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
         menu = at->findChild<QObject *>("bubbleMenu");
-        bubble = at;
-    }
     QVERIFY(menu);
+    auto *bubble = qobject_cast<QQuickItem *>(menu->parent());
+    QVERIFY(bubble);
 
-    // A long press right at the bottom edge of the window, which is where the
-    // last row's bubble sits: the menu's own height is what does not fit.
+    // Held at the very bottom edge, where the menu's own height is what does
+    // not fit.
     const QPointF atEdge = bubble->mapFromScene(QPointF(0, chat.win()->height() - 4));
     QVERIFY(QMetaObject::invokeMethod(bubble, "openMenu",
                                       Q_ARG(QVariant, QVariant::fromValue(atEdge))));

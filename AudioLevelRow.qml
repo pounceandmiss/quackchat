@@ -103,21 +103,15 @@ RowLayout {
         onClicked: deviceMenu.popup(pickButton, 0, pickButton.height)
     }
 
-    // Drawn from Theme like every other Control here. A stock one follows the
-    // system palette instead, which is how the drop-down this replaced ended up
-    // painting its text against a background from the other scheme.
-    Menu {
+    // The stock Menu follows the system palette, which is how the drop-down
+    // this replaced ended up painting its text against a background from the
+    // other scheme.
+    AppMenu {
         id: deviceMenu
         objectName: "deviceMenu"
         // implicitWidth, not width: a Popup is not an Item, but it is parented
         // into a layout here and a plain `width` reads as a layout override.
         implicitWidth: 280
-
-        background: Rectangle {
-            color: Theme.surface
-            radius: 10
-            border.color: Theme.hairline
-        }
 
         // The device array is replaced wholesale on every re-enumeration, so
         // the entries are instantiated rather than declared.

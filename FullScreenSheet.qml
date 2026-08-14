@@ -2,18 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import Quack
 
-// A page shown over the whole window, which is how mobile hosts what desktop
-// gives a window of its own. The window's own safe-area inset does not reach
-// here: a sheet is parented to the overlay, which spans the screen bars and all.
-//
-// So it pads itself. The background still paints edge to edge, and the page
-// inside sits in the strip between the status and navigation bars rather than
-// under them. The margins are read off the overlay rather than off the page,
-// which would be reading back the inset it had just applied. All zeros on
-// desktop.
+// A page over the whole window, which is how mobile hosts what desktop gives a
+// window of its own. It is parented to the overlay, past the inset the window
+// applies to its own content, so it pads itself instead: the background still
+// paints edge to edge, the page inside clears the system bars. Zero on desktop.
 Dialog {
-    id: sheet
-
     parent: Overlay.overlay
     modal: true
     x: 0

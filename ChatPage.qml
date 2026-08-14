@@ -1210,31 +1210,13 @@ Page {
 
                     // The keys live behind the control that says whether they
                     // are being used - the same pairing the chat menu has.
-                    Menu {
+                    AppMenu {
                         id: lockMenu
                         objectName: "lockMenu"
                         width: 170
-                        background: Rectangle {
-                            color: Theme.surface
-                            radius: 10
-                            border.color: Theme.hairline
-                        }
-                        MenuItem {
-                            id: keysEntry
+                        MenuEntry {
                             objectName: "keysEntry"
-                            height: 40
                             text: "OMEMO keys…"
-                            contentItem: Text {
-                                text: keysEntry.text
-                                color: Theme.textPrimary
-                                font.pixelSize: 14
-                                verticalAlignment: Text.AlignVCenter
-                                leftPadding: 8
-                            }
-                            background: Rectangle {
-                                color: keysEntry.highlighted ? Theme.menuHover : "transparent"
-                                radius: 6
-                            }
                             onTriggered: page.openKeys()
                         }
                     }

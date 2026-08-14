@@ -166,19 +166,21 @@ Rectangle {
                     onLongPressed: ctx.popup()
                 }
 
-                Menu {
+                AppMenu {
                     id: ctx
-                    MenuItem {
+                    width: 200
+                    MenuEntry {
                         text: "Account details…"
                         onTriggered: rail.openSettings(cell.jid)
                     }
-                    MenuItem {
+                    MenuEntry {
                         text: cell.acctEnabled ? "Disable" : "Enable"
                         onTriggered: cell.acctEnabled ? App.accounts.disable(cell.jid)
                                                       : App.accounts.enable(cell.jid)
                     }
-                    MenuItem {
+                    MenuEntry {
                         text: "Remove…"
+                        labelColor: Theme.negative
                         onTriggered: removeConfirm.open()
                     }
                 }
