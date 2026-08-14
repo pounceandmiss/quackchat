@@ -1813,6 +1813,175 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // The pop can also be carried by hand. What makes that more than an
+    // animation with a shortcut is that the pane is still reachable half way
+    // through: it comes back if the finger does.
+    void anEdgeSwipeCarriesThePopByHand() {
+        constexpr int kNarrow = 400;
+        constexpr int kRow = 400; // clear of the header, in the message area
+
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+        app->accounts()->applyList({"me@example.com"});
+
+        QQuickWindow win;
+        win.resize(kNarrow, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"},
+             {"width", kNarrow},
+             {"height", 700}}));
+        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(shell);
+        // At the window's origin, so a window coordinate is a shell coordinate
+        // and the chat's x is how far the swipe has carried it.
+        shell->setParentItem(win.contentItem());
+        QVERIFY(!shell->property("wide").toBool());
+
+        QQuickItem *list = findItem(shell, "conversationsPane");
+        QQuickItem *chat = findItem(shell, "chatPane");
+        QVERIFY(list);
+        QVERIFY(chat);
+
+        static QPointingDevice *finger = QTest::createTouchDevice();
+        const auto openChat = [&] {
+            QMetaObject::invokeMethod(shell, "openChat",
+                                      Q_ARG(QVariant, QVariant("friend@example.com")),
+                                      Q_ARG(QVariant, QVariant("Friend")),
+                                      Q_ARG(QVariant, QVariant(false)));
+            QTRY_COMPARE(chat->x(), qreal(0));
+        };
+        int at = 0;
+        // Every position twice: synthesised touch moves are compressed in pairs,
+        // so sent singly half of them never reach the handler.
+        const auto moveTo = [&](int x) {
+            at = x;
+            QTest::touchEvent(&win, finger).move(0, QPoint(x, kRow));
+            QTest::touchEvent(&win, finger).move(0, QPoint(x, kRow));
+            QCoreApplication::processEvents();
+        };
+        // Walked rather than jumped, as a finger is: the handler reads a stream
+        // of small moves, and one big one never crosses its threshold.
+        const auto dragTo = [&](int x) {
+            const int step = x > at ? 8 : -8;
+            while (qAbs(x - at) > 8)
+                moveTo(at + step);
+            moveTo(x);
+        };
+        const auto pressAtEdge = [&] {
+            at = 2;
+            QTest::touchEvent(&win, finger).press(0, QPoint(at, kRow));
+        };
+        const auto lift = [&] {
+            QTest::touchEvent(&win, finger).release(0, QPoint(at, kRow));
+            QCoreApplication::processEvents();
+        };
+        // Comes to rest first, so the release decides on where the pane was put:
+        // the wait is what takes the speed that got it there out of the reckoning.
+        const auto placeAt = [&](int x) {
+            dragTo(x);
+            QTest::qWait(200);
+            lift();
+        };
+        // Let go still moving, so the same release is a throw.
+        const auto flickTo = [&](int x) {
+            dragTo(x);
+            lift();
+        };
+
+        openChat();
+        QVERIFY2(!list->isVisible(), "the list stayed up behind a landed chat");
+
+        // Out to a third of the way and back again, without letting go. Read as
+        // travel rather than position, since the swipe only starts counting past
+        // the drag threshold; the slack is a synthesised step, where a pane that
+        // was chasing rather than held would be out by the whole distance.
+        pressAtEdge();
+        dragTo(140);
+        const qreal held = chat->x();
+        QVERIFY2(held > 0 && held < kNarrow,
+                 qPrintable(QString("the swipe did not take the pane: it is at %1")
+                                .arg(held)));
+        QVERIFY2(list->isVisible(), "the list never came back up under the swipe");
+        dragTo(240);
+        QVERIFY2(qAbs(chat->x() - (held + 100)) <= 10,
+                 qPrintable(QString("100px of finger moved the pane to %1, from %2")
+                                .arg(chat->x())
+                                .arg(held)));
+        // Thought better of it: the pane comes back with the finger.
+        dragTo(60);
+        QVERIFY2(qAbs(chat->x() - (held - 80)) <= 10,
+                 qPrintable(QString("the pane stuck at %1 on the way back, with the "
+                                    "finger 80px behind where it read %2")
+                                .arg(chat->x())
+                                .arg(held)));
+        placeAt(60);
+        QTRY_COMPARE(chat->x(), qreal(0));
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
+        QVERIFY2(!list->isVisible(), "the list stayed up after the swipe was taken back");
+
+        // Short of the commit point it settles back the same way, this time
+        // from a swipe that was never reversed.
+        pressAtEdge();
+        placeAt(120); // 30% of the way: not enough
+        QTRY_COMPARE(chat->x(), qreal(0));
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
+
+        // The same distance thrown rather than placed does pop.
+        pressAtEdge();
+        flickTo(120);
+        QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
+
+        // And thrown back, one that had gone far enough to pop does not.
+        openChat();
+        pressAtEdge();
+        dragTo(300);
+        flickTo(200); // over the line by distance, but on its way back
+        QTRY_COMPARE(chat->x(), qreal(0));
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
+
+        // Past the commit point it finishes on its own from where the finger left.
+        pressAtEdge();
+        placeAt(200); // 50%: over the line
+        QVERIFY2(chat->x() < qreal(kNarrow),
+                 "the pop jumped to the end instead of carrying on from the finger");
+        QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
+        QTRY_COMPARE(chat->x(), qreal(kNarrow));
+        QVERIFY(!shell->property("popping").toBool());
+
+        // Carried past the edge, the pane is already off screen when the finger
+        // lifts, so nothing is left to animate and the chat has to be let go of
+        // all the same. A swipe caught mid-push gets there without going so far.
+        openChat();
+        pressAtEdge();
+        placeAt(kNarrow + 20);
+        QCOMPARE(chat->x(), qreal(kNarrow));
+        QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
+        QVERIFY(!shell->property("popping").toBool());
+
+        // A swipe drives `slide` by hand, so one that forgot to hand the binding
+        // back would leave the next chat with no way to arrive.
+        openChat();
+        QCOMPARE(shell->property("slide").toReal(), qreal(1));
+
+        win.grabWindow();
+        QCoreApplication::processEvents();
+        assertNoQmlErrors(warnings);
+    }
+
     // Opening a room straight after a 1:1 asked for its session with the last
     // chat's kind and kept that answer, so the room drew a padlock - shut, at
     // that, since a setting never asked about reads back as tacky's default.

@@ -48,18 +48,31 @@ Item {
     // runs both panes are on screen at full width, which is why they are placed
     // by hand rather than by a SplitView: no two panes of a split can overlap.
     //
-    // Each pane is moved by an Animator of its own rather than by a Behavior on
-    // one shared 0..1 progress: Animators run on the render thread, so the push
-    // keeps its frames while the GUI thread lays out the arriving chat. The
-    // price is that an animated property reads its old value until it lands, so
-    // nothing may be bound to a pane's position while it moves.
+    // Each pane is moved by an Animator on its own x rather than by a Behavior
+    // on the shared progress below: Animators run on the render thread, so the
+    // push keeps its frames while the GUI thread lays out the arriving chat.
+    // The price is that an animated property reads its old value until it
+    // lands, so nothing may be bound to a pane's position while it moves.
     readonly property bool chatOnTop: !wide && currentChatJid !== "" && !popping
-    // Up while a push is in flight. Started from the state change rather than
-    // from openChat and closeChat, so a chat opened by writing the property
-    // pushes like any other.
-    property bool sliding: false
-    onChatOnTopChanged: if (!wide && easeSlide) {
-        sliding = true
+    // Where the push settles when nothing is driving it. `slide` follows it,
+    // except while a back swipe is writing the position itself. It says where
+    // the push is headed, not where it has got to: with the animators on the
+    // panes it reaches 1 the instant a chat opens, and only under a finger -
+    // where there is no animation to outrun - does it stand for the position.
+    readonly property real restingSlide: chatOnTop ? 1 : 0
+    property real slide: restingSlide
+    // Up while a push is in flight or a finger is carrying one. The animators
+    // report nothing back from the render thread, so the end of a push is a
+    // timer rather than a reading of `slide`.
+    readonly property bool sliding: pushing || backDrag.active
+    property bool pushing: false
+    // Started from the state change rather than from openChat and closeChat, so
+    // a chat opened by writing the property pushes like any other.
+    onChatOnTopChanged: startPush()
+    function startPush() {
+        if (wide || !easeSlide)
+            return
+        pushing = true
         pushSettle.restart()
     }
     // A pane is up if the push is heading its way or it has not left yet.
@@ -74,6 +87,7 @@ Item {
 
     // Off for what is not navigation: switching account discards the open chat
     // rather than popping it, and an empty pane leaving is nothing to watch.
+    // Off under a finger too, which is the animation for as long as it lasts.
     property bool easeSlide: true
 
     // What ends a push: the animators are on the render thread and report
@@ -83,7 +97,7 @@ Item {
         id: pushSettle
         interval: shell.pushDuration + 50
         onTriggered: {
-            shell.sliding = false
+            shell.pushing = false
             // Clear before dropping `popping`, or there is an instant with a
             // chat open and nothing popping: a push back to what has just left.
             if (shell.popping) {
@@ -149,7 +163,7 @@ Item {
         // starts a slide back to the chat that the clear below cannot call off.
         easeSlide = false
         pushSettle.stop()
-        sliding = false
+        pushing = false
         popping = false
         clearChat()
         easeSlide = true
@@ -185,7 +199,7 @@ Item {
         id: conversations
         // Stacked, drifts left under the arriving chat rather than sitting
         // still, so the two do not read as one sheet.
-        x: shell.chatOnTop ? -shell.width * 0.22 : 0
+        x: shell.wide ? 0 : -shell.slide * shell.width * 0.22
         width: shell.listSpan
         height: shell.height
         // Hidden once a chat is open in the narrow layout - but not before the
@@ -226,7 +240,7 @@ Item {
         anchors.fill: parent
         visible: !shell.wide && shell.sliding
         color: "#000000"
-        opacity: shell.chatOnTop ? 0.25 : 0
+        opacity: shell.slide * 0.25
         Behavior on opacity {
             enabled: !shell.wide && shell.easeSlide
             OpacityAnimator {
@@ -242,7 +256,7 @@ Item {
     // width and rides in from the right edge.
     ChatPage {
         id: chatPage
-        x: shell.wide ? shell.listSpan + 1 : (shell.chatOnTop ? 0 : shell.width)
+        x: shell.wide ? shell.listSpan + 1 : (1 - shell.slide) * shell.width
         // From the column, not from this pane's own x, which lags the animator.
         width: shell.wide ? shell.width - shell.listSpan - 1 : shell.width
         height: shell.height
@@ -282,6 +296,77 @@ Item {
             orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: "#00000000" }
             GradientStop { position: 1.0; color: "#38000000" }
+        }
+    }
+
+    // Dragging from the leading edge takes the push back by hand. Declared after
+    // the chat, so the edge is the gesture rather than what it lies over; taps
+    // still reach through, since nothing here accepts them.
+    Item {
+        id: backSwipe
+        width: 24
+        height: shell.height
+        // Whatever the chat has open unwinds first, as it does for handleBack().
+        // Not while a push runs either: the animators are on the render thread
+        // and neither `slide` nor the pane's x says where it has got to, so
+        // there is no position for a finger to carry on from.
+        enabled: shell.chatOnTop && !shell.pushing && !shell.searching
+                 && !chatPage.searchMode && !chatPage.selectionMode
+
+        // Given up on past this much of the way back, or short of it by a hard
+        // enough throw; thrown the other way it is taken back however far it came.
+        readonly property real commitAt: 0.65
+        readonly property real throwSpeed: 1200
+        // How long a reading of the speed stands for. Nothing feeds it once the
+        // finger stops, so without this a swipe held half way out and then let
+        // go still carries the speed that got it there.
+        readonly property int throwWindow: 100
+
+        DragHandler {
+            id: backDrag
+            // Touch only, as ChatBubble's reply swipe is: a press held at the
+            // edge with a mouse is a text selection.
+            acceptedDevices: PointerDevice.TouchScreen
+            target: null   // we place the panes ourselves
+            yAxis.enabled: false
+            // Takes the drag off the message list and does not hand it back:
+            // wandering off the horizontal is still part of the same swipe.
+            grabPermissions: PointerHandler.CanTakeOverFromItems
+                             | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+
+            // Where the push stood when the drag began; the handler's
+            // translation is measured from there. Always 1 as things stand,
+            // since the edge is inert until the push lands.
+            property real grabbedSlide: 1
+
+            property real speed: 0
+            property real speedAt: 0
+
+            onActiveTranslationChanged: if (active) {
+                const carried = activeTranslation.x / shell.width
+                shell.slide = Math.max(0, Math.min(1, grabbedSlide - carried))
+                speed = centroid.velocity.x
+                speedAt = Date.now()
+            }
+            onActiveChanged: {
+                if (active) {
+                    grabbedSlide = shell.slide
+                    speedAt = 0   // the last swipe's speed is not this one's
+                    shell.easeSlide = false   // the finger is the animation
+                    return
+                }
+                const thrown = Date.now() - speedAt < backSwipe.throwWindow ? speed : 0
+                const thrownBack = thrown < -backSwipe.throwSpeed
+                const thrownOff = thrown > backSwipe.throwSpeed
+                shell.easeSlide = true
+                if (thrownOff || (!thrownBack && shell.slide <= backSwipe.commitAt))
+                    shell.closeChat()
+                shell.slide = Qt.binding(() => shell.restingSlide)
+                // What the finger let go of animates the rest of the way, and a
+                // drag given up on animates back without `chatOnTop` ever
+                // moving - so the push is started here rather than left to it.
+                shell.startPush()
+            }
         }
     }
 
