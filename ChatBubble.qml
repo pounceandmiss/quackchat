@@ -574,8 +574,11 @@ Item {
                             cache: false
                             source: att.modelData.thumburl
                             fillMode: Image.PreserveAspectFit
+                            // implicitWidth is source pixels, several per drawn
+                            // one above ratio 1, so cap at the size asked for.
                             readonly property real drawWidth:
-                                Math.min(thumb.implicitWidth, root.maxBubbleWidth)
+                                Math.min(thumb.implicitWidth, Theme.thumbSize,
+                                         root.maxBubbleWidth)
                             Layout.preferredWidth: thumb.drawWidth
                             Layout.preferredHeight: thumb.implicitWidth > 0
                                 ? thumb.drawWidth * thumb.implicitHeight / thumb.implicitWidth

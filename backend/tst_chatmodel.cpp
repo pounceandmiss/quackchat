@@ -80,6 +80,7 @@ private slots:
     void transferStatesReachTheViewIntact();
     void fileEventsFilterByAcc();
     void imageRowsAskForTheirThumbnails();
+    void thumbnailSizeFollowsTheView();
     void openAttachmentResolvesThroughTheBackend();
     void uploadProgressReachesTheRowItBelongsTo();
     void sendFileHandsTackyThePath();
@@ -1021,6 +1022,8 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
     QCOMPARE(first.value("acc").toString(), QString("me@h"));
     QCOMPARE(first.value("from").toString(), QString("her@h"));
     QCOMPARE(first.value("auto").toInt(), 1);
+    // Unbound by any view, so tacky is asked for its own default size.
+    QCOMPARE(first.value("thumbmax").toInt(), 320);
     QCOMPARE(downloads.at(1).toMap().value("url").toString(), QString("https://h/a.png"));
     // Our own send is exempt from the policy.
     QCOMPARE(downloads.at(2).toMap().value("auto").toInt(), 0);
@@ -1032,6 +1035,39 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
     m.loadAttachment(300, 0);
     QCOMPARE(sent.count(), 1);
     QVERIFY(!sent.first().at(2).toMap().contains("auto"));
+}
+
+// Every request that can end in a rendered thumbnail carries the size, not only
+// the one the row fetches with.
+void TestChatModel::thumbnailSizeFollowsTheView() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+
+    QSignalSpy changed(&m, &ChatModel::thumbMaxChanged);
+    m.setThumbMax(960);
+    QCOMPARE(changed.count(), 1);
+    // A screen not realised yet must not overwrite a good size.
+    m.setThumbMax(0);
+    m.setThumbMax(-1);
+    QCOMPARE(m.thumbMax(), 960);
+    QCOMPARE(changed.count(), 1);
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.applyBatch(msgs(kMediaRow));
+    m.loadAttachment(100, 0);
+    m.openAttachment(100, 0);
+
+    int asked = 0;
+    for (const QList<QVariant> &call : sent) {
+        if (call.at(0).toString() != "file" || call.at(1).toString() != "download")
+            continue;
+        QCOMPARE(call.at(2).toMap().value("thumbmax").toInt(), 960);
+        ++asked;
+    }
+    QCOMPARE(asked, 3);
 }
 
 void TestChatModel::openAttachmentResolvesThroughTheBackend() {

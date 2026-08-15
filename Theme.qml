@@ -14,6 +14,10 @@ QtObject {
     // windows, "New window") key off this, since Android/iOS are single-window.
     readonly property bool mobile: Qt.platform.os === "android" || Qt.platform.os === "ios"
 
+    // The widest an attachment thumbnail is drawn, in logical pixels; the chat
+    // scales it by the screen's ratio to ask tacky for one that size.
+    readonly property int thumbSize: 320
+
     readonly property var palettes: ({
         // Light, warm "mallard duck" palette
         "duck": {

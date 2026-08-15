@@ -143,6 +143,13 @@ Page {
         property: "matchColor"
         value: Theme.p.selection
     }
+    // Scaled the way Avatar scales its sourceSize. The model is shared, so with
+    // two screens of differing ratios the last page to bind wins.
+    Binding {
+        target: page.chatModel
+        property: "thumbMax"
+        value: Math.round(Theme.thumbSize * page.Screen.devicePixelRatio)
+    }
 
     // ChatModel has no "selected" role, so selection lives here, keyed by each
     // message's timestamp id. Every change swaps in a fresh object so the `var`

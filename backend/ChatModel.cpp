@@ -285,6 +285,14 @@ void ChatModel::setMatchColor(const QString &css) {
         emit dataChanged(index(row), index(row), {MarkupRole});
 }
 
+// Later fetches only; one already rendered stays the size it was.
+void ChatModel::setThumbMax(int px) {
+    if (px <= 0 || m_thumbMax == px)
+        return;
+    m_thumbMax = px;
+    emit thumbMaxChanged();
+}
+
 // Only one message wears the mark, so moving it repaints where it was as well
 // as where it goes - and a row off the window simply has nothing to repaint.
 void ChatModel::highlightMatches(qlonglong ts, const QVariantList &ranges) {
@@ -723,6 +731,7 @@ void ChatModel::fetchThumbs(const QVariantMap &msg) {
                           QVariantMap{{QStringLiteral("acc"), m_account},
                                       {QStringLiteral("url"), url},
                                       {QStringLiteral("auto"), incoming ? 1 : 0},
+                                      {QStringLiteral("thumbmax"), m_thumbMax},
                                       {QStringLiteral("from"),
                                        msg.value(QStringLiteral("from_jid"))}});
     }
@@ -751,7 +760,8 @@ void ChatModel::loadAttachment(qlonglong ts, int idx) {
         return;
     m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
                       QVariantMap{{QStringLiteral("acc"), m_account},
-                                  {QStringLiteral("url"), url}});
+                                  {QStringLiteral("url"), url},
+                                  {QStringLiteral("thumbmax"), m_thumbMax}});
 }
 
 // Opening, saving and revealing all want the file on disk first, and differ
@@ -791,7 +801,8 @@ void ChatModel::resolveAttachment(qlonglong ts, int idx,
     const int tok = m_backend->request(QStringLiteral("file"),
                                        QStringLiteral("download"),
                                        QVariantMap{{QStringLiteral("acc"), m_account},
-                                                   {QStringLiteral("url"), url}});
+                                                   {QStringLiteral("url"), url},
+                                                   {QStringLiteral("thumbmax"), m_thumbMax}});
     m_pendingAction.insert(tok, act);
 }
 
