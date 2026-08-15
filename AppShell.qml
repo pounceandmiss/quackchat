@@ -144,7 +144,7 @@ Item {
         }
         if (chatPage.closeXml())
             return true
-        if (chatPage.closeKeys())
+        if (chatPage.closeContact())
             return true
         if (chatPage.closeSearch())
             return true

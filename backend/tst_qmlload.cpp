@@ -1339,18 +1339,20 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
-    // The same devices model as the account's own panel, pointed at a contact
-    // instead: every device they have is listed, and none of it is ours.
-    void loadsOmemoKeysWindow() {
+    // The mirror of the account page: who the roster says the contact is, and
+    // the same devices model as the account's own panel pointed at them
+    // instead - every device they have is listed, and none of it is ours.
+    void loadsContactDetailsWindow() {
         QStringList warnings;
         QQmlEngine e;
-        e.singletonInstance<AppController *>("Quack", "App");
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
         QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
             for (const QQmlError &w : ws)
                 warnings << w.toString();
         });
 
-        QQmlComponent comp(&e, "Quack", "OmemoKeysWindow");
+        QQmlComponent comp(&e, "Quack", "ContactDetailsWindow");
         QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
         QScopedPointer<QObject> win(
             comp.createWithInitialProperties({{"account", "me@example.com"},
@@ -1361,6 +1363,47 @@ private slots:
         QVERIFY(w);
         w->grabWindow();
         QCoreApplication::processEvents();
+
+        // The identity card is read through the chat list rather than handed
+        // over, so one opened before the list loaded fills in once it has.
+        QObject *standing = w->findChild<QObject *>("contactStanding");
+        QObject *sharing = w->findChild<QObject *>("contactSharing");
+        QObject *shownName = w->findChild<QObject *>("contactName");
+        QVERIFY(standing);
+        QVERIFY(sharing);
+        QVERIFY(shownName);
+        QCOMPARE(standing->property("text").toString(),
+                 QString("Not in your contacts"));
+        QCOMPARE(w->findChild<QObject *>("contactJid")->property("text").toString(),
+                 QString("friend@example.com"));
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"friend@example.com","name":"Friend Renamed","source":"roster",
+             "subscription":"to","last_activity":300}
+        ])")
+                             .array()
+                             .toVariantList());
+        QCoreApplication::processEvents();
+        QCOMPARE(standing->property("text").toString(), QString("In your contacts"));
+        QCOMPARE(sharing->property("text").toString(),
+                 QString("You see their status. They cannot see yours."));
+        // The roster's name wins over the one the chat was opened under: a
+        // rename lands here first.
+        QCOMPARE(shownName->property("text").toString(), QString("Friend Renamed"));
+
+        // A request out and nothing back yet is its own state, not "no
+        // sharing" - the entry carries `ask` alongside the subscription.
+        chats->applyItem(QJsonDocument::fromJson(R"(
+            {"jid":"friend@example.com","name":"Friend Renamed","source":"roster",
+             "subscription":"none","ask":"subscribe","last_activity":300}
+        )")
+                             .object()
+                             .toVariantMap());
+        QCoreApplication::processEvents();
+        QCOMPARE(sharing->property("text").toString(),
+                 QString("Waiting for them to approve your request."));
 
         // Two models: the contact's devices, and this account's own key for the
         // other half of a comparison.
@@ -1407,12 +1450,12 @@ private slots:
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first, again;
-        QVERIFY(QMetaObject::invokeMethod(mgr, "omemoKeys", Q_RETURN_ARG(QVariant, first),
+        QVERIFY(QMetaObject::invokeMethod(mgr, "contactDetails", Q_RETURN_ARG(QVariant, first),
                                           Q_ARG(QVariant, QVariant("me@example.com")),
                                           Q_ARG(QVariant, QVariant("friend@example.com")),
                                           Q_ARG(QVariant, QVariant("Friend"))));
         QVERIFY(first.value<QObject *>());
-        QVERIFY(QMetaObject::invokeMethod(mgr, "omemoKeys", Q_RETURN_ARG(QVariant, again),
+        QVERIFY(QMetaObject::invokeMethod(mgr, "contactDetails", Q_RETURN_ARG(QVariant, again),
                                           Q_ARG(QVariant, QVariant("me@example.com")),
                                           Q_ARG(QVariant, QVariant("friend@example.com")),
                                           Q_ARG(QVariant, QVariant("Friend"))));

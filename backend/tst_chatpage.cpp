@@ -190,6 +190,16 @@ class TestChatPage : public QObject {
         QTRY_VERIFY(xmlViewerWindow() == nullptr);
     }
 
+    // The contact's page is its own top-level window too, reached the same way
+    // as the XML viewer and for the same reason.
+    static QQuickWindow *contactWindow() {
+        const QWindowList windows = QGuiApplication::topLevelWindows();
+        for (QWindow *w : windows)
+            if (w->objectName() == QLatin1String("contactDetailsWindow"))
+                return qobject_cast<QQuickWindow *>(w);
+        return nullptr;
+    }
+
     // The item every popup is parented into. It carries no objectName, so it
     // goes by its class.
     static QQuickItem *overlayOf(QQuickWindow *win) {
@@ -262,6 +272,7 @@ private slots:
     void aMenuNearTheBottomOpensClearOfTheSystemBars();
     void togglingTheComposerLockChangesWhatIsSent();
     void keysOpenFromTheComposerLock();
+    void tappingTheChatHeaderOpensTheContact();
     void reactionChipsShowTheBackendSet();
     void hoveringAReactionGrowsItsGlyphRatherThanTheItem();
     void senderNamesComeFromAuthorGet();
@@ -1430,8 +1441,8 @@ void TestChatPage::togglingTheComposerLockChangesWhatIsSent() {
              QString("omemo"));
 }
 
-// The contact's keys hang off the padlock, since that is the control that says
-// whether they are being used. A room has neither.
+// The contact's page hangs off the padlock too, since that is the control that
+// says whether their keys are being used. A room has neither.
 void TestChatPage::keysOpenFromTheComposerLock() {
     const Chat chat = open("quiet@example.com");
     QVERIFY(chat.win());
@@ -1449,7 +1460,7 @@ void TestChatPage::keysOpenFromTheComposerLock() {
     auto *page = chat.win()->findChild<QObject *>("chatPane");
     QVERIFY(page);
     QVariant window;
-    QVERIFY(QMetaObject::invokeMethod(page, "openKeys", Q_RETURN_ARG(QVariant, window)));
+    QVERIFY(QMetaObject::invokeMethod(page, "openContact", Q_RETURN_ARG(QVariant,window)));
     auto *keys = qobject_cast<QQuickWindow *>(window.value<QObject *>());
     QVERIFY(keys); // a window on desktop; the mobile branch opens a sheet
     QCOMPARE(keys->property("jid").toString(), QString("quiet@example.com"));
@@ -1461,8 +1472,38 @@ void TestChatPage::keysOpenFromTheComposerLock() {
     auto *roomPage = room.win()->findChild<QObject *>("chatPane");
     QVERIFY(roomPage);
     QVariant none;
-    QVERIFY(QMetaObject::invokeMethod(roomPage, "openKeys", Q_RETURN_ARG(QVariant, none)));
+    QVERIFY(QMetaObject::invokeMethod(roomPage, "openContact", Q_RETURN_ARG(QVariant,none)));
     QVERIFY(!none.value<QObject *>());
+}
+
+// The header names who you are talking to, so it opens their page; the padlock
+// is a shortcut to the same place.
+void TestChatPage::tappingTheChatHeaderOpensTheContact() {
+    const Chat chat = open("header@example.com");
+    QVERIFY(chat.win());
+    QVERIFY(!contactWindow());
+    auto *identity = chat.win()->findChild<QQuickItem *>("chatIdentity");
+    QVERIFY(identity);
+
+    const QPointF centre =
+            identity->mapToScene(QPointF(identity->width() / 2, identity->height() / 2));
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, centre.toPoint());
+    QTRY_VERIFY(contactWindow());
+    QCOMPARE(contactWindow()->property("jid").toString(),
+             QString("header@example.com"));
+    contactWindow()->close();
+    QTRY_VERIFY(contactWindow() == nullptr);
+
+    // A room has no contact behind it, so its header is only a heading.
+    const Chat room = open("headerroom@example.com", true);
+    QVERIFY(room.win());
+    auto *roomIdentity = room.win()->findChild<QQuickItem *>("chatIdentity");
+    QVERIFY(roomIdentity);
+    const QPointF roomCentre = roomIdentity->mapToScene(
+            QPointF(roomIdentity->width() / 2, roomIdentity->height() / 2));
+    QTest::mouseClick(room.win(), Qt::LeftButton, {}, roomCentre.toPoint());
+    QTest::qWait(100);
+    QVERIFY(!contactWindow());
 }
 
 // A touch point carries no button, so the padlock's right-click handler was

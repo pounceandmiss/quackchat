@@ -19,8 +19,8 @@ QtObject {
     readonly property var _shells: []
     // account -> its open settings window, so a second request raises it.
     readonly property var _settingsWindows: ({})
-    // account|jid -> its open key window, for the same reason.
-    readonly property var _keysWindows: ({})
+    // account|jid -> its open contact window, for the same reason.
+    readonly property var _contactWindows: ({})
     // The app's own preferences, which there is only one set of.
     property var _prefsWindow: null
 
@@ -28,7 +28,7 @@ QtObject {
     property Component _chatComp: Component { ChatWindow {} }
     property Component _settingsComp: Component { AccountSettingsWindow {} }
     property Component _prefsComp: Component { AppSettingsWindow {} }
-    property Component _keysComp: Component { OmemoKeysWindow {} }
+    property Component _contactComp: Component { ContactDetailsWindow {} }
     property Component _xmlComp: Component { MessageXmlWindow {} }
 
     // Call windows are not spawned on demand - they follow App.calls, which is
@@ -130,9 +130,9 @@ QtObject {
         for (const acc in mgr._settingsWindows)
             if (mgr._settingsWindows[acc] === w)
                 delete mgr._settingsWindows[acc]
-        for (const key in mgr._keysWindows)
-            if (mgr._keysWindows[key] === w)
-                delete mgr._keysWindows[key]
+        for (const key in mgr._contactWindows)
+            if (mgr._contactWindows[key] === w)
+                delete mgr._contactWindows[key]
         if (mgr._prefsWindow === w)
             mgr._prefsWindow = null
         w.destroy()
@@ -177,22 +177,22 @@ QtObject {
         return mgr._prefsWindow
     }
 
-    // One contact's OMEMO keys. Trust is written as it is picked, so two
-    // windows on the same contact would argue over what is on screen.
-    function omemoKeys(account, jid, name) {
+    // One contact's details. Trust is written as it is picked, so two windows
+    // on the same contact would argue over what is on screen.
+    function contactDetails(account, jid, name) {
         if (!account || !jid)
             return null
         const key = account + "|" + jid
-        const open = mgr._keysWindows[key]
+        const open = mgr._contactWindows[key]
         if (open) {
             open.raise()
             open.requestActivate()
             return open
         }
-        const w = _track(mgr._keysComp.createObject(null,
+        const w = _track(mgr._contactComp.createObject(null,
             { account: account, jid: jid, name: name || "" }))
         if (w)
-            mgr._keysWindows[key] = w
+            mgr._contactWindows[key] = w
         return w
     }
 

@@ -42,43 +42,47 @@ Page {
         }
     }
 
-    // Their keys, hosted the way this app hosts every other page: a window
-    // where there are windows, a full-screen sheet where there are not. The
-    // page is instantiated from both the shell and a pop-out, so neither of
-    // them has to know which.
-    function openKeys() {
+    // Who they are and what their keys are, hosted the way this app hosts every
+    // other page: a window where there are windows, a full-screen sheet where
+    // there are not. The page is instantiated from both the shell and a
+    // pop-out, so neither of them has to know which.
+    //
+    // A room has no contact behind it - no roster entry, no keys of its own -
+    // so it has no details to show.
+    function openContact() {
         if (!page.hasChat || page.chatGroupchat)
             return null
         if (Theme.mobile) {
-            keysSheet.open()
+            contactSheet.open()
             return null
         }
-        return AppWindows.omemoKeys(page.account, page.chatJid, page.chatName)
+        return AppWindows.contactDetails(page.account, page.chatJid,
+                                         page.chatName)
     }
 
     // Answers whether it had anything to close, so the Android back chain knows
     // whether the press was spent here.
-    function closeKeys() {
-        if (!keysSheet.opened)
+    function closeContact() {
+        if (!contactSheet.opened)
             return false
-        keysSheet.close()
+        contactSheet.close()
         return true
     }
 
     FullScreenSheet {
-        id: keysSheet
-        objectName: "keysSheet"
+        id: contactSheet
+        objectName: "contactSheet"
 
-        OmemoKeysPage {
+        ContactDetailsPage {
             anchors.fill: parent
             account: page.account
             jid: page.chatJid
             name: page.chatName
-            onDone: keysSheet.close()
+            onDone: contactSheet.close()
         }
     }
 
-    // One message's stanza, hosted the two ways openKeys hosts the keys page.
+    // One message's stanza, hosted the two ways openContact hosts the contact.
     // The text is handed over rather than bound, so the viewer keeps showing
     // the row as it stood when it was asked for.
     function viewXml(ts) {
@@ -91,7 +95,7 @@ Page {
         return AppWindows.messageXml(xml)
     }
 
-    // Same contract as closeKeys.
+    // Same contract as closeContact.
     function closeXml() {
         if (!xmlSheet.opened)
             return false
@@ -639,32 +643,68 @@ Page {
                 onClicked: page.back()
             }
             Item { visible: !page.showBack; Layout.preferredWidth: 4 }
-            Avatar {
-                Layout.preferredWidth: 38
-                Layout.preferredHeight: 38
-                account: page.account
-                jid: page.chatJid
-                label: page.chatName !== "" ? page.chatName : page.chatJid
-                initialsPixelSize: 15
-            }
-            ColumnLayout {
+            // The picture and the name are what a contact's page is about, so
+            // they are also what opens it. A room has no such page, and there
+            // this is only a heading.
+            Item {
+                id: chatIdentity
+                objectName: "chatIdentity"
                 Layout.fillWidth: true
-                spacing: 1
-                Text {
-                    Layout.fillWidth: true
-                    text: page.chatName !== "" ? page.chatName : page.chatJid
+                Layout.fillHeight: true
+
+                // Pressed feedback, short of the bar's own edges so it reads as
+                // a target rather than as the header changing colour.
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.topMargin: 6
+                    anchors.bottomMargin: 6
+                    radius: 8
                     color: Theme.textPrimary
-                    font.pixelSize: 16
-                    font.bold: true
-                    elide: Text.ElideRight
+                    opacity: identityTap.pressed ? 0.12 : 0
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
                 }
-                Text {
-                    Layout.fillWidth: true
-                    text: page.chatJid
-                    visible: page.chatName !== ""
-                    color: Theme.textDim
-                    font.pixelSize: 11
-                    elide: Text.ElideRight
+
+                HoverHandler {
+                    enabled: identityTap.enabled
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    id: identityTap
+                    enabled: !page.chatGroupchat
+                    onTapped: page.openContact()
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 10
+                    Avatar {
+                        Layout.preferredWidth: 38
+                        Layout.preferredHeight: 38
+                        account: page.account
+                        jid: page.chatJid
+                        label: page.chatName !== "" ? page.chatName : page.chatJid
+                        initialsPixelSize: 15
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+                        Text {
+                            Layout.fillWidth: true
+                            text: page.chatName !== "" ? page.chatName : page.chatJid
+                            color: Theme.textPrimary
+                            font.pixelSize: 16
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: page.chatJid
+                            visible: page.chatName !== ""
+                            color: Theme.textDim
+                            font.pixelSize: 11
+                            elide: Text.ElideRight
+                        }
+                    }
                 }
             }
             // 1:1 only - tacky rings a bare JID over Jingle Message Initiation,
@@ -1371,7 +1411,9 @@ Page {
                     }
 
                     // The keys live behind the control that says whether they
-                    // are being used - the same pairing the chat menu has.
+                    // are being used - the same pairing the chat menu has. They
+                    // are a card on the contact's page, so this and the header
+                    // lead to the same place.
                     AppMenu {
                         id: lockMenu
                         objectName: "lockMenu"
@@ -1379,7 +1421,7 @@ Page {
                         MenuEntry {
                             objectName: "keysEntry"
                             text: "OMEMO keys…"
-                            onTriggered: page.openKeys()
+                            onTriggered: page.openContact()
                         }
                     }
                 }
