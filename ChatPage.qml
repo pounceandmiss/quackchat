@@ -154,25 +154,86 @@ Page {
     // ChatModel has no "selected" role, so selection lives here, keyed by each
     // message's timestamp id. Every change swaps in a fresh object so the `var`
     // binding re-evaluates and delegates re-read isSelected().
-    property var selectedBodies: ({})
-    readonly property int selectedCount: Object.keys(selectedBodies).length
+    // The value is the row as the delegate saw it, not just its body: the header
+    // acts on a selected message long after its row has scrolled out of the list.
+    property var selectedRows: ({})
+    readonly property int selectedCount: Object.keys(selectedRows).length
     readonly property bool selectionMode: selectedCount > 0
 
-    function isSelected(ts) { return selectedBodies[ts] !== undefined }
-    function toggle(ts, body) {
-        const next = Object.assign({}, selectedBodies)
+    // The header's per-message actions only mean anything with one message
+    // picked out - there is no answering two of them at once. Null otherwise,
+    // which is what those buttons watch.
+    readonly property real loneTs: selectedCount === 1
+        ? Number(Object.keys(selectedRows)[0]) : 0
+    readonly property var loneRow: loneTs !== 0 ? selectedRows[loneTs] : null
+
+    // The message a long press selected on its way to offering its actions,
+    // while that is still all the selection amounts to. Taking one of those
+    // actions says the selection was a side effect rather than the point, so it
+    // goes again - what survives is a selection built by tapping.
+    property real armedTs: 0
+    // The one message that has been handed over to text selection.
+    property real textSelectTs: 0
+    // The one showing a menu. Here rather than in the row because a touch on any
+    // other row has to know about it: that touch closes this menu and does
+    // nothing else, which is the whole of what a press outside means.
+    property real menuTs: 0
+
+    // Deferred by one turn of the loop, and that delay is the point: Qt closes
+    // the menu the instant a press lands outside it, while the press is still
+    // on its way to whatever it landed on, which has to see the menu was up.
+    function forgetMenu(ts) {
+        if (page.menuTs !== ts)
+            return
+        Qt.callLater(function() {
+            if (page.menuTs === ts)
+                page.menuTs = 0
+        })
+    }
+
+    function isSelected(ts) { return selectedRows[ts] !== undefined }
+    function toggle(ts, row) {
+        armedTs = 0
+        textSelectTs = 0
+        const next = Object.assign({}, selectedRows)
         if (next[ts] !== undefined)
             delete next[ts]
         else
-            next[ts] = body
-        selectedBodies = next
+            next[ts] = row
+        selectedRows = next
     }
-    function clearSelection() { selectedBodies = ({}) }
+    function armSelection(ts, row) {
+        if (!isSelected(ts))
+            toggle(ts, row)
+        armedTs = ts
+    }
+    function dropArmedSelection() {
+        if (armedTs !== 0 && selectedCount === 1 && isSelected(armedTs))
+            clearSelection()
+        armedTs = 0
+    }
+    function clearSelection() {
+        armedTs = 0
+        textSelectTs = 0
+        selectedRows = ({})
+    }
     function copySelected() {
         // Object keys iterate in ascending numeric order, so this joins the
         // chosen messages oldest-first regardless of the tap order.
-        Clipboard.setText(Object.values(selectedBodies).join("\n"))
+        Clipboard.setText(Object.values(selectedRows).map(r => r.body).join("\n"))
         clearSelection()
+    }
+
+    // The header's actions all finish with the message they acted on, so each
+    // of them ends the selection that offered it. Read out first: clearing is
+    // what empties loneTs and loneRow.
+    function actOnLone(fn) {
+        const ts = page.loneTs
+        const row = page.loneRow
+        if (!row)
+            return
+        clearSelection()
+        fn(ts, row)
     }
 
     // The message being answered lives on the session, so it survives the chat
@@ -652,7 +713,51 @@ Page {
                 font.pixelSize: 17
                 font.bold: true
             }
+            // What the bubble's menu offers, drawn along the bar the selection
+            // puts up, so a long press reaches all of it without one. Each acts
+            // on a single message, so each waits for exactly one to be picked.
             IconButton {
+                objectName: "selectionReply"
+                iconPath: Icons.reply
+                iconSize: 20
+                Accessible.name: qsTr("Reply")
+                glyphColor: Theme.accentDeep
+                visible: page.loneRow !== null
+                onClicked: page.actOnLone((ts, row) =>
+                    page.startReply(ts, row.body, row.outgoing))
+            }
+            IconButton {
+                objectName: "selectionRetry"
+                iconPath: Icons.refresh
+                iconSize: 20
+                Accessible.name: qsTr("Retry")
+                glyphColor: Theme.accentDeep
+                visible: page.loneRow !== null && page.loneRow.canRetry
+                onClicked: page.actOnLone((ts, row) =>
+                    page.retryMessage(ts, row.attachments))
+            }
+            IconButton {
+                objectName: "selectionResendPlain"
+                iconPath: Icons.lockOpen
+                iconSize: 20
+                Accessible.name: qsTr("Send without encryption")
+                // The one that gives something up, and the only one here
+                // wearing the colour that says so.
+                glyphColor: Theme.warning
+                visible: page.loneRow !== null && page.loneRow.canResendPlain
+                onClicked: page.actOnLone((ts) => page.chatModel.resend(ts, true))
+            }
+            IconButton {
+                objectName: "selectionViewXml"
+                iconPath: Icons.code
+                iconSize: 20
+                Accessible.name: qsTr("View XML")
+                glyphColor: Theme.accentDeep
+                visible: page.loneRow !== null
+                onClicked: page.actOnLone((ts) => page.viewXml(ts))
+            }
+            IconButton {
+                objectName: "selectionCopy"
                 iconPath: Icons.contentCopy
                 iconSize: 20
                 Accessible.name: qsTr("Copy")
@@ -947,6 +1052,15 @@ Page {
                 // something; its filename is what the user sees.
                 readonly property string label: wrap.body === "" && wrap.attachments.length > 0
                     ? wrap.attachments[0].name : wrap.body
+                // What a selected message hands the header: everything its
+                // buttons need to act without coming back to this delegate.
+                readonly property var row: ({
+                    body: wrap.label,
+                    outgoing: wrap.outgoing,
+                    attachments: wrap.attachments,
+                    canRetry: bubble.canRetry,
+                    canResendPlain: bubble.canResendPlain
+                })
                 width: feed.width
                 height: bubble.height
                 ChatBubble {
@@ -984,8 +1098,22 @@ Page {
                     onResendPlainRequested: page.chatModel.resend(wrap.timestamp, true)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
+                    textSelecting: page.textSelectTs === wrap.timestamp
                     reactions: wrap.reactions
-                    onToggleRequested: page.toggle(wrap.timestamp, wrap.label)
+                    onToggleRequested: page.toggle(wrap.timestamp, wrap.row)
+                    onSelectRequested: page.armSelection(wrap.timestamp, wrap.row)
+                    onActionTaken: page.dropArmedSelection()
+                    menuOpen: page.menuTs === wrap.timestamp
+                    anyMenuOpen: page.menuTs !== 0
+                    onMenuOpened: page.menuTs = wrap.timestamp
+                    onMenuClosed: page.forgetMenu(wrap.timestamp)
+                    onMenuDismissRequested: page.menuTs = 0
+                    onTextSelectRequested: page.textSelectTs = wrap.timestamp
+                    onTextSelectEnded: page.textSelectTs = 0
+                    onCopyTextRequested: (picked) => {
+                        Clipboard.setText(picked)
+                        page.textSelectTs = 0
+                    }
                     onCopyRequested: Clipboard.setText(wrap.label)
                     onReplyRequested: page.startReply(wrap.timestamp, wrap.label, wrap.outgoing)
                     onReactRequested: (emoji) => page.chatModel.react(wrap.timestamp, emoji)

@@ -58,12 +58,34 @@ Item {
 
     property bool selected: false
     property bool selectionMode: false
+    // Whether this message has been handed over to text selection, which only
+    // ever happens to one of them at a time. While it is on, the row's own
+    // gestures stand down so the drag reaches the body's TextEdit.
+    property bool textSelecting: false
+
+    // Whether this bubble is the one showing a menu, and whether any of them
+    // is. Both come from the page: only it can see across the rows, and a touch
+    // on one message has to know what another one is showing.
+    property bool menuOpen: false
+    property bool anyMenuOpen: false
+    signal menuOpened()
+    signal menuClosed()
+    signal menuDismissRequested()
 
     // The aggregated map from the backend: emoji -> {reactors, mine}.
     property var reactions: ({})
     readonly property var reactionKeys: reactions ? Object.keys(reactions) : []
     readonly property var reactionChoices: ["👍", "❤️", "😂", "😮", "😢", "🙏"]
     signal toggleRequested()
+    // The long press: the message joins the selection before its menu opens.
+    signal selectRequested()
+    // Any of the menu's own actions having been taken, which says the selection
+    // the long press started was a side effect rather than the point.
+    signal actionTaken()
+    // Long-pressed again while selecting: hand the words over.
+    signal textSelectRequested()
+    signal textSelectEnded()
+    signal copyTextRequested(string text)
     signal copyRequested()
     signal replyRequested()
     signal reactRequested(string emoji)
@@ -127,25 +149,109 @@ Item {
         }
     }
 
-    // Off while selecting (that mode owns taps for the checkboxes).
+    // Touch only: the mouse has the right button for the menu, and its left one
+    // belongs to the body's text selection.
+    //
+    // WithinBounds rather than the default drag threshold, which would only
+    // take a passive grab: the thumbnails, the quote and the reaction chips all
+    // sit under this handler, and a passive grab fires alongside theirs instead
+    // of losing to them. It also means a flick that started here is cancelled
+    // when the list takes the grab, so scrolling never lands on a menu.
     TapHandler {
         id: bubbleTap
-        enabled: !root.selectionMode
-        acceptedButtons: Qt.LeftButton
-        onDoubleTapped: root.reactRequested("❤️")
-        onLongPressed: root.openMenu(bubbleTap.point.position)
+        enabled: !root.textSelecting
+        acceptedDevices: PointerDevice.TouchScreen
+        gesturePolicy: TapHandler.WithinBounds
+        // Latched on the press. Qt closes an open menu the moment a press lands
+        // outside it, so by the time the tap is recognised - on release - there
+        // is no menu left to notice; what the touch meant was settled when it
+        // started.
+        property bool dismissing: false
+        onPressedChanged: if (bubbleTap.pressed) bubbleTap.dismissing = root.anyMenuOpen
+        onTapped: root.tapped(bubbleTap.point.position, bubbleTap.dismissing)
+        onLongPressed: root.pressed(bubbleTap.point.position, bubbleTap.dismissing)
     }
 
     implicitWidth: parent ? parent.width : rowContent.width
     implicitHeight: rowContent.height
 
+    // What a touch means on this row, in one place: the body's TextEdit takes
+    // the press for itself, so its own handler has to ask the same questions
+    // the row's does. `dismissing` is a menu having been up when the touch
+    // began, which is all it can mean - Qt closes that menu on the press, but
+    // the press carries on to whatever it landed on, and landing on a message
+    // used to open that message's menu in the same breath.
+    function tapped(pos, dismissing) {
+        if (dismissing)
+            root.menuDismissRequested()
+        else if (root.selectionMode)
+            root.toggleRequested()
+        else
+            root.openMenu(pos, false)
+    }
+
+    // The long press selects the message and brings the reactions up over it.
+    // Nothing else opens here: what the message can do is drawn along the
+    // header the selection puts up, and the whole menu is still a tap away.
+    // Pressed again once it is selected, it gives up its words instead.
+    function pressed(pos, dismissing) {
+        if (dismissing)
+            root.menuDismissRequested()
+        else if (root.selectionMode)
+            root.textSelectRequested()
+        else {
+            root.selectRequested()
+            reactionBar.open()
+        }
+    }
+
     // A Menu takes focus when it opens, and on Android the software keyboard
     // follows focus: opening this one over a half-typed message would drop the
     // keyboard. Nothing on the touch path needs the focus, so it opens without
     // it; the mouse path keeps it for arrow keys and Escape.
-    function openMenu(pos) {
-        ctxMenu.focus = false
+    //
+    // The reaction bar rides along wherever the menu goes, since reactions are
+    // picked far more often than anything else here. The menu goes up first: the
+    // bar sits on top of wherever it ended up, and Qt settles that on placing it.
+    function openMenu(pos, keyboard) {
+        ctxMenu.focus = keyboard
         ctxMenu.popup(root, pos.x, pos.y)
+        reactionBar.open()
+        root.menuOpened()
+    }
+
+    function closeActions() {
+        ctxMenu.close()
+        reactionBar.close()
+    }
+
+    // Everything the menu and the reaction bar offer goes out through here, so
+    // what it means for the selection a press started is said once rather than
+    // per entry.
+    function take(sig, arg) {
+        sig(arg)
+        root.actionTaken()
+    }
+
+    // The bar opened alongside the menu, so it closes with it: a press outside
+    // leaves nothing of the pair behind. The page hears about it too, since it
+    // is the one holding "some message has its menu up".
+    Connections {
+        target: ctxMenu
+        function onClosed() {
+            reactionBar.close()
+            root.menuClosed()
+        }
+    }
+
+    // The page's answer to menuDismissRequested comes back as this going false.
+    onMenuOpenChanged: if (!root.menuOpen) root.closeActions()
+
+    onTextSelectingChanged: {
+        if (root.textSelecting)
+            bodyText.selectAll()
+        else
+            bodyText.deselect()
     }
 
     AppMenu {
@@ -153,16 +259,30 @@ Item {
         objectName: "bubbleMenu"
         width: 180
 
-        MenuEntry { text: "React";  onTriggered: reactionBar.open() }
-        MenuEntry { text: "Reply";  onTriggered: root.replyRequested() }
-        MenuEntry { text: "Copy";   onTriggered: root.copyRequested() }
-        MenuEntry { text: "Select"; onTriggered: root.toggleRequested() }
+        MenuEntry {
+            objectName: "replyEntry"
+            text: "Reply"
+            onTriggered: root.take(root.replyRequested)
+        }
+        MenuEntry {
+            objectName: "copyEntry"
+            text: "Copy"
+            onTriggered: root.take(root.copyRequested)
+        }
+        // The way in for the mouse, which has no long press. Never on a message
+        // the press already selected, where it could only undo itself.
+        MenuEntry {
+            objectName: "selectEntry"
+            text: "Select"
+            offered: !root.selected
+            onTriggered: root.toggleRequested()
+        }
         // Only offered on a message that needs them.
         MenuEntry {
             objectName: "retryEntry"
             text: "Retry"
             offered: root.canRetry
-            onTriggered: root.retryRequested()
+            onTriggered: root.take(root.retryRequested)
         }
         MenuEntry {
             objectName: "resendPlainEntry"
@@ -171,14 +291,14 @@ Item {
             // the negative colour already.
             labelColor: Theme.warning
             offered: root.canResendPlain
-            onTriggered: root.resendPlainRequested()
+            onTriggered: root.take(root.resendPlainRequested)
         }
         // Ungated, unlike the two above: a message with nothing recorded is
         // itself an answer the viewer is there to give.
         MenuEntry {
             objectName: "viewXmlEntry"
             text: "View XML"
-            onTriggered: root.viewXmlRequested()
+            onTriggered: root.take(root.viewXmlRequested)
         }
     }
 
@@ -235,9 +355,19 @@ Item {
     Popup {
         id: reactionBar
         objectName: "reactionBar"
-        y: -height - 8
-        x: root.outgoing ? root.width - width - 16 : 16
+        // Sat on top of the menu when there is one, sharing its left edge, so
+        // the two read as one card. Without a menu - the long press, which opens
+        // the bar alone - it goes over the message instead. The menu is popped
+        // up over the row, so its x and y are already in the row's coordinates,
+        // which are this one's too.
+        readonly property bool onMenu: ctxMenu.visible
+        x: reactionBar.onMenu ? ctxMenu.x
+                              : (root.outgoing ? root.width - width - 16 : 16)
+        y: reactionBar.onMenu ? ctxMenu.y - height - 8 : -height - 8
         padding: 6
+        // Now that it opens with every menu it meets the top of the window far
+        // more often, and a bar off the top edge is one nobody can reach.
+        margins: 8
         modal: false
         closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside | Popup.CloseOnEscape
         background: Rectangle {
@@ -272,8 +402,71 @@ Item {
                         Behavior on grow { NumberAnimation { duration: 90; easing.type: Easing.OutBack } }
                     }
                     HoverHandler { id: choiceHover }
-                    TapHandler { onTapped: { root.reactRequested(choice.modelData); reactionBar.close() } }
+                    TapHandler {
+                        onTapped: {
+                            root.closeActions()
+                            root.take(root.reactRequested, choice.modelData)
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    // The words are what is selected now, so the way to take them sits with
+    // them rather than in the header, which is still counting whole messages.
+    // NoAutoClose because the drag that extends the selection lands outside it.
+    Popup {
+        id: textTools
+        objectName: "textTools"
+        visible: root.textSelecting
+        closePolicy: Popup.NoAutoClose
+        margins: 8
+        padding: 4
+        y: -height - 6
+        x: root.outgoing ? root.width - width - 16 : 16
+        background: Rectangle {
+            color: Theme.surface
+            radius: height / 2
+            border.color: Theme.hairline
+        }
+        contentItem: Row {
+            spacing: 2
+            Rectangle {
+                objectName: "copyTextButton"
+                // Nothing to take between the press that cleared the selection
+                // and the drag that makes a new one.
+                visible: bodyText.selectedText !== ""
+                width: copyLabel.width + 24
+                height: 32
+                radius: 16
+                color: copyHover.hovered ? Theme.menuHover : "transparent"
+                Text {
+                    id: copyLabel
+                    anchors.centerIn: parent
+                    text: "Copy"
+                    color: Theme.accentDeep
+                    font.pixelSize: 14
+                    font.bold: true
+                }
+                HoverHandler { id: copyHover }
+                TapHandler { onTapped: root.copyTextRequested(bodyText.selectedText) }
+            }
+            Rectangle {
+                objectName: "doneTextButton"
+                width: doneLabel.width + 24
+                height: 32
+                radius: 16
+                color: doneHover.hovered ? Theme.menuHover : "transparent"
+                Text {
+                    id: doneLabel
+                    anchors.centerIn: parent
+                    text: "Done"
+                    color: Theme.textDim
+                    font.pixelSize: 14
+                }
+                HoverHandler { id: doneHover }
+                TapHandler { onTapped: root.textSelectEnded() }
             }
         }
     }
@@ -559,8 +752,14 @@ Item {
                             acceptedButtons: Qt.RightButton
                             onTapped: attMenu.openFor(att.index, att.modelData)
                         }
+                        // ReleaseWithinBounds to grab ahead of the row's own
+                        // press, which would otherwise select the message and
+                        // open its menu over this one. Off while selecting,
+                        // where the row owns the press for the text.
                         TapHandler {
+                            enabled: !root.selectionMode
                             acceptedButtons: Qt.LeftButton
+                            gesturePolicy: TapHandler.ReleaseWithinBounds
                             onLongPressed: attMenu.openFor(att.index, att.modelData)
                         }
 
@@ -684,16 +883,25 @@ Item {
                     persistentSelection: true
                     Layout.maximumWidth: root.maxBubbleWidth
 
-                    // The TextEdit takes the press for itself, so a long press
-                    // on the words never reaches the handlers above.
+                    // The TextEdit takes the press for itself, so a touch on the
+                    // words never reaches the handlers above. Off only while
+                    // this message is selecting text, which is the one time the
+                    // TextEdit is meant to have it.
                     TapHandler {
                         id: bodyTap
-                        enabled: !root.selectionMode
+                        enabled: !root.textSelecting
                         acceptedDevices: PointerDevice.TouchScreen
                         gesturePolicy: TapHandler.WithinBounds
-                        onDoubleTapped: root.reactRequested("❤️")
-                        onLongPressed: root.openMenu(
-                            bodyText.mapToItem(root, bodyTap.point.position))
+                        // Latched on the press, for the reason bubbleTap is.
+                        property bool dismissing: false
+                        onPressedChanged: if (bodyTap.pressed)
+                            bodyTap.dismissing = root.anyMenuOpen
+                        onTapped: root.tapped(
+                            bodyText.mapToItem(root, bodyTap.point.position),
+                            bodyTap.dismissing)
+                        onLongPressed: root.pressed(
+                            bodyText.mapToItem(root, bodyTap.point.position),
+                            bodyTap.dismissing)
                     }
                 }
 
@@ -783,7 +991,13 @@ Item {
                             font.bold: true
                         }
                     }
-                    TapHandler { onTapped: root.reactRequested(chip.modelData) }
+                    // Exclusive on press, so the chip wins the tap outright
+                    // rather than firing alongside the row's menu.
+                    TapHandler {
+                        enabled: !root.selectionMode
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        onTapped: root.reactRequested(chip.modelData)
+                    }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                 }
             }
@@ -794,17 +1008,18 @@ Item {
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
-        onClicked: function(mouse) {
-            ctxMenu.focus = true
-            ctxMenu.popup(mouse.x, mouse.y)
-        }
+        onClicked: function(mouse) { root.openMenu(Qt.point(mouse.x, mouse.y), true) }
     }
 
-    // Disabled outside selection mode, so taps fall through to the handlers above.
-    MouseArea {
-        anchors.fill: parent
-        enabled: root.selectionMode
+    // The mouse's way into the selection the touch long press starts. The mouse
+    // alone, and a handler rather than a MouseArea: an enabled MouseArea over
+    // the whole row is the frontmost thing under a touch, and takes that touch
+    // as a synthesised click before the handlers above are ever offered it.
+    TapHandler {
+        enabled: root.selectionMode && !root.textSelecting
+        acceptedDevices: PointerDevice.Mouse
         acceptedButtons: Qt.LeftButton
-        onClicked: root.toggleRequested()
+        gesturePolicy: TapHandler.WithinBounds
+        onTapped: root.toggleRequested()
     }
 }

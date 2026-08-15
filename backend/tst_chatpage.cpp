@@ -116,6 +116,16 @@ class TestChatPage : public QObject {
         return nullptr;
     }
 
+    // A popup declared inside a bubble is a QObject child of it, and the bubble
+    // hangs off the visual tree with its delegate, so climb the parent items to
+    // reach it.
+    static QObject *popupIn(QQuickItem *from, const QString &name) {
+        for (QQuickItem *at = from; at; at = at->parentItem())
+            if (QObject *hit = at->findChild<QObject *>(name))
+                return hit;
+        return nullptr;
+    }
+
     // Opens a chat from scratch: sessions are cached app-wide and shared by
     // every window on a chat, so one an earlier test left loaded would hand this
     // one a feed already full of history.
@@ -219,7 +229,14 @@ private slots:
     void bubbleRendersMarkupAsRichText();
     void mouseDragSelectsBodyText();
     void rightClickStillOpensTheBubbleMenu();
-    void touchLongPressOpensTheBubbleMenu();
+    void aTouchTapOpensTheBubbleMenu();
+    void aPressOutsideAMenuOnlyDismissesIt();
+    void aLongPressSelectsAndOffersItsActions();
+    void theSelectionBarActsOnTheOneMessage();
+    void takingAReactionDropsThePressedSelection();
+    void pressingASelectedMessageAgainHandsOverItsWords();
+    void tappingAnotherMessageAddsItToTheSelection();
+    void tappingAReactionChipDoesNotAlsoOpenTheMenu();
     void theBubbleMenuLeavesTheComposerFocused();
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
@@ -270,6 +287,10 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "react@example.com"},
                                          {"body", "react to me"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "chip@example.com"},
+                                         {"body", "already reacted to"}});
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "room@example.com"},
@@ -337,6 +358,15 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "select@example.com"},
                                          {"body", kSelectable}});
+    // Two of them, so a selection can grow past the one a press started it on.
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "pair@example.com"},
+                                         {"body", "the older one"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "pair@example.com"},
+                                         {"body", "the newer one"}});
 
     // Barrier: this result cannot come back before the sends above ran.
     const QVariantList stored =
@@ -531,11 +561,7 @@ void TestChatPage::rightClickStillOpensTheBubbleMenu() {
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
 
-    // The Menu is a QObject child of the bubble, and the bubble hangs off the
-    // visual tree with its delegate, so climb the parent items to reach it.
-    QObject *menu = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
-        menu = at->findChild<QObject *>("bubbleMenu");
+    QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
     QVERIFY(!menu->property("opened").toBool());
 
@@ -544,9 +570,10 @@ void TestChatPage::rightClickStillOpensTheBubbleMenu() {
     QTRY_VERIFY(menu->property("opened").toBool());
 }
 
-// The touch half of the same question. With no right button the long press is
-// the only way in, and one that starts on the body used to stop at the TextEdit.
-void TestChatPage::touchLongPressOpensTheBubbleMenu() {
+// The touch half of the same question. The long press now starts a selection,
+// so the menu moved to the tap - one that starts on the body used to stop at
+// the TextEdit, which has its own handler for exactly that reason.
+void TestChatPage::aTouchTapOpensTheBubbleMenu() {
     const Chat chat = open("select@example.com");
     QVERIFY(chat.feed);
     QVERIFY(chat.win());
@@ -554,23 +581,339 @@ void TestChatPage::touchLongPressOpensTheBubbleMenu() {
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *menu = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
-        menu = at->findChild<QObject *>("bubbleMenu");
+    QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
     QVERIFY(!menu->property("opened").toBool());
 
     static QPointingDevice *finger = QTest::createTouchDevice();
     const QPoint on =
         body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
-
-    // Held, not tapped: the menu opens before the finger lifts.
     QTest::touchEvent(chat.win(), finger).press(0, on);
-    QTRY_VERIFY_WITH_TIMEOUT(menu->property("opened").toBool(), 3000);
     QTest::touchEvent(chat.win(), finger).release(0, on);
+    QTRY_VERIFY(menu->property("opened").toBool());
+
+    // The reactions ride with it rather than sitting a level down inside it.
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+    QTRY_VERIFY(bar->property("opened").toBool());
+
+    // A tap picks nothing out: that is what the press is for.
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QCOMPARE(page->property("selectedCount").toInt(), 0);
+}
+
+// The press that dismisses a menu is spent on dismissing it: closing one
+// message's menu by pressing another message used to open that one's menu on
+// the way past.
+void TestChatPage::aPressOutsideAMenuOnlyDismissesIt() {
+    const Chat chat = open("friend@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_VERIFY(chat.count() > 3);
+
+    QQuickItem *body = findItem(chat.row(0), "bubbleText");
+    QVERIFY(body);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+    QTRY_VERIFY(menu->property("opened").toBool());
+
+    // Qt slides a menu that does not fit back into the window, which can leave
+    // it over the rows around the one it belongs to. Those are no test of a
+    // press landing outside it, so find a row that genuinely is - and fail
+    // rather than pass vacuously if every visible one is covered.
+    auto *anchor = menu->property("parent").value<QQuickItem *>();
+    QVERIFY(anchor);
+    const QRectF covered = anchor->mapRectToScene(
+        QRectF(menu->property("x").toReal(), menu->property("y").toReal(),
+               menu->property("width").toReal(), menu->property("height").toReal()));
+    QQuickItem *clear = nullptr;
+    QPoint outside;
+    for (int i = 1; i < chat.count() && !clear; ++i) {
+        QQuickItem *row = chat.row(i);
+        QQuickItem *other = row ? findItem(row, "bubbleText") : nullptr;
+        if (!other || other->width() <= 0)
+            continue;
+        const QPointF at =
+            other->mapToScene(QPointF(other->width() / 2, other->height() / 2));
+        if (!covered.contains(at)) {
+            clear = other;
+            outside = at.toPoint();
+        }
+    }
+    QVERIFY2(clear, "the menu covered every other row on screen");
+    QObject *otherMenu = popupIn(clear, "bubbleMenu");
+    QVERIFY(otherMenu);
+    QVERIFY(otherMenu != menu);
+
+    QTest::touchEvent(chat.win(), finger).press(0, outside);
+    QTest::touchEvent(chat.win(), finger).release(0, outside);
+
+    QTRY_VERIFY(!menu->property("opened").toBool());
+    // Nothing else may have come of it: no second menu, and no selection.
+    QVERIFY(!otherMenu->property("opened").toBool());
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QCOMPARE(page->property("selectedCount").toInt(), 0);
+}
+
+// The press does two things at once, which is the point of it: the message
+// joins the selection, and the reactions come up over it. No menu - what the
+// message can do is drawn along the header, and the menu is what a tap is for.
+void TestChatPage::aLongPressSelectsAndOffersItsActions() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+
+    // Held, not tapped: it all arrives before the finger lifts.
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+    QVERIFY(!menu->property("opened").toBool());
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
+    QVERIFY(page->property("selectionMode").toBool());
+
+    // The header now carries what the menu offers, on the one message picked.
+    auto *reply = chat.win()->findChild<QQuickItem *>("selectionReply");
+    QVERIFY(reply);
+    QTRY_VERIFY(reply->isVisible());
+    QVERIFY(chat.win()->findChild<QQuickItem *>("selectionViewXml")->isVisible());
+    QVERIFY(chat.win()->findChild<QQuickItem *>("selectionCopy")->isVisible());
+    // Nothing failed here, so the two that answer a failure stay away.
+    QVERIFY(!chat.win()->findChild<QQuickItem *>("selectionRetry")->isVisible());
+    QVERIFY(!chat.win()->findChild<QQuickItem *>("selectionResendPlain")->isVisible());
 
     // A held finger must not have counted as a reply swipe.
-    QVERIFY(!chat.win()->findChild<QObject *>("chatPane")->property("replying").toBool());
+    QVERIFY(!page->property("replying").toBool());
+}
+
+// The header acts on the message the press picked out, and is done with it
+// afterwards - a selection nobody asked to keep is one to put away.
+void TestChatPage::theSelectionBarActsOnTheOneMessage() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
+
+    auto *reply = chat.win()->findChild<QQuickItem *>("selectionReply");
+    QVERIFY(reply);
+    QTRY_VERIFY(reply->isVisible());
+    QVERIFY(QMetaObject::invokeMethod(reply, "clicked"));
+
+    QTRY_VERIFY(page->property("replying").toBool());
+    // The quoted body is the row's, not whatever the composer had.
+    QCOMPARE(page->property("replyBody").toString(), kSelectable);
+    QCOMPARE(page->property("selectedCount").toInt(), 0);
+}
+
+// Reactions are the one thing the press does put under the thumb, and picking
+// one is an answer to the message rather than an interest in selecting it.
+void TestChatPage::takingAReactionDropsThePressedSelection() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
+
+    // Tapped where it is drawn: the bar floats in the window's overlay, so its
+    // choices are somewhere a finger can actually reach.
+    auto *content = bar->property("contentItem").value<QQuickItem *>();
+    QVERIFY(content);
+    QQuickItem *choice = findItem(content, "reactionChoice");
+    QVERIFY(choice);
+    QTRY_VERIFY(choice->width() > 0 && choice->height() > 0);
+    const QPoint at =
+        choice->mapToScene(QPointF(choice->width() / 2, choice->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, at);
+    QTest::touchEvent(chat.win(), finger).release(0, at);
+
+    QTRY_COMPARE(page->property("selectedCount").toInt(), 0);
+    QTRY_VERIFY(!bar->property("opened").toBool());
+}
+
+// Pressed again once it is selected, the message gives up its words - which
+// means standing its own handlers down so the TextEdit under them gets the
+// press it has always been kept away from.
+void TestChatPage::pressingASelectedMessageAgainHandsOverItsWords() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    // Out of the way first, so the second press is answered by the bubble and
+    // not by what the first one left standing over it.
+    QVERIFY(QMetaObject::invokeMethod(bar, "close"));
+    QTRY_VERIFY(!bar->property("visible").toBool());
+
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("textSelectTs").toDouble() != 0.0, 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    // The whole body to start with, for the drag to narrow down.
+    QCOMPARE(body->property("selectedText").toString(), kSelectable);
+    QObject *tools = popupIn(body, "textTools");
+    QVERIFY(tools);
+    QTRY_VERIFY(tools->property("opened").toBool());
+
+    // Still one selected message underneath: the words are the layer above it.
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
+}
+
+// What the press starts is meant to be built on, so the taps after it add to
+// the selection rather than opening menus over it.
+void TestChatPage::tappingAnotherMessageAddsItToTheSelection() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 2);
+
+    QQuickItem *newest = chat.row(0);
+    QQuickItem *older = chat.row(1);
+    QVERIFY(newest);
+    QVERIFY(older);
+    QQuickItem *newestBody = findItem(newest, "bubbleText");
+    QQuickItem *olderBody = findItem(older, "bubbleText");
+    QVERIFY(newestBody);
+    QVERIFY(olderBody);
+    QObject *bar = popupIn(newestBody, "reactionBar");
+    QVERIFY(bar);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint first =
+        newestBody->mapToScene(QPointF(newestBody->width() / 2, newestBody->height() / 2))
+            .toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, first);
+    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, first);
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
+
+    // Right out of the way, transitions and all: the bar the press opened
+    // stands over the row above, which is where the next tap is going.
+    QVERIFY(QMetaObject::invokeMethod(bar, "close"));
+    QTRY_VERIFY(!bar->property("visible").toBool());
+
+    const QPoint second =
+        olderBody->mapToScene(QPointF(olderBody->width() / 2, olderBody->height() / 2))
+            .toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, second);
+    QTest::touchEvent(chat.win(), finger).release(0, second);
+
+    QTRY_COMPARE(page->property("selectedCount").toInt(), 2);
+    // The tap added a message; it did not open the other bubble's menu.
+    QObject *olderMenu = popupIn(olderBody, "bubbleMenu");
+    QVERIFY(olderMenu);
+    QVERIFY(!olderMenu->property("opened").toBool());
+}
+
+// A tap on a chip has two claims on it: the chip's own, and the row's menu
+// underneath. A handler that only watched for the drag threshold would take a
+// passive grab and answer alongside the chip rather than losing to it.
+void TestChatPage::tappingAReactionChipDoesNotAlsoOpenTheMenu() {
+    const Chat chat = open("chip@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    model->react(ts, "\xf0\x9f\x91\x8d");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+
+    QQuickItem *row = findItem(chat.row(0), "reactionRow");
+    QVERIFY(row);
+    QTRY_VERIFY(row->isVisible());
+    QQuickItem *chip = nullptr;
+    const auto kids = row->childItems();
+    for (QQuickItem *kid : kids)
+        if (kid->width() > 0 && kid->height() > 0)
+            chip = kid;
+    QVERIFY(chip);
+
+    QObject *menu = popupIn(row, "bubbleMenu");
+    QVERIFY(menu);
+
+    // Near the chip's top edge: the row hangs half of it past the bubble, and
+    // only the half still inside is somewhere the bubble's own handler would
+    // have answered.
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on = chip->mapToScene(QPointF(chip->width() / 2, 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    // The chip's own answer: react is a toggle, so this takes the emoji back.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+    QVERIFY(!menu->property("opened").toBool());
 }
 
 // Android ties the software keyboard to whoever holds focus, so a menu that
@@ -589,17 +932,15 @@ void TestChatPage::theBubbleMenuLeavesTheComposerFocused() {
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *menu = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
-        menu = at->findChild<QObject *>("bubbleMenu");
+    QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
 
     static QPointingDevice *finger = QTest::createTouchDevice();
     const QPoint on =
         body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
     QTest::touchEvent(chat.win(), finger).press(0, on);
-    QTRY_VERIFY_WITH_TIMEOUT(menu->property("opened").toBool(), 3000);
     QTest::touchEvent(chat.win(), finger).release(0, on);
+    QTRY_VERIFY(menu->property("opened").toBool());
 
     QVERIFY(input->hasActiveFocus());
 }
@@ -878,9 +1219,7 @@ void TestChatPage::onlyAFailedEncryptionOffersThePlaintextWayOut() {
     QTRY_COMPARE(chat.count(), 1);
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *menu = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
-        menu = at->findChild<QObject *>("bubbleMenu");
+    QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
 
     auto *retry = menu->findChild<QQuickItem *>("retryEntry");
@@ -930,9 +1269,7 @@ void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *menu = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
-        menu = at->findChild<QObject *>("bubbleMenu");
+    QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
     auto *entry = menu->findChild<QQuickItem *>("viewXmlEntry");
     QVERIFY(entry);
@@ -1009,9 +1346,7 @@ void TestChatPage::aMenuNearTheBottomOpensClearOfTheSystemBars() {
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *menu = nullptr;
-    for (QQuickItem *at = body; at && !menu; at = at->parentItem())
-        menu = at->findChild<QObject *>("bubbleMenu");
+    QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
     auto *bubble = qobject_cast<QQuickItem *>(menu->parent());
     QVERIFY(bubble);
@@ -1020,7 +1355,8 @@ void TestChatPage::aMenuNearTheBottomOpensClearOfTheSystemBars() {
     // not fit.
     const QPointF atEdge = bubble->mapFromScene(QPointF(0, chat.win()->height() - 4));
     QVERIFY(QMetaObject::invokeMethod(bubble, "openMenu",
-                                      Q_ARG(QVariant, QVariant::fromValue(atEdge))));
+                                      Q_ARG(QVariant, QVariant::fromValue(atEdge)),
+                                      Q_ARG(QVariant, false)));
     QTRY_VERIFY(menu->property("opened").toBool());
 
     QVERIFY(menu->property("height").toReal() > 0.0);
