@@ -865,19 +865,7 @@ Page {
             cacheBuffer: 400
             boundsBehavior: Flickable.StopAtBounds
 
-            // Slim themed handle, faintly visible when overflowing, firming up
-            // while scrolling or dragging.
-            ScrollBar.vertical: ScrollBar {
-                id: feedScroll
-                contentItem: Rectangle {
-                    implicitWidth: 6
-                    radius: 3
-                    color: Theme.textDim
-                    visible: feedScroll.size < 1
-                    opacity: feedScroll.pressed ? 0.8 : feedScroll.active ? 0.5 : 0.25
-                    Behavior on opacity { NumberAnimation { duration: 150 } }
-                }
-            }
+            ScrollBar.vertical: ThinScrollBar {}
 
             // BottomToTop lays row 0 (the newest) along the content's bottom, so
             // the oldest row is at the content top: the oldest edge is

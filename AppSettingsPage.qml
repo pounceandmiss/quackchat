@@ -137,6 +137,7 @@ Page {
         anchors.fill: parent
         contentWidth: availableWidth
         clip: true
+        ScrollBar.vertical: ThinScrollBar {}
 
         ColumnLayout {
             width: scroll.availableWidth

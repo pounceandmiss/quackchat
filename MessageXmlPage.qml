@@ -69,6 +69,8 @@ Page {
         anchors.fill: parent
         anchors.margins: 12
         clip: true
+        ScrollBar.vertical: ThinScrollBar {}
+        ScrollBar.horizontal: ThinScrollBar {}
 
         TextArea {
             objectName: "xmlText"

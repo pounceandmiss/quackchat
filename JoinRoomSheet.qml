@@ -156,7 +156,7 @@ SheetDialog {
                 anchors.margins: 1
                 clip: true
                 model: rooms
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: ThinScrollBar {}
 
                 delegate: ItemDelegate {
                     id: roomRow

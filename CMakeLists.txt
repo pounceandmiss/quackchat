@@ -217,6 +217,7 @@ qt_add_qml_module(quack
         ConfirmDialog.qml
         MessageHits.qml
         SectionLabel.qml
+        ThinScrollBar.qml
         ChatPage.qml
         ChatBubble.qml
         Avatar.qml

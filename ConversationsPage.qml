@@ -249,17 +249,7 @@ Page {
         model: visibleChats
         clip: true
 
-        ScrollBar.vertical: ScrollBar {
-            id: listScroll
-            contentItem: Rectangle {
-                implicitWidth: 6
-                radius: 3
-                color: Theme.textDim
-                visible: listScroll.size < 1
-                opacity: listScroll.pressed ? 0.8 : listScroll.active ? 0.5 : 0.25
-                Behavior on opacity { NumberAnimation { duration: 150 } }
-            }
-        }
+        ScrollBar.vertical: ThinScrollBar {}
 
         // A heading over the only thing here says nothing; it earns its place
         // once the hits are underneath it.
