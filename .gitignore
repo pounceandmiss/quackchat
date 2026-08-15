@@ -1,6 +1,10 @@
 build/
 build-android/
 build-win/
+flatpak/.flatpak-builder/
+flatpak/build-dir/
+flatpak/repo/
+*.flatpak
 CMakeUserPresets.json
 .qtcreator/
 .cache/

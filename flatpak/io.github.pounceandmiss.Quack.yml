@@ -1,0 +1,69 @@
+# Flatpak manifest for quackchat.
+#
+# Qt comes from the KDE runtime, so only tacky and the app itself are built
+# here.
+
+app-id: io.github.pounceandmiss.Quack
+runtime: org.kde.Platform
+runtime-version: '6.11'
+sdk: org.kde.Sdk
+command: quackchat
+
+finish-args:
+  - --share=network            # XMPP
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc                # X11 MIT-SHM
+  - --device=dri               # the scene graph renders on the GPU
+  - --socket=pulseaudio        # voice calls (rtc-ma: playback + mic capture)
+  # The alerts go straight to the daemon rather than through the notification
+  # portal, which is a different interface. Without this they are dropped and
+  # the app runs on, silently.
+  - --talk-name=org.freedesktop.Notifications
+  - --filesystem=xdg-download  # received and sent attachments
+
+# The archive and header are build-time only; the app links them statically.
+cleanup:
+  - /lib/tacky
+
+modules:
+  - name: tacky
+    buildsystem: simple
+    build-options:
+      # zippy fetches tacky's dependencies itself, pinning every clone to a
+      # commit and every tarball to a sha256, so it needs the network during
+      # the build. Restaging that dep tree here as manifest sources is what a
+      # Flathub submission would require, and it means keeping a second copy of
+      # pins that only zippy.mk can be right about - tacky's own manifest holds
+      # such a copy and five of its commits have since gone stale.
+      build-args:
+        - --share=network
+      # The deliverable is a static archive, which the debuginfo pass has
+      # nothing to say about.
+      no-debuginfo: true
+    build-commands:
+      - make lib
+      # The pair CMake's find_path/find_library want under one root.
+      - install -Dm644 dist/libtacky.a /app/lib/tacky/dist/libtacky.a
+      - install -Dm644 embed/tacky.h /app/lib/tacky/embed/tacky.h
+    sources:
+      - type: git
+        url: https://github.com/pounceandmiss/tacky.git
+        branch: main
+
+  - name: quack
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DTACKY_ROOT=/app/lib/tacky
+    sources:
+      # The working tree, until there is a repository to name instead.
+      - type: dir
+        path: ..
+        skip:
+          - .cache
+          - .claude
+          - .git
+          - build
+          - build-android
+          - flatpak
