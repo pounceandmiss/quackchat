@@ -1363,8 +1363,12 @@ Page {
                         id: input
                         objectName: "messageInput"
                         anchors.fill: parent
-                        anchors.leftMargin: 16
-                        anchors.rightMargin: 16
+                        // The pill is drawn by the Rectangle, so the inset is
+                        // the field's own padding. A margin on top of it would
+                        // stack with whatever the style pads by - 16 under
+                        // Material, and the text starts a third of an inch in.
+                        leftPadding: 16
+                        rightPadding: 16
                         verticalAlignment: TextInput.AlignVCenter
                         color: Theme.textPrimary
                         font.pixelSize: 15
