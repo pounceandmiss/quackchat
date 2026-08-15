@@ -327,16 +327,28 @@ if(ANDROID)
     # packages as a plain jniLib that only the service's System.loadLibrary
     # resolves.
     set(_android_pkg "${CMAKE_CURRENT_BINARY_DIR}/android-package")
-    add_custom_command(TARGET quackchat POST_BUILD
+    set(_staged_jni "${_android_pkg}/libs/${CMAKE_ANDROID_ARCH_ABI}/libtackyjni.so")
+    # Everything androiddeployqt reads out of the staged dir, so that editing
+    # the manifest or an icon restages as surely as relinking the interpreter.
+    file(GLOB_RECURSE _android_pkg_src CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/android/*")
+    # Keyed to tackyjni and the sources rather than hung off quackchat's link:
+    # a new libtacky.a relinks the interpreter alone, and a POST_BUILD there
+    # would leave the stale copy staged and package it without a word.
+    # androiddeployqt names the staged files in its depfile, so refreshing them
+    # is what re-triggers the apk.
+    add_custom_command(
+        OUTPUT "${_staged_jni}"
         COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/android" "${_android_pkg}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "$<TARGET_FILE:tackyjni>"
-                "${_android_pkg}/libs/${CMAKE_ANDROID_ARCH_ABI}/libtackyjni.so"
+        COMMAND ${CMAKE_COMMAND} -E copy
+                "$<TARGET_FILE:tackyjni>" "${_staged_jni}"
+        DEPENDS tackyjni ${_android_pkg_src}
         COMMENT "Staging the Android package source dir")
+    add_custom_target(stage_android_package DEPENDS "${_staged_jni}")
     set_target_properties(quackchat PROPERTIES
         QT_ANDROID_PACKAGE_SOURCE_DIR "${_android_pkg}")
-    add_dependencies(quackchat tackyjni)
+    add_dependencies(quackchat stage_android_package)
 endif()
 
 # A cross build emits tests this host cannot run, and ctest reports those as
