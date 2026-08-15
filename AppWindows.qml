@@ -21,6 +21,8 @@ QtObject {
     readonly property var _settingsWindows: ({})
     // account|jid -> its open contact window, for the same reason.
     readonly property var _contactWindows: ({})
+    // account|jid -> its open room details window, likewise.
+    readonly property var _roomWindows: ({})
     // The app's own preferences, which there is only one set of.
     property var _prefsWindow: null
 
@@ -29,6 +31,7 @@ QtObject {
     property Component _settingsComp: Component { AccountSettingsWindow {} }
     property Component _prefsComp: Component { AppSettingsWindow {} }
     property Component _contactComp: Component { ContactDetailsWindow {} }
+    property Component _roomComp: Component { MucDetailsWindow {} }
     property Component _xmlComp: Component { MessageXmlWindow {} }
 
     // Call windows are not spawned on demand - they follow App.calls, which is
@@ -133,6 +136,9 @@ QtObject {
         for (const key in mgr._contactWindows)
             if (mgr._contactWindows[key] === w)
                 delete mgr._contactWindows[key]
+        for (const room in mgr._roomWindows)
+            if (mgr._roomWindows[room] === w)
+                delete mgr._roomWindows[room]
         if (mgr._prefsWindow === w)
             mgr._prefsWindow = null
         w.destroy()
@@ -193,6 +199,23 @@ QtObject {
             { account: account, jid: jid, name: name || "" }))
         if (w)
             mgr._contactWindows[key] = w
+        return w
+    }
+
+    // One room's details, for the same reason the contact page above is one per
+    // contact: moderation is written from in there, and two windows on the same
+    // room would argue over it.
+    function mucDetails(account, jid, name) {
+        if (!account || !jid)
+            return null
+        const key = account + "|" + jid
+        const open = mgr._roomWindows[key]
+        if (open)
+            return _raise(open)
+        const w = _track(mgr._roomComp.createObject(null,
+            { account: account, jid: jid, name: name || "" }))
+        if (w)
+            mgr._roomWindows[key] = w
         return w
     }
 

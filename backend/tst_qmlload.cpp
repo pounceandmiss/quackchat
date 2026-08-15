@@ -24,6 +24,7 @@
 #include "CallsModel.h"
 #include "ChatListFilter.h"
 #include "ChatListModel.h"
+#include "MucRoomModel.h"
 #include "OmemoDevicesModel.h"
 #include "SearchModel.h"
 #include "TackyBackend.h"
@@ -1467,6 +1468,166 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    void loadsMucDetailsWindow() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+
+        // A page with no room yet, which is how one built inside a chat's sheet
+        // sits until somebody opens it. The card drawing our own row is hidden
+        // then - but a hidden item's bindings run all the same, and a JID built
+        // by hand out of two empty halves came out as "/", which tacky answers
+        // by throwing rather than by missing.
+        QQmlComponent blankComp(&e, "Quack", "MucDetailsWindow");
+        QVERIFY2(blankComp.isReady(), qPrintable(blankComp.errorString()));
+        QScopedPointer<QObject> blank(blankComp.createWithInitialProperties(
+            {{"account", "me@example.com"}, {"jid", ""}}));
+        QVERIFY(!blank.isNull());
+        auto *blankWin = qobject_cast<QQuickWindow *>(blank.data());
+        blankWin->grabWindow();
+        QCoreApplication::processEvents();
+        QQuickItem *blankAvatar = findItem(blankWin->contentItem(), "myAvatar");
+        QVERIFY(blankAvatar);
+        QCOMPARE(blankAvatar->property("jid").toString(), QString());
+        QVERIFY(QMetaObject::invokeMethod(blank.data(), "close"));
+        QCoreApplication::processEvents();
+
+        QQmlComponent comp(&e, "Quack", "MucDetailsWindow");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> win(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"jid", "room@muc.example.com?join"},
+             {"name", "The Room"}}));
+        QVERIFY(!win.isNull());
+        auto *w = qobject_cast<QQuickWindow *>(win.data());
+        QVERIFY(w);
+        w->grabWindow();
+        QCoreApplication::processEvents();
+
+        auto *room = w->findChild<MucRoomModel *>();
+        QVERIFY(room);
+        // The page is handed the chat JID and cuts the suffix off itself.
+        QCOMPARE(room->roomJid(), QString("room@muc.example.com"));
+
+        QQuickItem *list = findItem(w->contentItem(), "occupantList");
+        QVERIFY(list);
+        // Nothing known yet says which of the three empty rooms this is.
+        QObject *empty = w->findChild<QObject *>("emptyNotice");
+        QVERIFY(empty);
+        QVERIFY(empty->property("visible").toBool());
+        QObject *notJoined = w->findChild<QObject *>("notJoinedChip");
+        QVERIFY(notJoined);
+        QVERIFY(notJoined->property("visible").toBool());
+
+        room->applyJoined(true);
+        room->applyOccupants({QVariantMap{{"nick", "mo"},
+                                          {"role", "moderator"},
+                                          {"affiliation", "owner"},
+                                          {"jid", "mo@elsewhere.example"},
+                                          {"caps", QVariantMap{{"kick", true}}}},
+                              QVariantMap{{"nick", "amy"}, {"role", "participant"},
+                                          {"affiliation", "none"},
+                                          {"status", "online"}},
+                              QVariantMap{{"nick", "zoe"}, {"role", "visitor"},
+                                          {"affiliation", "member"}}});
+        room->applyMyNick("amy");
+        room->applySubject("what this room is about");
+        QCoreApplication::processEvents();
+
+        QCOMPARE(list->property("count").toInt(), 3);
+        QVERIFY(!empty->property("visible").toBool());
+        QVERIFY(!notJoined->property("visible").toBool());
+
+        // One heading per role present, in the model's order. Through QTRY,
+        // because the section items are built on the view's next polish rather
+        // than when the rows land.
+        const auto textsOf = [&](const QString &name, const char *prop) {
+            QStringList out;
+            for (QQuickItem *i : findItems(w->contentItem(), name))
+                out << i->property(prop).toString();
+            return out;
+        };
+        QTRY_COMPARE(textsOf("groupHeading", "section"),
+                     QStringList({"moderator", "participant", "visitor"}));
+        QTRY_COMPARE(textsOf("occupantNick", "text"),
+                     QStringList({"mo", "amy", "zoe"}));
+
+        // Under each nick: their real address where the room discloses one, and
+        // otherwise their own status text, quoted so it does not read as a word
+        // this app chose. Nothing at all where there is neither - a presence
+        // word here would sit beside somebody's "online" pretending to be one.
+        const QList<QQuickItem *> lines =
+            findItems(w->contentItem(), "occupantSecondLine");
+        QCOMPARE(lines.size(), 3);
+        QCOMPARE(lines.at(0)->property("text").toString(),
+                 QString("mo@elsewhere.example"));
+        QCOMPARE(lines.at(1)->property("text").toString(),
+                 QString(u"“online”"));
+        QVERIFY(!lines.at(2)->isVisible());
+
+        QObject *subject = w->findChild<QObject *>("roomSubject");
+        QVERIFY(subject);
+        QCOMPARE(subject->property("text").toString(),
+                 QString("what this room is about"));
+        QObject *myNick = w->findChild<QObject *>("myNick");
+        QVERIFY(myNick);
+        QCOMPARE(myNick->property("text").toString(), QString("amy"));
+        // And with a room and a nick to hand, a whole one.
+        QQuickItem *myAvatar = findItem(w->contentItem(), "myAvatar");
+        QVERIFY(myAvatar);
+        QCOMPARE(myAvatar->property("jid").toString(),
+                 QString("room@muc.example.com/amy"));
+
+        // Exactly one row is ours, and only the one we may act on offers a menu.
+        int selfMarks = 0;
+        for (QQuickItem *c : findItems(w->contentItem(), "selfChip"))
+            if (c->isVisible())
+                ++selfMarks;
+        QCOMPARE(selfMarks, 1);
+        int actionable = 0;
+        for (QQuickItem *b : findItems(w->contentItem(), "occupantMenuButton"))
+            if (b->isVisible())
+                ++actionable;
+        QCOMPARE(actionable, 1);
+
+        // The filter narrows the rows without touching the room, so the heading
+        // still counts everyone in the group.
+        room->setFilter("z");
+        QCoreApplication::processEvents();
+        QCOMPARE(list->property("count").toInt(), 1);
+        QCOMPARE(room->total(), 3);
+        room->setFilter("");
+        QCoreApplication::processEvents();
+        QCOMPARE(list->property("count").toInt(), 3);
+
+        // One window per room, for the same reason the contact window is one per
+        // contact: both are written from, not only read.
+        auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
+        QVERIFY(mgr);
+        QVariant first, again;
+        QVERIFY(QMetaObject::invokeMethod(
+            mgr, "mucDetails", Q_RETURN_ARG(QVariant, first),
+            Q_ARG(QVariant, QVariant("me@example.com")),
+            Q_ARG(QVariant, QVariant("room@muc.example.com?join")),
+            Q_ARG(QVariant, QVariant("The Room"))));
+        QVERIFY(first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(
+            mgr, "mucDetails", Q_RETURN_ARG(QVariant, again),
+            Q_ARG(QVariant, QVariant("me@example.com")),
+            Q_ARG(QVariant, QVariant("room@muc.example.com?join")),
+            Q_ARG(QVariant, QVariant("The Room"))));
+        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
+        QCoreApplication::processEvents();
+
+        assertNoQmlErrors(warnings);
+    }
+
     // Closing the window is not a way to walk out on a running call: it hangs
     // up, and only then does the row (and with it the window) go.
     void closingACallWindowHangsUp() {
@@ -1884,6 +2045,10 @@ private slots:
         QVERIFY(chat);
         QQuickItem *lock = findItem(shell, "omemoToggle");
         QVERIFY(lock);
+        // The room's counterpart to the padlock, and just as wrong in the other
+        // kind of chat: there are no participants to a conversation of two.
+        QQuickItem *people = findItem(shell, "roomDetailsButton");
+        QVERIFY(people);
 
         const auto openChat = [&](const QString &jid, bool groupchat) {
             QVERIFY(QMetaObject::invokeMethod(shell, "openChat",
@@ -1894,14 +2059,17 @@ private slots:
 
         openChat("friend@example.com", false);
         QTRY_VERIFY(lock->isVisible());
+        QVERIFY(!people->isVisible());
 
         openChat("room@example.com", true);
         QVERIFY2(!lock->isVisible(), "a room was offered OMEMO");
         QVERIFY(!chat->property("canEncrypt").toBool());
+        QVERIFY(people->isVisible());
 
         // The other way about: a room must not take the 1:1's padlock with it.
         openChat("friend@example.com", false);
         QVERIFY(lock->isVisible());
+        QVERIFY(!people->isVisible());
 
         win.grabWindow();
         QCoreApplication::processEvents();

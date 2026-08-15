@@ -146,6 +146,8 @@ Item {
             return true
         if (chatPage.closeContact())
             return true
+        if (chatPage.closeDetails())
+            return true
         if (chatPage.closeSearch())
             return true
         if (chatPage.selectionMode) {

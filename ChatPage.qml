@@ -82,6 +82,44 @@ Page {
         }
     }
 
+    // What the contact page above is for a conversation of two: the room this
+    // chat is, and everyone in it. A chat is one or the other, so the two sit
+    // behind the same corner of the header and are never both offered.
+    function openDetails() {
+        if (!page.hasChat || !page.chatGroupchat)
+            return null
+        if (Theme.mobile) {
+            detailsSheet.open()
+            return null
+        }
+        return AppWindows.mucDetails(page.account, page.chatJid, page.chatName)
+    }
+
+    // Same contract as closeContact, except that the room's own filter unwinds
+    // first, so one back press does not close both it and the sheet.
+    function closeDetails() {
+        if (!detailsSheet.opened)
+            return false
+        if (detailsPage.closeFilter())
+            return true
+        detailsSheet.close()
+        return true
+    }
+
+    FullScreenSheet {
+        id: detailsSheet
+        objectName: "detailsSheet"
+
+        MucDetailsPage {
+            id: detailsPage
+            anchors.fill: parent
+            account: page.account
+            jid: page.chatJid
+            name: page.chatName
+            onDone: detailsSheet.close()
+        }
+    }
+
     // One message's stanza, hosted the two ways openContact hosts the contact.
     // The text is handed over rather than bound, so the viewer keeps showing
     // the row as it stood when it was asked for.
@@ -643,9 +681,9 @@ Page {
                 onClicked: page.back()
             }
             Item { visible: !page.showBack; Layout.preferredWidth: 4 }
-            // The picture and the name are what a contact's page is about, so
-            // they are also what opens it. A room has no such page, and there
-            // this is only a heading.
+            // The picture and the name are what the chat's own page is about, so
+            // they are also what opens it - the contact behind a conversation of
+            // two, and the room behind one of many.
             Item {
                 id: chatIdentity
                 objectName: "chatIdentity"
@@ -670,8 +708,8 @@ Page {
                 }
                 TapHandler {
                     id: identityTap
-                    enabled: !page.chatGroupchat
-                    onTapped: page.openContact()
+                    onTapped: page.chatGroupchat ? page.openDetails()
+                                                 : page.openContact()
                 }
 
                 RowLayout {
@@ -706,6 +744,16 @@ Page {
                         }
                     }
                 }
+            }
+            // Where a 1:1 chat has a call button, a room has its people.
+            IconButton {
+                objectName: "roomDetailsButton"
+                visible: page.hasChat && page.chatGroupchat
+                Accessible.name: qsTr("Room details")
+                iconPath: Icons.group
+                iconSize: 20
+                glyphColor: Theme.textDim
+                onClicked: page.openDetails()
             }
             // 1:1 only - tacky rings a bare JID over Jingle Message Initiation,
             // which has no meaning for a room.

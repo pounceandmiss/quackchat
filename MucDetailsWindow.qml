@@ -1,0 +1,38 @@
+import QtQuick
+import QtQuick.Controls
+import Quack
+
+// The desktop home for MucDetailsPage, and the room's counterpart to
+// ContactDetailsWindow. One per room, kept by AppWindows: two windows on one
+// room would each be moderating it, and each would be showing the other's
+// kicks arriving as if from nowhere.
+ApplicationWindow {
+    id: win
+    objectName: "mucDetailsWindow"
+    property string account: ""
+    property string jid: ""
+    property string name: ""
+
+    width: 460
+    height: 700
+    minimumWidth: 360
+    minimumHeight: 420
+    visible: true
+    title: "Room details — " + (name !== "" ? name : jid)
+    color: Theme.background
+
+    Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
+
+    MucDetailsPage {
+        anchors.fill: parent
+        anchors.topMargin: SafeArea.margins.top
+        anchors.bottomMargin: SafeArea.margins.bottom
+        anchors.leftMargin: SafeArea.margins.left
+        anchors.rightMargin: SafeArea.margins.right
+        account: win.account
+        jid: win.jid
+        name: win.name
+        showClose: false // the window's own close button is right there
+        onDone: win.close()
+    }
+}

@@ -275,37 +275,11 @@ Page {
         }
     }
 
-    // A copy is silent otherwise.
-    Rectangle {
+    CopiedNotice {
         id: copiedNotice
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 24
-        width: noticeText.implicitWidth + 28
-        height: 34
-        radius: 17
-        color: Theme.textPrimary
-        opacity: 0
-        visible: opacity > 0
-
-        function show() {
-            copiedNotice.opacity = 0.92
-            hideTimer.restart()
-        }
-
-        Behavior on opacity { NumberAnimation { duration: 180 } }
-        Timer {
-            id: hideTimer
-            interval: 1400
-            onTriggered: copiedNotice.opacity = 0
-        }
-
-        Text {
-            id: noticeText
-            anchors.centerIn: parent
-            text: "Fingerprint copied"
-            color: Theme.surface
-            font.pixelSize: 12
-        }
+        text: "Fingerprint copied"
     }
 }

@@ -200,6 +200,15 @@ class TestChatPage : public QObject {
         return nullptr;
     }
 
+    // What a room has instead of a contact page, found the same way.
+    static QQuickWindow *roomWindow() {
+        const QWindowList windows = QGuiApplication::topLevelWindows();
+        for (QWindow *w : windows)
+            if (w->objectName() == QLatin1String("mucDetailsWindow"))
+                return qobject_cast<QQuickWindow *>(w);
+        return nullptr;
+    }
+
     // The item every popup is parented into. It carries no objectName, so it
     // goes by its class.
     static QQuickItem *overlayOf(QQuickWindow *win) {
@@ -1476,8 +1485,9 @@ void TestChatPage::keysOpenFromTheComposerLock() {
     QVERIFY(!none.value<QObject *>());
 }
 
-// The header names who you are talking to, so it opens their page; the padlock
-// is a shortcut to the same place.
+// The header names what you are talking to, so it opens that thing's page: the
+// contact behind a conversation of two, the room behind one of many. The
+// padlock is a shortcut to the first of them.
 void TestChatPage::tappingTheChatHeaderOpensTheContact() {
     const Chat chat = open("header@example.com");
     QVERIFY(chat.win());
@@ -1494,7 +1504,7 @@ void TestChatPage::tappingTheChatHeaderOpensTheContact() {
     contactWindow()->close();
     QTRY_VERIFY(contactWindow() == nullptr);
 
-    // A room has no contact behind it, so its header is only a heading.
+    // A room has no contact behind it; what it has is the room itself.
     const Chat room = open("headerroom@example.com", true);
     QVERIFY(room.win());
     auto *roomIdentity = room.win()->findChild<QQuickItem *>("chatIdentity");
@@ -1502,8 +1512,12 @@ void TestChatPage::tappingTheChatHeaderOpensTheContact() {
     const QPointF roomCentre = roomIdentity->mapToScene(
             QPointF(roomIdentity->width() / 2, roomIdentity->height() / 2));
     QTest::mouseClick(room.win(), Qt::LeftButton, {}, roomCentre.toPoint());
-    QTest::qWait(100);
+    QTRY_VERIFY(roomWindow());
+    QCOMPARE(roomWindow()->property("jid").toString(),
+             QString("headerroom@example.com"));
     QVERIFY(!contactWindow());
+    roomWindow()->close();
+    QTRY_VERIFY(roomWindow() == nullptr);
 }
 
 // A touch point carries no button, so the padlock's right-click handler was

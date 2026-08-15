@@ -189,6 +189,7 @@ qt_add_qml_module(quack
         AccountSettingsWindow.qml
         AppSettingsWindow.qml
         ContactDetailsWindow.qml
+        MucDetailsWindow.qml
         MessageXmlWindow.qml
         AppShell.qml
         AccountRail.qml
@@ -203,7 +204,9 @@ qt_add_qml_module(quack
         TrustList.qml
         Card.qml
         Caption.qml
+        CopiedNotice.qml
         ContactDetailsPage.qml
+        MucDetailsPage.qml
         MessageXmlPage.qml
         Fingerprint.qml
         ConversationsPage.qml
@@ -246,6 +249,7 @@ qt_add_qml_module(quack
         backend/SearchModel.cpp backend/SearchModel.h
         backend/MapListModel.cpp backend/MapListModel.h
         backend/MucRoomsModel.cpp backend/MucRoomsModel.h
+        backend/MucRoomModel.cpp backend/MucRoomModel.h
         backend/ChatListFilter.cpp backend/ChatListFilter.h
         backend/AccountsModel.cpp backend/AccountsModel.h
         backend/AccountSettings.cpp backend/AccountSettings.h
@@ -370,7 +374,7 @@ enable_testing()
 
 foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
-          tst_searchmodel tst_mucrooms tst_chatlistfilter
+          tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
           tst_calls tst_audiodevices tst_appsettings tst_notifications)
     qt_add_executable(${t} backend/${t}.cpp)
