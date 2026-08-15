@@ -285,6 +285,8 @@ private slots:
     void tappingTheChatHeaderOpensTheContact();
     void reactionChipsShowTheBackendSet();
     void hoveringAReactionGrowsItsGlyphRatherThanTheItem();
+    void aReactionThatArrivesPopsItsChip();
+    void chipsTheRowWasBuiltWithDoNotPop();
     void senderNamesComeFromAuthorGet();
     void oneSessionServesEveryWindowOnAChat();
     // Stops the shared backend, so nothing may run after it.
@@ -323,6 +325,14 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "chip@example.com"},
                                          {"body", "already reacted to"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "pop@example.com"},
+                                         {"body", "watch the chip land"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "drawn@example.com"},
+                                         {"body", "reacted to earlier"}});
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "room@example.com"},
@@ -1636,6 +1646,69 @@ void TestChatPage::hoveringAReactionGrowsItsGlyphRatherThanTheItem() {
     QCOMPARE(glyph->scale(), 1.0);
 
     QVERIFY(QMetaObject::invokeMethod(bar, "close"));
+}
+
+void TestChatPage::aReactionThatArrivesPopsItsChip() {
+    const Chat chat = open("pop@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    QQuickItem *row = findItem(chat.row(0), "reactionRow");
+    QVERIFY(row);
+    QVERIFY(!findItem(row, "reactionChip"));
+
+    model->react(ts, "\xf0\x9f\x91\x8d");
+
+    // The reaction is what builds the chip, so there is nothing to watch from
+    // beforehand: catch it mid-pop instead.
+    QQuickItem *chip = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT((chip = findItem(row, "reactionChip"))
+                                 && chip->scale() < 1.0, 5000);
+    QTRY_COMPARE(chip->scale(), 1.0);
+
+    // React is a toggle, so this hands the fixture back clean.
+    model->react(ts, "\xf0\x9f\x91\x8d");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+}
+
+// One more emoji rebuilds every chip in the row, and a row scrolled into view
+// builds all of them at once. A pop on either would set the whole screen off.
+void TestChatPage::chipsTheRowWasBuiltWithDoNotPop() {
+    const Chat chat = open("drawn@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    model->react(ts, "\xf0\x9f\x91\x8d");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        !model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+
+    // A second window builds its rows with the reaction already on them, as a
+    // scroll back to an old message does.
+    const Chat drawn = alsoOpen("drawn@example.com");
+    QVERIFY(drawn.feed);
+    QTRY_COMPARE(drawn.count(), 1);
+    QQuickItem *chip = nullptr;
+    QTRY_VERIFY(drawn.row(0) && (chip = findItem(drawn.row(0), "reactionChip")));
+
+    // Sampled across the length of a pop: one wrongly started would be back at
+    // rest by the time a single late check ran.
+    QElapsedTimer watching;
+    watching.start();
+    while (watching.elapsed() < 400) {
+        QCOMPARE(chip->scale(), 1.0);
+        QTest::qWait(5);
+    }
+
+    model->react(ts, "\xf0\x9f\x91\x8d");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
 }
 
 // The name used to be the JID chopped at the "@", which is neither the roster

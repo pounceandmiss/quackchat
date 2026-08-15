@@ -76,6 +76,13 @@ Item {
     property var reactions: ({})
     readonly property var reactionKeys: reactions ? Object.keys(reactions) : []
     readonly property var reactionChoices: ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+
+    // emoji -> the count last drawn for it. A Repeater over a JS array rebuilds
+    // every delegate when the array changes, so a chip cannot tell news from
+    // history by its own creation - the row has to remember.
+    property var drawnReactions: ({})
+    property bool reactionsDrawn: false
+
     signal toggleRequested()
     // The long press: the message joins the selection before its menu opens.
     signal selectRequested()
@@ -113,6 +120,30 @@ Item {
         }
         return (i === 0 ? v : v.toFixed(1)) + " " + units[i]
     }
+
+    // Silent until the row has drawn once, or a chat scrolled or reloaded would
+    // pop every chip on screen at once.
+    function reactionEntrance(emoji, count) {
+        const before = root.drawnReactions[emoji]
+        root.drawnReactions[emoji] = count
+        if (!root.reactionsDrawn)
+            return ""
+        if (before === undefined)
+            return "arrived"
+        return count > before ? "grew" : ""
+    }
+
+    // Forget a reaction taken back, so coming round again is news a second time.
+    onReactionsChanged: {
+        const live = root.reactions || ({})
+        for (const emoji of Object.keys(root.drawnReactions))
+            if (live[emoji] === undefined)
+                delete root.drawnReactions[emoji]
+    }
+
+    // Children complete first, so the chips this bubble was built with have
+    // already recorded themselves as history.
+    Component.onCompleted: root.reactionsDrawn = true
 
     // How far the whole row slides right to make room for the checkbox
     property real selShift: selectionMode ? 40 : 0
@@ -961,6 +992,7 @@ Item {
                 model: root.reactionKeys
                 delegate: Rectangle {
                     id: chip
+                    objectName: "reactionChip"
                     required property string modelData
                     readonly property var entry: root.reactions[chip.modelData]
                     readonly property int count: entry && entry.reactors ? entry.reactors.length : 0
@@ -972,6 +1004,41 @@ Item {
                     color: Theme.surface
                     border.color: chip.mine ? Theme.accent : Theme.hairline
                     border.width: chip.mine ? 1.5 : 1
+
+                    Component.onCompleted: {
+                        const how = root.reactionEntrance(chip.modelData, chip.count)
+                        if (how === "arrived")
+                            arrive.start()
+                        else if (how === "grew")
+                            bump.start()
+                    }
+
+                    // Item scale, unlike the picker's hover, which has to grow
+                    // the font: this one only passes through the blur on its
+                    // way back to 1.0.
+                    ParallelAnimation {
+                        id: arrive
+                        NumberAnimation {
+                            target: chip; property: "scale"
+                            from: 0.4; to: 1; duration: 190; easing.type: Easing.OutBack
+                        }
+                        NumberAnimation {
+                            target: chip; property: "opacity"
+                            from: 0; to: 1; duration: 110
+                        }
+                    }
+
+                    SequentialAnimation {
+                        id: bump
+                        NumberAnimation {
+                            target: chip; property: "scale"
+                            from: 1; to: 1.18; duration: 90; easing.type: Easing.OutCubic
+                        }
+                        NumberAnimation {
+                            target: chip; property: "scale"
+                            to: 1; duration: 130; easing.type: Easing.OutCubic
+                        }
+                    }
 
                     Row {
                         id: chipRow
