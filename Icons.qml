@@ -39,6 +39,13 @@ QtObject {
     readonly property string openInNew:
         "M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7z" +
         "M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"
+    readonly property string refresh:
+        "M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-8 8s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6" +
+        "h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11" +
+        "h7V4l-2.35 2.35z"
+    readonly property string code:
+        "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4z" +
+        "m5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"
     readonly property string contentCopy:
         "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1z" +
         "m3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
