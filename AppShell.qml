@@ -310,7 +310,7 @@ Item {
         // Not while a push runs either: the animators are on the render thread
         // and neither `slide` nor the pane's x says where it has got to, so
         // there is no position for a finger to carry on from.
-        enabled: shell.chatOnTop && !shell.pushing && !shell.searching
+        enabled: shell.chatOnTop && !shell.pushing
                  && !chatPage.searchMode && !chatPage.selectionMode
 
         // Given up on past this much of the way back, or short of it by a hard
