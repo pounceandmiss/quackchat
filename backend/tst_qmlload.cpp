@@ -1157,7 +1157,8 @@ private slots:
         QVERIFY(setAll);
         QVERIFY(setAll->property("visible").toBool()); // two settable devices
 
-        // Every trust control starts on the same edge, set-all included.
+        // Every trust control sits on the page's centre line, set-all included,
+        // so they line up with each other as well.
         QQuickItem *setAllPicker = findItem(w->contentItem(), "setAllPicker");
         QQuickItem *devicePicker = findItem(w->contentItem(), "devicePicker");
         QVERIFY(setAllPicker);
@@ -1165,6 +1166,12 @@ private slots:
         QCOMPARE(setAllPicker->mapToScene(QPointF(0, 0)).x(),
                  devicePicker->mapToScene(QPointF(0, 0)).x());
         QCOMPARE(setAllPicker->width(), devicePicker->width());
+        QQuickItem *pickerRow = devicePicker->parentItem();
+        QVERIFY(pickerRow);
+        const qreal offCentre = devicePicker->x() + devicePicker->width() / 2
+                                - pickerRow->width() / 2;
+        QVERIFY2(qAbs(offCentre) <= 1.0,
+                 qPrintable(QString("picker is %1 off centre").arg(offCentre)));
 
         // The thumb settles under the segment the device's trust names, and
         // slides when that changes under it. Device 8 is undecided, the middle

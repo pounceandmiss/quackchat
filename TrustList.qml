@@ -21,13 +21,21 @@ ColumnLayout {
 
     // Only worth offering once there is more than one to set. The label sits
     // above the control so this picker lines up with the per-device ones.
+    // Centred on the column, as every picker here is: the control is a fixed
+    // width among full-width rows, and left against them it reads as one more
+    // line of the text beside it. This one carries its label with it, so the
+    // pair is centred as a block.
     ColumnLayout {
         objectName: "setAllRow"
-        Layout.fillWidth: true
+        Layout.alignment: Qt.AlignHCenter
         Layout.topMargin: 4
         visible: list.devices !== null && list.devices.settableCount >= 2
         spacing: 4
-        Caption { text: "Set all"; font.bold: true }
+        Caption {
+            Layout.alignment: Qt.AlignHCenter
+            text: "Set all"
+            font.bold: true
+        }
         TrustPicker {
             objectName: "setAllPicker"
             trust: list.devices ? list.devices.commonTrust : ""
@@ -72,6 +80,7 @@ ColumnLayout {
 
             TrustPicker {
                 objectName: "devicePicker"
+                Layout.alignment: Qt.AlignHCenter
                 visible: deviceRow.settable
                 trust: deviceRow.trust
                 onPicked: (newTrust) => list.devices.setTrust(deviceRow.device, newTrust)
