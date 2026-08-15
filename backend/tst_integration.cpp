@@ -54,6 +54,15 @@ private slots:
     void avatarBytesSurviveTheWire();
     // A fresh frontend under a session that kept running learns its hashes.
     void avatarHashSurvivesAFrontendRestart();
+    // Jumping around a chat leaves no direction stuck in flight: the pill that
+    // rides on loadingOlder has to go out again once the storm settles.
+    void jumpStormLeavesNothingInFlight();
+    // The newest page of a chat with nothing stored has only the archive to go
+    // to, and offline that leg never answers.
+    void openingAnUnsyncedChatOfflineStrandsTheInitialPage();
+    // And so does scrolling off the end of what is stored, which is where
+    // jumping around a chat lands you.
+    void pagingPastTheOldestStoredMessageNeverAnswers();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -403,6 +412,141 @@ void TestIntegration::avatarHashSurvivesAFrontendRestart() {
     QCOMPARE(second.hashFor("me@example.com", "bob@example.com"), QString());
     QTRY_COMPARE_WITH_TIMEOUT(
         second.hashFor("me@example.com", "bob@example.com"), hash, 5000);
+
+    backend.stop();
+}
+
+// Search steps the feed through its hits one jump at a time, and a key held
+// down issues them faster than the pages answering them come back. Every jump
+// cancels whatever history was out and the view refills behind it, so the
+// directions go in and out of flight in a storm. What must hold at the end of
+// it is that none stayed in: loadingOlder is what the "Loading" pill rides on,
+// and a direction stuck in m_inflight also refuses every later request for it.
+//
+// Every page here is one the store can answer: the storm never reaches past
+// the oldest stored message, so nothing has cause to go to the archive. That
+// is what makes this a test of the cancel/re-issue bookkeeping alone.
+void TestIntegration::jumpStormLeavesNothingInFlight() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    // Stored before any model exists, so the window starts as one page rather
+    // than being filled to the bottom by the live <New> for each send.
+    const int total = 400;
+    for (int i = 0; i < total; ++i)
+        backend.notify("message", "send",
+                       QVariantMap{{"acc", "me@example.com"},
+                                   {"chat", "friend@example.com"},
+                                   {"body", QStringLiteral("m%1").arg(i)}});
+    QSignalSpy stored(&backend, &TackyBackend::result);
+    const int barrier = backend.request("message", "history",
+                                        QVariantMap{{"acc", "me@example.com"},
+                                                    {"chat", "friend@example.com"},
+                                                    {"limit", total}});
+    QTRY_VERIFY_WITH_TIMEOUT(resultFor(stored, barrier).isValid(), 20000);
+    QCOMPARE(resultFor(stored, barrier).toList().size(), total);
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() >= 50, 10000);
+
+    // Aim at rows inside the opening page, so every jump and every fill behind
+    // it stays well clear of the oldest stored message.
+    QList<qlonglong> targets;
+    for (int row = 0; row < 50; row += 7)
+        targets << chat.data(chat.index(row), ChatModel::TimestampRole).toLongLong();
+    QVERIFY(targets.size() > 3);
+
+    // The storm: jump, page, jump again without waiting for either to land.
+    for (int pass = 0; pass < 6; ++pass) {
+        for (qlonglong ts : targets) {
+            chat.gotoTimestamp(ts);
+            chat.loadOlder();
+            // One trip round the loop: enough for some replies to arrive
+            // mid-storm, not enough for all of them.
+            QCoreApplication::processEvents();
+        }
+    }
+
+    QTRY_VERIFY_WITH_TIMEOUT(!chat.loadingOlder(), 10000);
+    // And the window is still usable afterwards: a direction that answered but
+    // left its flag up would refuse this silently.
+    const int before = chat.rowCount();
+    chat.loadOlder();
+    QTRY_VERIFY_WITH_TIMEOUT(!chat.loadingOlder(), 10000);
+    QVERIFY(chat.rowCount() > before);
+
+    backend.stop();
+}
+
+// tacky answers `history` from the store when it can. A chat with nothing
+// stored and no cursor is the one case that always reaches for the archive -
+// and with no connection the MAM leg is written to a dead stream, so nothing
+// ever comes back for it. The direction stays in flight, which lights the pill
+// and makes the model refuse every later initial page.
+void TestIntegration::openingAnUnsyncedChatOfflineStrandsTheInitialPage() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com"); // added, never signed in
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("stranger@example.com"); // nothing stored for this one
+
+    QVERIFY(chat.loadingOlder()); // the initial page went out
+
+    // Give it far longer than an answer would take. Nothing arrives, and
+    // nothing ever will: the request is out for good.
+    QTest::qWait(2000);
+    QVERIFY2(!chat.loadingOlder(),
+             "initial page never came back: loadingOlder is stuck true, which "
+             "is the spinning \"Loading\" pill");
+
+    backend.stop();
+}
+
+// The same page the model asks for when the user reaches the end of what is
+// stored, asked for on its own with no jumping anywhere near it. It is the
+// archive leg that never answers, not anything the storm did to it.
+void TestIntegration::pagingPastTheOldestStoredMessageNeverAnswers() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    addAccount(backend, "me@example.com");
+
+    ChatModel chat;
+    chat.setBackend(&backend);
+    chat.setAccount("me@example.com");
+    chat.setChat("friend@example.com");
+
+    for (int i = 0; i < 20; ++i)
+        backend.notify("message", "send",
+                       QVariantMap{{"acc", "me@example.com"},
+                                   {"chat", "friend@example.com"},
+                                   {"body", QStringLiteral("m%1").arg(i)}});
+    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 20, 10000);
+
+    const qlonglong oldest =
+        chat.data(chat.index(chat.rowCount() - 1), ChatModel::TimestampRole)
+            .toLongLong();
+
+    QSignalSpy results(&backend, &TackyBackend::result);
+    QSignalSpy errors(&backend, &TackyBackend::error);
+    const int tok = backend.request(
+        "message", "history",
+        QVariantMap{{"acc", "me@example.com"},
+                    {"chat", "friend@example.com"},
+                    {"limit", 50},
+                    {"before", oldest},
+                    {"tag", "probe"}});
+    QTest::qWait(2000);
+    QVERIFY2(resultFor(results, tok).isValid() || !errors.isEmpty(),
+             "the page below the oldest stored message got neither a result "
+             "nor an error: it is out for good, and the direction that asked "
+             "for it stays latched in ChatModel::m_inflight");
 
     backend.stop();
 }
