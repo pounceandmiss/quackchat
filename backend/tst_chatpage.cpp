@@ -663,9 +663,9 @@ void TestChatPage::aPressOutsideAMenuOnlyDismissesIt() {
     QCOMPARE(page->property("selectedCount").toInt(), 0);
 }
 
-// The press does two things at once, which is the point of it: the message
-// joins the selection, and the reactions come up over it. No menu - what the
-// message can do is drawn along the header, and the menu is what a tap is for.
+// The press does one thing: the message joins the selection. What it can do is
+// drawn along the header, and the menu, reactions included, is what a tap is
+// for - so nothing comes up over the message itself.
 void TestChatPage::aLongPressSelectsAndOffersItsActions() {
     const Chat chat = open("select@example.com");
     QVERIFY(chat.feed);
@@ -678,6 +678,8 @@ void TestChatPage::aLongPressSelectsAndOffersItsActions() {
     QVERIFY(bar);
     QObject *menu = popupIn(body, "bubbleMenu");
     QVERIFY(menu);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
 
     static QPointingDevice *finger = QTest::createTouchDevice();
     const QPoint on =
@@ -685,14 +687,13 @@ void TestChatPage::aLongPressSelectsAndOffersItsActions() {
 
     // Held, not tapped: it all arrives before the finger lifts.
     QTest::touchEvent(chat.win(), finger).press(0, on);
-    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
     QTest::touchEvent(chat.win(), finger).release(0, on);
-    QVERIFY(!menu->property("opened").toBool());
-
-    auto *page = chat.win()->findChild<QObject *>("chatPane");
-    QVERIFY(page);
-    QCOMPARE(page->property("selectedCount").toInt(), 1);
     QVERIFY(page->property("selectionMode").toBool());
+
+    // Neither half of what a tap brings up came with it.
+    QVERIFY(!menu->property("opened").toBool());
+    QVERIFY(!bar->property("opened").toBool());
 
     // The header now carries what the menu offers, on the one message picked.
     auto *reply = chat.win()->findChild<QQuickItem *>("selectionReply");
@@ -718,19 +719,15 @@ void TestChatPage::theSelectionBarActsOnTheOneMessage() {
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *bar = popupIn(body, "reactionBar");
-    QVERIFY(bar);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
 
     static QPointingDevice *finger = QTest::createTouchDevice();
     const QPoint on =
         body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
     QTest::touchEvent(chat.win(), finger).press(0, on);
-    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
     QTest::touchEvent(chat.win(), finger).release(0, on);
-
-    auto *page = chat.win()->findChild<QObject *>("chatPane");
-    QVERIFY(page);
-    QCOMPARE(page->property("selectedCount").toInt(), 1);
 
     auto *reply = chat.win()->findChild<QQuickItem *>("selectionReply");
     QVERIFY(reply);
@@ -743,8 +740,9 @@ void TestChatPage::theSelectionBarActsOnTheOneMessage() {
     QCOMPARE(page->property("selectedCount").toInt(), 0);
 }
 
-// Reactions are the one thing the press does put under the thumb, and picking
-// one is an answer to the message rather than an interest in selecting it.
+// Picking a reaction is an answer to the message rather than an interest in
+// selecting it, so a selection the press made is dropped along the way. The
+// reactions ride with the menu, which the mouse opens over a selection too.
 void TestChatPage::takingAReactionDropsThePressedSelection() {
     const Chat chat = open("select@example.com");
     QVERIFY(chat.feed);
@@ -755,16 +753,18 @@ void TestChatPage::takingAReactionDropsThePressedSelection() {
     QVERIFY(body);
     QObject *bar = popupIn(body, "reactionBar");
     QVERIFY(bar);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
 
     static QPointingDevice *finger = QTest::createTouchDevice();
     const QPoint on =
         body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
     QTest::touchEvent(chat.win(), finger).press(0, on);
-    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
     QTest::touchEvent(chat.win(), finger).release(0, on);
 
-    auto *page = chat.win()->findChild<QObject *>("chatPane");
-    QVERIFY(page);
+    QTest::mouseClick(chat.win(), Qt::RightButton, {}, on);
+    QTRY_VERIFY(bar->property("opened").toBool());
     QCOMPARE(page->property("selectedCount").toInt(), 1);
 
     // Tapped where it is drawn: the bar floats in the window's overlay, so its
@@ -794,8 +794,6 @@ void TestChatPage::pressingASelectedMessageAgainHandsOverItsWords() {
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
-    QObject *bar = popupIn(body, "reactionBar");
-    QVERIFY(bar);
     auto *page = chat.win()->findChild<QObject *>("chatPane");
     QVERIFY(page);
 
@@ -803,13 +801,8 @@ void TestChatPage::pressingASelectedMessageAgainHandsOverItsWords() {
     const QPoint on =
         body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
     QTest::touchEvent(chat.win(), finger).press(0, on);
-    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
     QTest::touchEvent(chat.win(), finger).release(0, on);
-
-    // Out of the way first, so the second press is answered by the bubble and
-    // not by what the first one left standing over it.
-    QVERIFY(QMetaObject::invokeMethod(bar, "close"));
-    QTRY_VERIFY(!bar->property("visible").toBool());
 
     QTest::touchEvent(chat.win(), finger).press(0, on);
     QTRY_VERIFY_WITH_TIMEOUT(page->property("textSelectTs").toDouble() != 0.0, 3000);
@@ -841,8 +834,6 @@ void TestChatPage::tappingAnotherMessageAddsItToTheSelection() {
     QQuickItem *olderBody = findItem(older, "bubbleText");
     QVERIFY(newestBody);
     QVERIFY(olderBody);
-    QObject *bar = popupIn(newestBody, "reactionBar");
-    QVERIFY(bar);
     auto *page = chat.win()->findChild<QObject *>("chatPane");
     QVERIFY(page);
 
@@ -851,14 +842,8 @@ void TestChatPage::tappingAnotherMessageAddsItToTheSelection() {
         newestBody->mapToScene(QPointF(newestBody->width() / 2, newestBody->height() / 2))
             .toPoint();
     QTest::touchEvent(chat.win(), finger).press(0, first);
-    QTRY_VERIFY_WITH_TIMEOUT(bar->property("opened").toBool(), 3000);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
     QTest::touchEvent(chat.win(), finger).release(0, first);
-    QCOMPARE(page->property("selectedCount").toInt(), 1);
-
-    // Right out of the way, transitions and all: the bar the press opened
-    // stands over the row above, which is where the next tap is going.
-    QVERIFY(QMetaObject::invokeMethod(bar, "close"));
-    QTRY_VERIFY(!bar->property("visible").toBool());
 
     const QPoint second =
         olderBody->mapToScene(QPointF(olderBody->width() / 2, olderBody->height() / 2))

@@ -190,19 +190,17 @@ Item {
             root.openMenu(pos, false)
     }
 
-    // The long press selects the message and brings the reactions up over it.
-    // Nothing else opens here: what the message can do is drawn along the
-    // header the selection puts up, and the whole menu is still a tap away.
-    // Pressed again once it is selected, it gives up its words instead.
+    // The long press selects the message and stops there. Nothing comes up over
+    // it: what the message can do is drawn along the header the selection puts
+    // up, and the menu, reactions included, is still a tap away. Pressed again
+    // once it is selected, it gives up its words instead.
     function pressed(pos, dismissing) {
         if (dismissing)
             root.menuDismissRequested()
         else if (root.selectionMode)
             root.textSelectRequested()
-        else {
+        else
             root.selectRequested()
-            reactionBar.open()
-        }
     }
 
     // A Menu takes focus when it opens, and on Android the software keyboard
@@ -355,18 +353,14 @@ Item {
     Popup {
         id: reactionBar
         objectName: "reactionBar"
-        // Sat on top of the menu when there is one, sharing its left edge, so
-        // the two read as one card. Without a menu - the long press, which opens
-        // the bar alone - it goes over the message instead. The menu is popped
-        // up over the row, so its x and y are already in the row's coordinates,
-        // which are this one's too.
-        readonly property bool onMenu: ctxMenu.visible
-        x: reactionBar.onMenu ? ctxMenu.x
-                              : (root.outgoing ? root.width - width - 16 : 16)
-        y: reactionBar.onMenu ? ctxMenu.y - height - 8 : -height - 8
+        // Sat on top of the menu it opens with, sharing its left edge, so the
+        // two read as one card. The menu is popped up over the row, so its x and
+        // y are already in the row's coordinates, which are this one's too.
+        x: ctxMenu.x
+        y: ctxMenu.y - height - 8
         padding: 6
-        // Now that it opens with every menu it meets the top of the window far
-        // more often, and a bar off the top edge is one nobody can reach.
+        // Opening with every menu, it meets the top of the window often, and a
+        // bar off the top edge is one nobody can reach.
         margins: 8
         modal: false
         closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside | Popup.CloseOnEscape
