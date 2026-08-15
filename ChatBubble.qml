@@ -860,7 +860,13 @@ Item {
                     id: bodyText
                     objectName: "bubbleText"
                     readonly property bool rich: root.markup !== ""
-                    text: bodyText.rich ? root.markup : root.text
+                    // Keyed on the format, not on `rich`, so the body is
+                    // written again after the format moves: on the way out of
+                    // rich text Qt fills the plain document with the rich one
+                    // serialised, and the row would draw that HTML as its
+                    // words until something else touched it.
+                    text: bodyText.textFormat === TextEdit.RichText
+                        ? root.markup : root.text
                     textFormat: bodyText.rich ? TextEdit.RichText : TextEdit.PlainText
                     // A bare share has no caption (tacky blanks a body that is
                     // just the url), and an empty line under the image reads as

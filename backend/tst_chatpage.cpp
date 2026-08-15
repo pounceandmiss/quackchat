@@ -254,6 +254,7 @@ private slots:
     void underTallViewportPagesWithoutScrolling();
     void reachingTheOldestEdgeRetriesAfterExhaustion();
     void bubbleRendersMarkupAsRichText();
+    void bubbleGoesBackToPlainWhenAMarkLeaves();
     void mouseDragSelectsBodyText();
     void rightClickStillOpensTheBubbleMenu();
     void aTouchTapOpensTheBubbleMenu();
@@ -546,6 +547,35 @@ void TestChatPage::bubbleRendersMarkupAsRichText() {
     QVERIFY(QMetaObject::invokeMethod(body, "getText", Q_RETURN_ARG(QString, plain),
                                       Q_ARG(int, 0), Q_ARG(int, 14)));
     QCOMPARE(plain, QString("bold and plain"));
+}
+
+// A search mark is markup over a body that has none of its own, so a marked
+// row turns rich and falls back to plain once the mark moves on. Going back is
+// the direction that breaks: Qt fills the plain document with the rich one
+// serialised, and the reader gets the HTML instead of the message.
+void TestChatPage::bubbleGoesBackToPlainWhenAMarkLeaves() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+
+    ChatModel *model = chat.model();
+    QVERIFY(model);
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QCOMPARE(body->property("textFormat").toInt(), int(Qt::PlainText));
+
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+    model->highlightMatches(ts, {QVariantMap{{"offset", 4}, {"length", 5}}});
+    QTRY_COMPARE(body->property("textFormat").toInt(), int(Qt::RichText));
+
+    model->highlightMatches(0, {});
+    QTRY_COMPARE(body->property("textFormat").toInt(), int(Qt::PlainText));
+
+    QString plain;
+    QVERIFY(QMetaObject::invokeMethod(body, "getText", Q_RETURN_ARG(QString, plain),
+                                      Q_ARG(int, 0), Q_ARG(int, kSelectable.size())));
+    QCOMPARE(plain, kSelectable);
 }
 
 // Whether the body or the swipe handler wins the mouse drag is decided by
