@@ -14,10 +14,14 @@
 
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
-    // What a notification daemon looks us up by (the `desktop-entry` hint), so
-    // it can find our icon and file the popup under one app. Matches the
-    // basename of icons/quackchat.desktop.
-    app.setApplicationName(QStringLiteral("quackchat"));
+    // The basename of icons/io.github.pounceandmiss.Quack.desktop, twice over:
+    // the notifier posts it as the `desktop-entry` hint, which is how a daemon
+    // finds our icon and files every popup under one app, and Qt hands
+    // desktopFileName to the compositor as the window's app id, which is how a
+    // taskbar matches a window to that same entry. Reverse-DNS because Flatpak
+    // exports nothing whose name lacks the app id.
+    app.setApplicationName(QStringLiteral("io.github.pounceandmiss.Quack"));
+    app.setDesktopFileName(app.applicationName());
 
     // Rasters, not icons/quack.svg: the SVG would need the svg icon engine
     // plugin deployed alongside.

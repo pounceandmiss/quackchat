@@ -447,11 +447,24 @@ endif()
 install(TARGETS quackchat RUNTIME DESTINATION "${_bindir}" BUNDLE DESTINATION .)
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux|.*BSD|DragonFly|GNU")
-    install(FILES icons/quackchat.desktop
+    # Named for the app id throughout, because that is the one name that ties
+    # the pieces together: the entry's Icon= key resolves against the icon's
+    # basename, the running app names the same entry to the notification daemon
+    # and to the compositor, and Flatpak exports nothing whose name lacks it.
+    set(_app_id "io.github.pounceandmiss.Quack")
+    install(FILES "icons/${_app_id}.desktop"
             DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
-    install(FILES icons/quack.svg
-            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
-            RENAME quackchat.svg)
+    install(FILES "icons/${_app_id}.metainfo.xml"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/metainfo")
+    set(_icons "${CMAKE_INSTALL_DATADIR}/icons/hicolor")
+    install(FILES icons/quack.svg DESTINATION "${_icons}/scalable/apps"
+            RENAME "${_app_id}.svg")
+    # Fallbacks for a menu with no SVG loader.
+    foreach(_size 48 128 256)
+        install(FILES "icons/quack-${_size}.png"
+                DESTINATION "${_icons}/${_size}x${_size}/apps"
+                RENAME "${_app_id}.png")
+    endforeach()
 endif()
 
 get_target_property(_qt_core_type Qt6::Core TYPE)
