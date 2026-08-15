@@ -1758,12 +1758,13 @@ private slots:
                  qPrintable(QString("the chat opened already home, at x=%1")
                                 .arg(chat->x())));
         QVERIFY2(list->isVisible(), "the list vanished out from under the push");
-        // Part way in the pane still reports the x it started from: the push is
-        // an Animator, which moves the item on the render thread and writes the
-        // property back only once it lands. A NumberAnimation would be part way
-        // across by now.
+        // Part way in the pane says where it has actually got to, which is what
+        // a back swipe carries on from: an Animator on the render thread would
+        // still be reporting the x it started from.
         QTest::qWait(120); // inside the 250ms push
-        QCOMPARE(chat->x(), qreal(kNarrow));
+        QVERIFY2(chat->x() > qreal(0) && chat->x() < qreal(kNarrow),
+                 qPrintable(QString("half way through the push the chat reads x=%1")
+                                .arg(chat->x())));
         QTRY_COMPARE(chat->x(), qreal(0));
         QTRY_VERIFY2(!list->isVisible(), "the list stayed up behind a landed chat");
 
@@ -1929,7 +1930,8 @@ private slots:
         QTRY_COMPARE(chat->x(), qreal(0));
         QCOMPARE(shell->property("currentChatJid").toString(),
                  QString("friend@example.com"));
-        QVERIFY2(!list->isVisible(), "the list stayed up after the swipe was taken back");
+        QTRY_VERIFY2(!list->isVisible(),
+                     "the list stayed up after the swipe was taken back");
 
         // Short of the commit point it settles back the same way, this time
         // from a swipe that was never reversed.
@@ -1972,8 +1974,44 @@ private slots:
         QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
         QVERIFY(!shell->property("popping").toBool());
 
-        // A swipe drives `slide` by hand, so one that forgot to hand the binding
-        // back would leave the next chat with no way to arrive.
+        // The edge is live from the first frame of a push rather than once the
+        // push is over: a chat swiped back at the moment it opens is taken over
+        // where it stands. Waiting the push out instead dropped the swipe, and
+        // dropped it for whatever was left of the quarter second after it too,
+        // which is what made the gesture answer only some of the time.
+        QMetaObject::invokeMethod(shell, "openChat",
+                                  Q_ARG(QVariant, QVariant("friend@example.com")),
+                                  Q_ARG(QVariant, QVariant("Friend")),
+                                  Q_ARG(QVariant, QVariant(false)));
+        pressAtEdge();
+        dragTo(200);
+        QTest::qWait(2 * 250); // twice over the push it interrupted
+        QVERIFY2(chat->x() > qreal(100),
+                 qPrintable(QString("the push ran on under the finger, to x=%1")
+                                .arg(chat->x())));
+        lift();
+        QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
+
+        // And a pop is as catchable as a push: held back by a finger it stops
+        // where it is, and the chat it was letting go of is still there to come
+        // home to.
+        openChat();
+        QVERIFY(QMetaObject::invokeMethod(shell, "closeChat"));
+        QVERIFY(shell->property("popping").toBool());
+        pressAtEdge();
+        dragTo(30);
+        QTest::qWait(2 * 250);
+        QVERIFY2(!shell->property("popping").toBool(),
+                 "the pop ran on under the finger");
+        QVERIFY2(chat->x() < qreal(100),
+                 qPrintable(QString("the caught pop slid on to x=%1").arg(chat->x())));
+        placeAt(30); // barely moved, so the chat is kept
+        QTRY_COMPARE(chat->x(), qreal(0));
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
+
+        // A swipe drives `slide` by hand, so one that forgot to hand it back
+        // would leave the next chat with no way to arrive.
         openChat();
         QCOMPARE(shell->property("slide").toReal(), qreal(1));
 
