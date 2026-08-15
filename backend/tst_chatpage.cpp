@@ -35,6 +35,7 @@ constexpr int kSeeded = 2 * kPage + 40; // two whole local pages, then a short o
 constexpr int kQuiet = 3;               // shorter than any viewport
 constexpr qreal kStatusBar = 60;        // the system bars, as Android reports them
 constexpr qreal kGestureBar = 90;
+constexpr int kCentre = 1;              // ListView.Center, which QML names and C++ does not
 const QString kStyled = QStringLiteral("*bold* and plain");
 const QString kOriginal = QStringLiteral("the original");
 // Long enough that a drag across the bubble lands mid-word at both ends.
@@ -124,6 +125,13 @@ class TestChatPage : public QObject {
             if (QObject *hit = at->findChild<QObject *>(name))
                 return hit;
         return nullptr;
+    }
+
+    // The jump a search hit and a tapped quote both arrive by. No matches: what
+    // a row marks is its own affair, and none of these ask it to mark anything.
+    static bool jumpTo(QObject *page, qlonglong ts) {
+        return QMetaObject::invokeMethod(page, "jumpTo", Q_ARG(QVariant, QVariant(ts)),
+                                         Q_ARG(QVariant, QVariant(QVariantList{})));
     }
 
     // Opens a chat from scratch: sessions are cached app-wide and shared by
@@ -240,6 +248,7 @@ private slots:
     void theBubbleMenuLeavesTheComposerFocused();
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
+    void aShortJumpSlidesAndALongOneCuts();
     void plainMessageDrawsNoQuote();
     void ticksFollowBothHops();
     void padlockFollowsTheRowStamp();
@@ -1009,6 +1018,53 @@ void TestChatPage::tappingAQuoteJumpsToItsTarget() {
                       jump->mapToScene(QPointF(jump->width() / 2, jump->height() / 2)).toPoint());
     QTRY_VERIFY_WITH_TIMEOUT(model->atTail(), 5000);
     QCOMPARE(model->rowOfTimestamp(replyTs), 0);
+}
+
+// Two jumps, told apart by how far they go. One inside the loaded window has
+// rows all the way there and slides across them; one that replaces the window
+// has nothing continuous to cross, so it lands where it lands.
+void TestChatPage::aShortJumpSlidesAndALongOneCuts() {
+    const Chat chat = open("jump@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+    ChatModel *model = chat.model();
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    QObject *anim = chat.feed->findChild<QObject *>("hitScroll");
+    QVERIFY(anim);
+    QSignalSpy slides(anim, SIGNAL(started()));
+
+    // Where centring row 12 leaves the view, learned by going there and then
+    // putting it back, so the jump has the trip still to make.
+    const qreal atTail = chat.prop("contentY");
+    QVERIFY(QMetaObject::invokeMethod(chat.feed, "positionViewAtIndex",
+                                      Q_ARG(int, 12), Q_ARG(int, kCentre)));
+    const qreal centred = chat.prop("contentY");
+    chat.feed->setProperty("contentY", atTail);
+    QVERIFY(qAbs(centred - atTail) > 50); // far enough that a slide would show
+
+    const qlonglong nearTs =
+        model->data(model->index(12), ChatModel::TimestampRole).toLongLong();
+    QVERIFY(jumpTo(page, nearTs));
+
+    // The row is loaded already, so the window is left alone and the view
+    // travels over it.
+    QTRY_COMPARE(page->property("highlightTs").toLongLong(), nearTs);
+    QTRY_COMPARE(slides.count(), 1);
+    QTRY_VERIFY(!anim->property("running").toBool());
+    QCOMPARE(model->rowOfTimestamp(nearTs), 12);
+    QVERIFY(qAbs(chat.prop("contentY") - centred) < 2);
+
+    // The reply's target is a slice away.
+    QCOMPARE(model->rowOfTimestamp(m_jumpTarget), -1);
+    QVERIFY(jumpTo(page, m_jumpTarget));
+    QTRY_VERIFY_WITH_TIMEOUT(model->rowOfTimestamp(m_jumpTarget) >= 0, 5000);
+    QTRY_COMPARE(page->property("highlightTs").toLongLong(), m_jumpTarget);
+    settle();
+    QCOMPARE(slides.count(), 1); // no second slide: that one was a cut
 }
 
 // The other half of replyRolesAreAlwaysStrings, where it actually showed:

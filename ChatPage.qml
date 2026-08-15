@@ -512,7 +512,7 @@ Page {
     function scrollToHighlight() {
         const row = page.chatModel.rowOfTimestamp(page.highlightTs)
         if (row >= 0)
-            feed.positionViewAtIndex(row, ListView.Center)
+            feed.centreOnRow(row)
     }
 
     AuthorNames {
@@ -988,6 +988,40 @@ Page {
             readonly property real fillThreshold: Math.max(400, height)
             property bool olderExhausted: false
 
+            // Rows are variable-height and laid out bottom-to-top, so where
+            // centring one would leave the view is nothing to be worked out
+            // here: go there, read it back, and decide whether to make the
+            // trip again slowly.
+            function centreOnRow(row) {
+                cancelFlick()
+                const from = contentY
+                positionViewAtIndex(row, ListView.Center)
+                const to = contentY
+                // Past a screen or so it is a change of place rather than a
+                // movement, often into rows the window did not hold a moment
+                // ago, and sliding through those reads as a glitch. The
+                // highlight is what says where we landed.
+                if (Math.abs(to - from) > height * 1.5)
+                    return
+                contentY = from
+                hitScroll.from = from
+                hitScroll.to = to
+                hitScroll.restart()
+            }
+
+            NumberAnimation {
+                id: hitScroll
+                objectName: "hitScroll"
+                target: feed
+                property: "contentY"
+                duration: 180
+                easing.type: Easing.OutCubic
+            }
+
+            // A hand on the view outranks a slide it did not ask to follow.
+            onDragStarted: hitScroll.stop()
+            onFlickStarted: hitScroll.stop()
+
             // A cursorless initial load returns only the contiguous local tail,
             // which need not even fill the viewport, so pull older pages until
             // there is a screenful of slack above or the archive runs dry.
@@ -1009,6 +1043,11 @@ Page {
                 function onChatChanged() { feed.olderExhausted = false }
                 function onAccountChanged() { feed.olderExhausted = false }
                 function onLoaded(dir, added) {
+                    // Rows landing above move contentY under a slide already
+                    // in flight, whose remaining frames would then aim at a
+                    // place that has shifted.
+                    if (added !== 0)
+                        hitScroll.stop()
                     // A goto replaces the window, so what we knew about its old
                     // end is gone; the new slice will trigger its own fill.
                     if (dir === "goto") {
