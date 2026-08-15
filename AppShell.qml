@@ -44,119 +44,38 @@ Item {
     }
 
     // Stacked, opening a chat is a push: it arrives from the right over the
-    // conversations list, which drifts the other way underneath it. While it
-    // runs both panes are on screen at full width, which is why they are placed
-    // by hand rather than by a SplitView: no two panes of a split can overlap.
-    //
-    // `slide` is how far the push has got - 0 at the list, 1 at the chat - and
-    // it is the only thing that moves: both panes are bound to it and neither
-    // is animated in its own right. That is what lets a finger take a push over
-    // half way through and turn it round, which is worth more here than running
-    // the push on the render thread would be: an Animator reads its old value
-    // until it lands, so a gesture has no position to carry on from.
+    // conversations list, which drifts the other way underneath it.
+    // `chatOnTop` is where the navigation stands, `slide` how far the push has
+    // got - 0 at the list, 1 at the chat. In between, both panes are on screen
+    // at full width, which is why the panes are placed by hand rather than by a
+    // SplitView: no two panes of a split can overlap.
     readonly property bool chatOnTop: !wide && currentChatJid !== "" && !popping
-    property real slide: 0
+    property real slide: chatOnTop ? 1 : 0
     readonly property bool sliding: slide > 0 && slide < 1
-    // A pane is up if the push is heading its way or it has not left yet. The
-    // finger counts as in flight from the moment it takes hold, so the list is
-    // already there for the first pixel of the swipe to uncover.
-    readonly property bool listUp: !chatOnTop || slide < 1 || backDrag.active
+    // A pane is up if the push is heading its way or it has not left yet.
+    readonly property bool listUp: !chatOnTop || slide < 1
     readonly property bool chatUp: chatOnTop || slide > 0
 
-    // What the whole width costs a push nobody is driving; a shorter trip costs
-    // proportionally less.
-    readonly property int pushDuration: 250
-    // Fast-out-slow-in, not a plain Out*: those leave at full speed and spend
-    // the back half of the duration crawling the last few pixels, which reads
-    // as the push stalling in mid-air.
-    readonly property list<real> pushCurve: [0.4, 0.0, 0.2, 1.0, 1.0, 1.0]
-
     // Off for what is not navigation: switching account discards the open chat
-    // rather than popping it, so there is nothing there to watch slide off.
+    // rather than popping it, and an empty pane leaving is nothing to watch.
     property bool easeSlide: true
-
-    // Two animations rather than one with its curve swapped: a push nobody is
-    // holding should leave gently, while one handed over by a moving finger has
-    // to leave at the speed that finger had, or the handover reads as a stall.
-    NumberAnimation {
-        id: pushEase
-        target: shell
-        property: "slide"
-        easing.type: Easing.Bezier
-        easing.bezierCurve: shell.pushCurve
-    }
-    NumberAnimation {
-        id: throwEase
-        target: shell
-        property: "slide"
-        easing.type: Easing.OutQuad
-    }
-
-    // Started from the state change rather than from openChat and closeChat, so
-    // a chat opened by writing the property pushes like any other.
-    onChatOnTopChanged: settleTo(chatOnTop ? 1 : 0, 0)
-
-    // Carry the push to `to` from wherever it stands. `speed` is how fast a
-    // finger let go of it, in pixels a second, and 0 for a push nobody threw.
-    function settleTo(to, speed) {
-        // The finger is the animation for as long as it lasts; whatever moved
-        // under it is settled on release.
-        if (backDrag.active)
-            return
-        holdSlide()
-        const px = Math.abs(to - slide) * width
-        if (wide || !easeSlide || px < 1) {
-            slide = to
-            // Nothing left to animate, so the pop has to be let go of here: a
-            // swipe carried the whole way is already home when the finger lifts.
-            if (to === 0)
-                endPop()
-            return
+    Behavior on slide {
+        enabled: shell.easeSlide
+        // Fast-out-slow-in, not a plain Out*: those leave at full speed and
+        // spend the back half of the duration crawling the last few pixels,
+        // which reads as the push stalling in mid-air.
+        NumberAnimation {
+            duration: 250
+            easing.type: Easing.Bezier
+            easing.bezierCurve: [0.4, 0.0, 0.2, 1.0, 1.0, 1.0]
         }
-        if (speed <= 0) {
-            pushEase.to = to
-            pushEase.duration = Math.max(90, Math.round(pushDuration * px / width))
-            pushEase.start()
-            return
-        }
-        // An ease-out leaves at twice its average speed, so picking up from a
-        // moving finger without a jerk takes twice the time that finger would
-        // have needed for what is left. A throw only ever shortens the trip.
-        throwEase.to = to
-        throwEase.duration = Math.max(90, Math.min(Math.round(pushDuration * px / width),
-                                                   Math.round(2000 * px / speed)))
-        throwEase.start()
-    }
-
-    // Take the slide off whatever was carrying it and leave it where it stands
-    // - a position at all only because `slide` is what is animated, so stopping
-    // it short says where the pane is rather than where it was headed.
-    function holdSlide() {
-        pushEase.stop()
-        throwEase.stop()
     }
 
     // The chat has to stay on screen for as long as it takes to slide off, so
     // a pop lets go of it at the end of the slide rather than the start.
     property bool popping: false
-    onSlideChanged: if (slide === 0) endPop()
-    // Queued rather than run where it is called from: it clears the chat that
-    // `chatOnTop` is read from, and a swipe carried the whole way gets here
-    // from inside that property's own change handler, where writing to it again
-    // is a binding loop. The pane is off screen by now, so a turn of the event
-    // loop later is no different to look at.
-    function endPop() {
-        if (popping)
-            Qt.callLater(dropPopped)
-    }
-    function dropPopped() {
-        if (!popping)
-            return   // opened again since: this pop was overtaken, not finished
-        // Clear before dropping `popping`, or there is an instant with a chat
-        // open and nothing popping: a push back to what has just left.
-        clearChat()
-        popping = false
-    }
+    // Cleared first: dropping `popping` with the chat still set re-pushes it.
+    onSlideChanged: if (slide === 0 && popping) { clearChat(); popping = false }
 
     function clearChat() {
         currentChatJid = ""
@@ -206,12 +125,11 @@ Item {
     onCurrentAccountChanged: {
         // Not a navigation: the open chat belongs to the account just left, so
         // it goes at once rather than sliding off as somebody else's pane.
-        // easeSlide goes first: dropping `popping` with the easing still on
+        // easeSlide goes first: dropping `popping` with the Behavior still on
         // starts a slide back to the chat that the clear below cannot call off.
         easeSlide = false
         popping = false
         clearChat()
-        settleTo(0, 0)   // and whatever was in flight lands where it was headed
         easeSlide = true
     }
 
@@ -314,109 +232,6 @@ Item {
                               shell.currentChatName,
                               shell.currentChatGroupchat)
             shell.closeChat()
-        }
-    }
-
-    // Dragging from the leading edge takes the push back by hand. Declared after
-    // the chat, so the edge is the gesture rather than what it lies over; taps
-    // still reach through, since nothing here accepts them.
-    Item {
-        id: backSwipe
-        // At rest a strip down the leading edge, wide enough to be found by a
-        // thumb, at the cost of a reply swipe having to start clear of it.
-        //
-        // Under a finger it is not a strip at all: it becomes a band across the
-        // window at the height that finger is working at, and follows it. A
-        // DragHandler carries one point but counts every point inside its item,
-        // so a second touch elsewhere on the edge is a second candidate and it
-        // drops the one it was carrying - which is the ordinary two-handed
-        // grip, a thumb resting down the side while the other hand's finger
-        // does the swiping. The band leaves out everything at another height.
-        //
-        // Only the height does the excluding. Leaving x and the width alone
-        // keeps the handler's own reckoning of how far the swipe has come in
-        // the coordinates it started in, and a band that did not follow the
-        // finger would stop containing it - and a point its item does not
-        // contain is one it stops wanting at all, which loses the swipe just as
-        // surely as the second finger did.
-        readonly property real bandReach: 80
-        readonly property real bandY: shell.mapFromItem(
-            null, 0, backDrag.centroid.scenePosition.y).y
-        width: backDrag.active ? shell.width : 48
-        y: backDrag.active ? bandY - bandReach : 0
-        height: backDrag.active ? bandReach * 2 : shell.height
-        // Whatever the chat has open unwinds first, as it does for handleBack().
-        // A slide still in flight is grabbable either way round: `slide` is
-        // where it has got to, so the finger picks it up rather than waiting it
-        // out - a pop included, which comes back if it is caught in time.
-        enabled: (shell.chatOnTop || shell.popping)
-                 && !chatPage.searchMode && !chatPage.selectionMode
-
-        // A finger still going somewhere when it lets go is obeyed whatever it
-        // has covered, so changing your mind is allowed at any point in the
-        // swipe and not only on the near side of a line. It is only a finger
-        // that has stopped that leaves the decision to where it stopped, and
-        // then the pane simply goes to whichever end it is nearer.
-        readonly property real commitAt: 0.5
-        readonly property real driftSpeed: 200
-        // How long a reading of the speed stands for. Nothing feeds it once the
-        // finger stops, so without this a swipe held half way out and then let
-        // go still carries the speed that got it there.
-        readonly property int throwWindow: 100
-
-        DragHandler {
-            id: backDrag
-            // Touch only, as ChatBubble's reply swipe is: a press held at the
-            // edge with a mouse is a text selection.
-            acceptedDevices: PointerDevice.TouchScreen
-            target: null   // we place the panes ourselves
-            yAxis.enabled: false
-            // Takes the drag off the message list and does not hand it back:
-            // wandering off the horizontal is still part of the same swipe.
-            // Off a bubble's reply swipe too, which is the same kind of handler
-            // and would otherwise be able to sit on a press this strip wants -
-            // so a reply swipe has to start clear of the strip, as with a tap.
-            grabPermissions: PointerHandler.CanTakeOverFromItems
-                             | PointerHandler.CanTakeOverFromHandlersOfDifferentType
-                             | PointerHandler.CanTakeOverFromHandlersOfSameType
-
-            // Where the push stood when the drag began; the handler's
-            // translation is measured from there, so catching one in flight
-            // carries on from exactly where it had got to.
-            property real grabbedSlide: 1
-
-            property real speed: 0
-            property real speedAt: 0
-
-            onActiveTranslationChanged: if (active) {
-                const carried = activeTranslation.x / shell.width
-                shell.slide = Math.max(0, Math.min(1, grabbedSlide - carried))
-                speed = centroid.velocity.x
-                speedAt = Date.now()
-            }
-            onActiveChanged: {
-                if (active) {
-                    // Stop the slide first, or it goes on running under the
-                    // finger and the two fight over the same property.
-                    shell.holdSlide()
-                    grabbedSlide = shell.slide
-                    // A pop caught on its way out is called off, so the chat it
-                    // was letting go of is still there to be pulled back.
-                    shell.popping = false
-                    speed = 0
-                    speedAt = 0   // the last swipe's speed is not this one's
-                    return
-                }
-                const thrown = Date.now() - speedAt < backSwipe.throwWindow ? speed : 0
-                const keep = Math.abs(thrown) > backSwipe.driftSpeed
-                             ? thrown < 0   // still going: its direction decides
-                             : shell.slide > backSwipe.commitAt
-                if (!keep)
-                    shell.closeChat()
-                // closeChat only says where the push is headed; this is what
-                // sends it there, at the speed the finger let go with.
-                shell.settleTo(keep ? 1 : 0, Math.abs(thrown))
-            }
         }
     }
 
