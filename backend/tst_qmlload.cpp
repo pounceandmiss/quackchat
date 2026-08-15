@@ -1562,6 +1562,12 @@ private slots:
                  qPrintable(QString("the chat opened already home, at x=%1")
                                 .arg(chat->x())));
         QVERIFY2(list->isVisible(), "the list vanished out from under the push");
+        // Part way in the pane still reports the x it started from: the push is
+        // an Animator, which moves the item on the render thread and writes the
+        // property back only once it lands. A NumberAnimation would be part way
+        // across by now.
+        QTest::qWait(120); // inside the 250ms push
+        QCOMPARE(chat->x(), qreal(kNarrow));
         QTRY_COMPARE(chat->x(), qreal(0));
         QTRY_VERIFY2(!list->isVisible(), "the list stayed up behind a landed chat");
 

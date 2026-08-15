@@ -49,37 +49,58 @@ Item {
     property bool searching: false
 
     // Stacked, opening a chat is a push: it arrives from the right over the
-    // conversations list, which drifts the other way underneath it.
-    // `chatOnTop` is where the navigation stands, `slide` how far the push has
-    // got - 0 at the list, 1 at the chat. In between, both panes are on screen
-    // at full width, which is why the panes are placed by hand rather than by a
-    // SplitView: no two panes of a split can overlap.
+    // conversations list, which drifts the other way underneath it. While it
+    // runs both panes are on screen at full width, which is why they are placed
+    // by hand rather than by a SplitView: no two panes of a split can overlap.
+    //
+    // Each pane is moved by an Animator of its own rather than by a Behavior on
+    // one shared 0..1 progress: Animators run on the render thread, so the push
+    // keeps its frames while the GUI thread lays out the arriving chat. The
+    // price is that an animated property reads its old value until it lands, so
+    // nothing may be bound to a pane's position while it moves.
     readonly property bool chatOnTop: !wide && currentChatJid !== "" && !popping
-    property real slide: chatOnTop ? 1 : 0
-    readonly property bool sliding: slide > 0 && slide < 1
+    // Up while a push is in flight. Started from the state change rather than
+    // from openChat and closeChat, so a chat opened by writing the property
+    // pushes like any other.
+    property bool sliding: false
+    onChatOnTopChanged: if (!wide && easeSlide) {
+        sliding = true
+        pushSettle.restart()
+    }
     // A pane is up if the push is heading its way or it has not left yet.
-    readonly property bool listUp: !chatOnTop || slide < 1
-    readonly property bool chatUp: chatOnTop || slide > 0
+    readonly property bool listUp: !chatOnTop || sliding
+    readonly property bool chatUp: chatOnTop || sliding
+
+    readonly property int pushDuration: 250
+    // Fast-out-slow-in, not a plain Out*: those leave at full speed and spend
+    // the back half of the duration crawling the last few pixels, which reads
+    // as the push stalling in mid-air.
+    readonly property list<real> pushCurve: [0.4, 0.0, 0.2, 1.0, 1.0, 1.0]
 
     // Off for what is not navigation: switching account discards the open chat
     // rather than popping it, and an empty pane leaving is nothing to watch.
     property bool easeSlide: true
-    Behavior on slide {
-        enabled: shell.easeSlide
-        // Fast-out-slow-in, not a plain Out*: those leave at full speed and
-        // spend the back half of the duration crawling the last few pixels,
-        // which reads as the push stalling in mid-air.
-        NumberAnimation {
-            duration: 250
-            easing.type: Easing.Bezier
-            easing.bezierCurve: [0.4, 0.0, 0.2, 1.0, 1.0, 1.0]
+
+    // What ends a push: the animators are on the render thread and report
+    // nothing back. Late by a margin on purpose - early would take the list out
+    // from under a chat that has not quite landed.
+    Timer {
+        id: pushSettle
+        interval: shell.pushDuration + 50
+        onTriggered: {
+            shell.sliding = false
+            // Clear before dropping `popping`, or there is an instant with a
+            // chat open and nothing popping: a push back to what has just left.
+            if (shell.popping) {
+                shell.clearChat()
+                shell.popping = false
+            }
         }
     }
 
     // The chat has to stay on screen for as long as it takes to slide off, so
     // a pop lets go of it at the end of the slide rather than the start.
     property bool popping: false
-    onSlideChanged: if (slide === 0 && popping) { popping = false; clearChat() }
 
     function clearChat() {
         currentChatJid = ""
@@ -139,6 +160,8 @@ Item {
         // easeSlide goes first: dropping `popping` with the Behavior still on
         // starts a slide back to the chat that the clear below cannot call off.
         easeSlide = false
+        pushSettle.stop()
+        sliding = false
         popping = false
         clearChat()
         easeSlide = true
@@ -180,12 +203,20 @@ Item {
     ConversationsPage {
         // Stacked, drifts left under the arriving chat rather than sitting
         // still, so the two do not read as one sheet.
-        x: shell.wide ? 0 : -shell.slide * shell.width * 0.22
+        x: shell.chatOnTop ? -shell.width * 0.22 : 0
         width: shell.listSpan
         height: shell.height
         // Hidden once a chat is open in the narrow layout - but not before the
         // push lands, or there would be no list for the chat to slide over.
         visible: !shell.searching && (shell.wide || shell.listUp)
+        Behavior on x {
+            enabled: !shell.wide && shell.easeSlide
+            XAnimator {
+                duration: shell.pushDuration
+                easing.type: Easing.Bezier
+                easing.bezierCurve: shell.pushCurve
+            }
+        }
         account: shell.currentAccount
         onOpenAccounts: railDrawer.open()
         onOpenChat: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
@@ -222,25 +253,21 @@ Item {
         }
     }
 
-    // Dim over the list and a soft edge at the chat's leading side, for as long
-    // as the push is in flight, so it reads as a layer lifted over the list
-    // rather than the two trading places. Declared before the chat, so they
-    // land between it and the list.
+    // Dim over the list for as long as the push is in flight, so it reads as a
+    // layer lifted over the list rather than the two trading places. Declared
+    // before the chat, so it lands between it and the list.
     Rectangle {
         anchors.fill: parent
         visible: !shell.wide && shell.sliding
         color: "#000000"
-        opacity: shell.slide * 0.25
-    }
-    Rectangle {
-        x: chatPage.x - width
-        width: 18
-        height: shell.height
-        visible: !shell.wide && shell.sliding
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: "#00000000" }
-            GradientStop { position: 1.0; color: "#38000000" }
+        opacity: shell.chatOnTop ? 0.25 : 0
+        Behavior on opacity {
+            enabled: !shell.wide && shell.easeSlide
+            OpacityAnimator {
+                duration: shell.pushDuration
+                easing.type: Easing.Bezier
+                easing.bezierCurve: shell.pushCurve
+            }
         }
     }
 
@@ -249,10 +276,19 @@ Item {
     // width and rides in from the right edge.
     ChatPage {
         id: chatPage
-        x: shell.wide ? shell.listSpan + 1 : (1 - shell.slide) * shell.width
-        width: shell.wide ? shell.width - x : shell.width
+        x: shell.wide ? shell.listSpan + 1 : (shell.chatOnTop ? 0 : shell.width)
+        // From the column, not from this pane's own x, which lags the animator.
+        width: shell.wide ? shell.width - shell.listSpan - 1 : shell.width
         height: shell.height
         visible: shell.wide || (shell.chatUp && !shell.searching)
+        Behavior on x {
+            enabled: !shell.wide && shell.easeSlide
+            XAnimator {
+                duration: shell.pushDuration
+                easing.type: Easing.Bezier
+                easing.bezierCurve: shell.pushCurve
+            }
+        }
         account: shell.currentAccount
         chatJid: shell.currentChatJid
         chatName: shell.currentChatName
@@ -265,6 +301,21 @@ Item {
                               shell.currentChatName,
                               shell.currentChatGroupchat)
             shell.closeChat()
+        }
+    }
+
+    // The soft edge at the chat's leading side. A child of the chat so that it
+    // travels with it: bound to its x it would sit still until the push landed.
+    Rectangle {
+        parent: chatPage
+        x: -width
+        width: 18
+        height: chatPage.height
+        visible: !shell.wide && shell.sliding
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#00000000" }
+            GradientStop { position: 1.0; color: "#38000000" }
         }
     }
 
