@@ -434,13 +434,23 @@ endif()
 # outright: there androiddeployqt and gradle own packaging, and the deliverable
 # is an apk rather than a staged directory.
 if(NOT ANDROID)
-install(TARGETS quackchat RUNTIME DESTINATION . BUNDLE DESTINATION .)
-
 # Where a desktop entry and a hicolor icon mean something. By name rather than
 # the usual `UNIX AND NOT APPLE`, which is also true of Android and Cygwin.
 if(CMAKE_SYSTEM_NAME MATCHES "Linux|.*BSD|DragonFly|GNU")
-    install(FILES icons/quackchat.desktop DESTINATION share/applications)
-    install(FILES icons/quack.svg DESTINATION share/icons/hicolor/scalable/apps
+    include(GNUInstallDirs)
+    set(_bindir "${CMAKE_INSTALL_BINDIR}")
+else()
+    # Flat: windeployqt stages Qt's DLLs beside the exe, and a macOS bundle
+    # carries its own tree, so on both the prefix root is the application dir.
+    set(_bindir ".")
+endif()
+install(TARGETS quackchat RUNTIME DESTINATION "${_bindir}" BUNDLE DESTINATION .)
+
+if(CMAKE_SYSTEM_NAME MATCHES "Linux|.*BSD|DragonFly|GNU")
+    install(FILES icons/quackchat.desktop
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+    install(FILES icons/quack.svg
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
             RENAME quackchat.svg)
 endif()
 
