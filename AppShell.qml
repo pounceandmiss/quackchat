@@ -335,10 +335,13 @@ Item {
         enabled: (shell.chatOnTop || shell.popping)
                  && !chatPage.searchMode && !chatPage.selectionMode
 
-        // Given up on past this much of the way back, or short of it by a hard
-        // enough throw; thrown the other way it is taken back however far it came.
-        readonly property real commitAt: 0.65
-        readonly property real throwSpeed: 1200
+        // A finger still going somewhere when it lets go is obeyed whatever it
+        // has covered, so changing your mind is allowed at any point in the
+        // swipe and not only on the near side of a line. It is only a finger
+        // that has stopped that leaves the decision to where it stopped, and
+        // then the pane simply goes to whichever end it is nearer.
+        readonly property real commitAt: 0.5
+        readonly property real driftSpeed: 200
         // How long a reading of the speed stands for. Nothing feeds it once the
         // finger stops, so without this a swipe held half way out and then let
         // go still carries the speed that got it there.
@@ -353,8 +356,12 @@ Item {
             yAxis.enabled: false
             // Takes the drag off the message list and does not hand it back:
             // wandering off the horizontal is still part of the same swipe.
+            // Off a bubble's reply swipe too, which is the same kind of handler
+            // and would otherwise be able to sit on a press this strip wants -
+            // so a reply swipe has to start clear of the strip, as with a tap.
             grabPermissions: PointerHandler.CanTakeOverFromItems
                              | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                             | PointerHandler.CanTakeOverFromHandlersOfSameType
 
             // Where the push stood when the drag began; the handler's
             // translation is measured from there, so catching one in flight
@@ -384,10 +391,9 @@ Item {
                     return
                 }
                 const thrown = Date.now() - speedAt < backSwipe.throwWindow ? speed : 0
-                const thrownBack = thrown < -backSwipe.throwSpeed
-                const thrownOff = thrown > backSwipe.throwSpeed
-                const keep = thrownBack
-                             || (!thrownOff && shell.slide > backSwipe.commitAt)
+                const keep = Math.abs(thrown) > backSwipe.driftSpeed
+                             ? thrown < 0   // still going: its direction decides
+                             : shell.slide > backSwipe.commitAt
                 if (!keep)
                     shell.closeChat()
                 // closeChat only says where the push is headed; this is what

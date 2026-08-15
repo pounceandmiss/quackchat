@@ -1903,15 +1903,16 @@ private slots:
         openChat();
         QVERIFY2(!list->isVisible(), "the list stayed up behind a landed chat");
 
-        // Out to a third of the way and back again, without letting go. Read as
-        // travel rather than position, since the swipe only starts counting past
-        // the drag threshold; the slack is a synthesised step, where a pane that
-        // was chasing rather than held would be out by the whole distance.
+        // Out to a third of the way and back again, without letting go. The
+        // pane's leading edge sits under the finger rather than a drag
+        // threshold behind it: the handler's translation is measured from the
+        // press, not from where it decided the press had become a drag.
         pressAtEdge();
         dragTo(140);
         const qreal held = chat->x();
-        QVERIFY2(held > 0 && held < kNarrow,
-                 qPrintable(QString("the swipe did not take the pane: it is at %1")
+        QVERIFY2(qAbs(held - qreal(138)) <= 2,
+                 qPrintable(QString("the pane came loose from the finger: it is "
+                                    "at %1 with the finger 138px in")
                                 .arg(held)));
         QVERIFY2(list->isVisible(), "the list never came back up under the swipe");
         dragTo(240);
@@ -1933,31 +1934,35 @@ private slots:
         QTRY_VERIFY2(!list->isVisible(),
                      "the list stayed up after the swipe was taken back");
 
-        // Short of the commit point it settles back the same way, this time
-        // from a swipe that was never reversed.
+        // Put down short of half way and let go, and it goes back to the end it
+        // is nearer, the same as the reversed swipe did.
         pressAtEdge();
-        placeAt(120); // 30% of the way: not enough
+        placeAt(120); // 30% of the way: the chat is still the nearer end
         QTRY_COMPARE(chat->x(), qreal(0));
         QCOMPARE(shell->property("currentChatJid").toString(),
                  QString("friend@example.com"));
 
-        // The same distance thrown rather than placed does pop.
+        // The same distance let go of while still moving does pop: a finger
+        // that has not stopped is obeyed over where it happens to have got to.
         pressAtEdge();
         flickTo(120);
         QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
 
-        // And thrown back, one that had gone far enough to pop does not.
+        // And the other way round, a swipe well past half way that is on its
+        // way back when it lets go keeps the chat - which is the whole of
+        // changing your mind, and must not depend on getting back over a line.
         openChat();
         pressAtEdge();
-        dragTo(300);
-        flickTo(200); // over the line by distance, but on its way back
+        dragTo(340); // 85% of the way off
+        flickTo(300);
         QTRY_COMPARE(chat->x(), qreal(0));
         QCOMPARE(shell->property("currentChatJid").toString(),
                  QString("friend@example.com"));
 
-        // Past the commit point it finishes on its own from where the finger left.
+        // Past half way and stopped there, it finishes on its own from where
+        // the finger left it.
         pressAtEdge();
-        placeAt(200); // 50%: over the line
+        placeAt(260); // 65%: the list is the nearer end now
         QVERIFY2(chat->x() < qreal(kNarrow),
                  "the pop jumped to the end instead of carrying on from the finger");
         QTRY_COMPARE(shell->property("currentChatJid").toString(), QString());
