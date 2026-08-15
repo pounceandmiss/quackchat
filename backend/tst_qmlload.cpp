@@ -2001,16 +2001,64 @@ private slots:
         // where it is, and the chat it was letting go of is still there to come
         // home to.
         openChat();
+        // The finger is already down when the pop starts, so only the two moves
+        // that cross the drag threshold have to beat it: press the edge after
+        // it and a loaded machine can spend the whole 250ms getting there, and
+        // then there is no pop left to catch.
+        pressAtEdge();
         QVERIFY(QMetaObject::invokeMethod(shell, "closeChat"));
         QVERIFY(shell->property("popping").toBool());
-        pressAtEdge();
         dragTo(30);
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
         QTest::qWait(2 * 250);
         QVERIFY2(!shell->property("popping").toBool(),
                  "the pop ran on under the finger");
         QVERIFY2(chat->x() < qreal(100),
                  qPrintable(QString("the caught pop slid on to x=%1").arg(chat->x())));
         placeAt(30); // barely moved, so the chat is kept
+        QTRY_COMPARE(chat->x(), qreal(0));
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("friend@example.com"));
+
+        // A second finger resting on the same edge does not take the swipe off
+        // the pane. That is the ordinary two-handed grip: the hand holding the
+        // phone leaves a thumb down the left side while the other hand's index
+        // finger does the swiping. An edge strip running the whole height has
+        // that thumb inside it, and a handler that carries one point counts it
+        // as a second candidate and lets go of the one it was carrying.
+        openChat();
+        pressAtEdge();
+        dragTo(120);
+        const qreal carried = chat->x();
+        QVERIFY2(carried > qreal(0), "the swipe never took the pane at all");
+        // The holding hand, lower down the same edge. Held, the pane stays
+        // where the finger left it - to within the step a synthesised move can
+        // still be a frame behind by. A swipe let go of would be off at one end
+        // or the other by the time the wait is over, not ten pixels out.
+        QTest::touchEvent(&win, finger).press(1, QPoint(6, kRow + 200));
+        QCoreApplication::processEvents();
+        QTest::qWait(2 * 250);
+        QVERIFY2(qAbs(chat->x() - carried) <= 10,
+                 qPrintable(QString("a second finger landing on the edge took the "
+                                    "swipe off the pane: it left %1 for %2")
+                                .arg(carried)
+                                .arg(chat->x())));
+        // And the first finger still carries it.
+        dragTo(200);
+        QVERIFY2(qAbs(chat->x() - (carried + 80)) <= 10,
+                 qPrintable(QString("80px of finger moved the pane from %1 to %2 "
+                                    "with a second finger resting on the edge")
+                                .arg(carried)
+                                .arg(chat->x())));
+        // The holding hand lifting is not the swipe ending either.
+        QTest::touchEvent(&win, finger).release(1, QPoint(6, kRow + 200));
+        QCoreApplication::processEvents();
+        QTest::qWait(2 * 250);
+        QVERIFY2(qAbs(chat->x() - (carried + 80)) <= 10,
+                 qPrintable(QString("the second finger lifting ended the swipe: "
+                                    "the pane went to %1").arg(chat->x())));
+        placeAt(60);
         QTRY_COMPARE(chat->x(), qreal(0));
         QCOMPARE(shell->property("currentChatJid").toString(),
                  QString("friend@example.com"));

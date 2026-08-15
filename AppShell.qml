@@ -322,12 +322,29 @@ Item {
     // still reach through, since nothing here accepts them.
     Item {
         id: backSwipe
-        // Wide enough to reach past the band Android's own edge gesture claims:
-        // a strip no wider than that band gets the press and then has it
-        // cancelled out from under it, which reads as the swipe going nowhere.
-        // The cost is that a reply swipe has to start clear of the strip.
-        width: 48
-        height: shell.height
+        // At rest a strip down the leading edge, wide enough to be found by a
+        // thumb, at the cost of a reply swipe having to start clear of it.
+        //
+        // Under a finger it is not a strip at all: it becomes a band across the
+        // window at the height that finger is working at, and follows it. A
+        // DragHandler carries one point but counts every point inside its item,
+        // so a second touch elsewhere on the edge is a second candidate and it
+        // drops the one it was carrying - which is the ordinary two-handed
+        // grip, a thumb resting down the side while the other hand's finger
+        // does the swiping. The band leaves out everything at another height.
+        //
+        // Only the height does the excluding. Leaving x and the width alone
+        // keeps the handler's own reckoning of how far the swipe has come in
+        // the coordinates it started in, and a band that did not follow the
+        // finger would stop containing it - and a point its item does not
+        // contain is one it stops wanting at all, which loses the swipe just as
+        // surely as the second finger did.
+        readonly property real bandReach: 80
+        readonly property real bandY: shell.mapFromItem(
+            null, 0, backDrag.centroid.scenePosition.y).y
+        width: backDrag.active ? shell.width : 48
+        y: backDrag.active ? bandY - bandReach : 0
+        height: backDrag.active ? bandReach * 2 : shell.height
         // Whatever the chat has open unwinds first, as it does for handleBack().
         // A slide still in flight is grabbable either way round: `slide` is
         // where it has got to, so the finger picks it up rather than waiting it
