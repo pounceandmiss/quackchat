@@ -29,8 +29,8 @@ class ChatModel : public QAbstractListModel {
     // Inside this chat's catchup bracket; gates live inserts too.
     Q_PROPERTY(bool catchupBusy READ catchupBusy NOTIFY catchupBusyChanged)
     // A page of older history is out: a `before` fill that comes up short
-    // locally reaches for the archive, which is slow. The view says so rather
-    // than looking idle.
+    // locally reaches for the archive, and can be out a while. The view shows
+    // this rather than looking idle.
     Q_PROPERTY(bool loadingOlder READ loadingOlder NOTIFY loadingOlderChanged)
     // Why the last page failed, or "" if it did not. A failed page leaves the
     // window as short as an exhausted archive does, so the view is told which.

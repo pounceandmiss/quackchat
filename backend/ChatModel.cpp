@@ -326,7 +326,7 @@ void ChatModel::reload() {
     setCatchupBusy(false);
     m_tailTs = 0;      // the last <Tail> was the previous chat's
     m_markedRead = 0;  // and so was the watermark we last sent
-    m_failed.clear();  // and so were the pages that failed
+    m_failed.clear();
     setLoadError({});
     pullConnState();
     loadInitial();
@@ -381,8 +381,8 @@ void ChatModel::retry() {
         issueHistory(QStringLiteral("new"), newestTs(), true);
 }
 
-// Re-fires conn <State> as it stands, so a model built after the account
-// connected still learns it.
+// Re-fires conn <State>, so a model built after the account connected
+// still learns it.
 void ChatModel::pullConnState() {
     if (!m_backend || m_account.isEmpty())
         return;
@@ -406,8 +406,6 @@ void ChatModel::setOnline(bool v) {
     emit onlineChanged();
 }
 
-// The message goes with the last failure standing, so the pill stops naming
-// one nothing is showing.
 void ChatModel::clearFailure(const QString &dir) {
     if (m_failed.remove(dir) && m_failed.isEmpty())
         setLoadError({});

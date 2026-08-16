@@ -1305,16 +1305,15 @@ Page {
                 // A ListView's declared children land in its scrolling
                 // contentItem; this one belongs to the viewport.
                 parent: feed
-                // Offline the request is buffered until the account has a
-                // stream, so a spinner would be claiming progress it isn't
-                // making.
                 readonly property bool failed: page.loadError !== ""
+                // Offline the request is buffered rather than travelling, so
+                // spinning at it would claim progress it is not making.
                 readonly property bool waiting: page.loadingOlder && !page.online
                 readonly property bool working: page.loadingOlder && page.online
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: parent.top
                 anchors.topMargin: 8
-                width: label.width + (spinner.visible ? 32 : 20)
+                width: content.width + 20
                 height: 26
                 radius: 13
                 color: Theme.surface
@@ -1322,7 +1321,6 @@ Page {
                          ? 0.95 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
-                // The other two states resolve without the user.
                 TapHandler {
                     enabled: olderPill.failed
                     onTapped: page.chatModel.retry()
@@ -1332,46 +1330,64 @@ Page {
                     cursorShape: Qt.PointingHandCursor
                 }
 
-                // Not a BusyIndicator: the Basic style paints that from its own
-                // palette, which ignores Theme. Animator, so a stalled fetch
-                // spins on the render thread and costs the GUI one nothing.
-                Item {
-                    id: spinner
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.left
-                    anchors.leftMargin: 8
-                    width: 12
-                    height: 12
-                    visible: olderPill.working
-                    RotationAnimator on rotation {
-                        running: spinner.visible && olderPill.visible
-                        loops: Animation.Infinite
-                        from: 0; to: 360; duration: 900
-                    }
-                    Repeater {
-                        model: 8
-                        Rectangle {
-                            required property int index
-                            readonly property real angle: index * Math.PI / 4
-                            width: 3; height: 3; radius: 1.5
-                            color: Theme.accent
-                            // Fading around the ring gives the spin a direction.
-                            opacity: 0.15 + 0.85 * index / 7
-                            x: (spinner.width - width) / 2 * (1 + Math.cos(angle))
-                            y: (spinner.height - height) / 2 * (1 + Math.sin(angle))
+                Row {
+                    id: content
+                    anchors.centerIn: parent
+                    spacing: 6
+
+                    // Not a BusyIndicator: the Basic style paints that from its
+                    // own palette, which ignores Theme. Animator, so a stalled
+                    // fetch spins on the render thread and costs the GUI one
+                    // nothing.
+                    Item {
+                        id: spinner
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 12
+                        height: 12
+                        visible: olderPill.working
+                        RotationAnimator on rotation {
+                            running: spinner.visible && olderPill.visible
+                            loops: Animation.Infinite
+                            from: 0; to: 360; duration: 900
+                        }
+                        Repeater {
+                            model: 8
+                            Rectangle {
+                                required property int index
+                                readonly property real angle: index * Math.PI / 4
+                                width: 3; height: 3; radius: 1.5
+                                color: Theme.accent
+                                // Fading around the ring gives the spin a direction.
+                                opacity: 0.15 + 0.85 * index / 7
+                                x: (spinner.width - width) / 2 * (1 + Math.cos(angle))
+                                y: (spinner.height - height) / 2 * (1 + Math.sin(angle))
+                            }
                         }
                     }
-                }
-                Text {
-                    id: label
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: spinner.visible ? spinner.right : parent.left
-                    anchors.leftMargin: spinner.visible ? 6 : 10
-                    text: olderPill.failed ? "Couldn't load — tap to retry"
-                        : olderPill.waiting ? "Offline"
-                        : "Loading"
-                    color: Theme.textDim
-                    font.pixelSize: 11
+                    Text {
+                        id: label
+                        objectName: "olderPillLabel"
+                        anchors.verticalCenter: parent.verticalCenter
+                        // The backend words this, so keep it off the viewport's
+                        // edges however long it runs.
+                        width: Math.min(implicitWidth, feed.width - 96)
+                        elide: Text.ElideRight
+                        text: olderPill.failed ? page.loadError
+                            : olderPill.waiting ? "Offline"
+                            : "Loading"
+                        color: Theme.textDim
+                        font.pixelSize: 11
+                    }
+                    // Beside the message, since eliding one would eat it.
+                    Text {
+                        id: retry
+                        objectName: "olderPillRetry"
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: olderPill.failed
+                        text: "Retry"
+                        color: Theme.accent
+                        font.pixelSize: 11
+                    }
                 }
             }
         }

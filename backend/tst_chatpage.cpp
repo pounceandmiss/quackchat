@@ -287,6 +287,8 @@ private slots:
     void hoveringAReactionGrowsItsGlyphRatherThanTheItem();
     void senderNamesComeFromAuthorGet();
     void oneSessionServesEveryWindowOnAChat();
+    // Stops the shared backend, so nothing may run after it.
+    void theFailedPillCarriesTheBackendsWords();
 };
 
 void TestChatPage::initTestCase() {
@@ -1713,6 +1715,25 @@ void TestChatPage::oneSessionServesEveryWindowOnAChat() {
     // Which is still there for the chat it was written in.
     first.window->setProperty("chatJid", jid);
     QTRY_COMPARE(input->property("text").toString(), QString("half a thought"));
+}
+
+// Must stay last: stopping the backend is what fails the `before` page that
+// is out, and nothing after it would have one.
+void TestChatPage::theFailedPillCarriesTheBackendsWords() {
+    const Chat chat = open("quiet@example.com");
+    QVERIFY(chat.feed);
+    QTRY_VERIFY(chat.model()->loadingOlder());
+
+    m_app->backend()->stop();
+    QTRY_VERIFY(!chat.model()->loadError().isEmpty());
+
+    QQuickItem *label = chat.feed->findChild<QQuickItem *>("olderPillLabel");
+    QQuickItem *retry = chat.feed->findChild<QQuickItem *>("olderPillRetry");
+    QVERIFY(label);
+    QVERIFY(retry);
+    QTRY_COMPARE(label->property("text").toString(), chat.model()->loadError());
+    QVERIFY(retry->isVisible());
+    QVERIFY(label->width() <= chat.feed->width() - 96); // elided, not widened
 }
 
 QTEST_MAIN(TestChatPage)
