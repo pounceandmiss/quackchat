@@ -43,11 +43,18 @@ void TackyBackend::setTransport(TackyTransport *transport) {
 }
 
 void TackyBackend::onTransportStateChanged() {
-    if (!isRunning())
-        m_inflight.clear(); // those replies are never coming
-    emit runningChanged();
-    if (isRunning())
+    if (isRunning()) {
+        emit runningChanged();
         emit connected();
+        return;
+    }
+    QHash<int, QString> dead;
+    dead.swap(m_inflight);
+    emit runningChanged();
+    // Those replies are never coming, and a caller told nothing waits forever.
+    for (auto it = dead.cbegin(); it != dead.cend(); ++it)
+        emit error(it.key(), QStringLiteral("backend stopped before %1 answered")
+                                 .arg(it.value()));
 }
 
 bool TackyBackend::start(const QStringList &tacoArgs) {
@@ -78,8 +85,21 @@ void TackyBackend::sendArray(const QString &module, const QString &method,
                               << (withToken ? QString::number(token)
                                             : QStringLiteral("(notify)"))
                               << args;
-    if (!isRunning())
+    if (!isRunning()) {
+        // The frame is gone but the caller holds a token and will wait on it.
+        // Queued: callers record the token after request() returns, so a
+        // direct emit would land before there was anything to match.
+        if (withToken)
+            QMetaObject::invokeMethod(
+                this,
+                [this, token, module, method] {
+                    emit error(token,
+                               QStringLiteral("%1/%2 was not sent: no backend")
+                                   .arg(module, method));
+                },
+                Qt::QueuedConnection);
         return;
+    }
     QJsonArray arr;
     arr.append(module);
     arr.append(method);

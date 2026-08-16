@@ -57,12 +57,11 @@ private slots:
     // Jumping around a chat leaves no direction stuck in flight: the pill that
     // rides on loadingOlder has to go out again once the storm settles.
     void jumpStormLeavesNothingInFlight();
-    // The newest page of a chat with nothing stored has only the archive to go
-    // to, and offline that leg never answers.
-    void openingAnUnsyncedChatOfflineStrandsTheInitialPage();
-    // And so does scrolling off the end of what is stored, which is where
-    // jumping around a chat lands you.
-    void pagingPastTheOldestStoredMessageNeverAnswers();
+    // The newest page of a chat with nothing stored has only the archive to
+    // go to, and with no stream tacky buffers that query until there is one.
+    void openingAnUnsyncedChatOfflineWaitsRatherThanSpins();
+    // Whatever was still out when this side went away is this side's to fail.
+    void stoppingTheBackendAnswersWhatWasStillOut();
 };
 
 void TestIntegration::chatListRefreshesOnChanged() {
@@ -482,12 +481,11 @@ void TestIntegration::jumpStormLeavesNothingInFlight() {
     backend.stop();
 }
 
-// tacky answers `history` from the store when it can. A chat with nothing
-// stored and no cursor is the one case that always reaches for the archive -
-// and with no connection the MAM leg is written to a dead stream, so nothing
-// ever comes back for it. The direction stays in flight, which lights the pill
-// and makes the model refuse every later initial page.
-void TestIntegration::openingAnUnsyncedChatOfflineStrandsTheInitialPage() {
+// tacky answers `history` from the store when it can, and a chat with nothing
+// stored and no cursor is the one case that always reaches for the archive.
+// An account that never signed in has no stream to carry it, so the query
+// waits rather than fails - and a waiting page is not a loading one.
+void TestIntegration::openingAnUnsyncedChatOfflineWaitsRatherThanSpins() {
     TackyBackend backend;
     QVERIFY(backend.start());
     addAccount(backend, "me@example.com"); // added, never signed in
@@ -498,21 +496,19 @@ void TestIntegration::openingAnUnsyncedChatOfflineStrandsTheInitialPage() {
     chat.setChat("stranger@example.com"); // nothing stored for this one
 
     QVERIFY(chat.loadingOlder()); // the initial page went out
+    QVERIFY2(!chat.online(), "nothing to load over, so do not claim to load");
 
-    // Give it far longer than an answer would take. Nothing arrives, and
-    // nothing ever will: the request is out for good.
-    QTest::qWait(2000);
-    QVERIFY2(!chat.loadingOlder(),
-             "initial page never came back: loadingOlder is stuck true, which "
-             "is the spinning \"Loading\" pill");
+    // It stays out, and rightly: the stanza sits in tacky's write buffer until
+    // the account connects. Inventing a failure for it would be wrong too.
+    QTest::qWait(1000);
+    QVERIFY(chat.loadingOlder());
+    QVERIFY(chat.loadError().isEmpty());
 
     backend.stop();
 }
 
-// The same page the model asks for when the user reaches the end of what is
-// stored, asked for on its own with no jumping anywhere near it. It is the
-// archive leg that never answers, not anything the storm did to it.
-void TestIntegration::pagingPastTheOldestStoredMessageNeverAnswers() {
+// The frontend's own half: it minted the token, so it owes the answer.
+void TestIntegration::stoppingTheBackendAnswersWhatWasStillOut() {
     TackyBackend backend;
     QVERIFY(backend.start());
     addAccount(backend, "me@example.com");
@@ -533,6 +529,8 @@ void TestIntegration::pagingPastTheOldestStoredMessageNeverAnswers() {
         chat.data(chat.index(chat.rowCount() - 1), ChatModel::TimestampRole)
             .toLongLong();
 
+    // The page below the oldest stored message outruns the store and reaches
+    // for the archive, which offline is buffered.
     QSignalSpy results(&backend, &TackyBackend::result);
     QSignalSpy errors(&backend, &TackyBackend::error);
     const int tok = backend.request(
@@ -542,13 +540,16 @@ void TestIntegration::pagingPastTheOldestStoredMessageNeverAnswers() {
                     {"limit", 50},
                     {"before", oldest},
                     {"tag", "probe"}});
-    QTest::qWait(2000);
-    QVERIFY2(resultFor(results, tok).isValid() || !errors.isEmpty(),
-             "the page below the oldest stored message got neither a result "
-             "nor an error: it is out for good, and the direction that asked "
-             "for it stays latched in ChatModel::m_inflight");
+    QTest::qWait(500);
+    QVERIFY2(!resultFor(results, tok).isValid(), "buffered, so not yet");
 
     backend.stop();
+    QTRY_VERIFY(!errors.isEmpty());
+    bool failedOurs = false;
+    for (const QList<QVariant> &row : errors)
+        failedOurs = failedOurs || row.at(0).toInt() == tok;
+    QVERIFY2(failedOurs, "a token still owed when the backend went away must "
+                         "be failed, not dropped");
 }
 
 QTEST_MAIN(TestIntegration)

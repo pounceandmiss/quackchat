@@ -1132,7 +1132,6 @@ private slots:
         StubEncoder encoder;
         settings->setAvatarEncoder(&encoder);
         settings->setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
-        QCoreApplication::processEvents();
         QVERIFY(settings->avatarBusy());
         QVERIFY(!avatarTap->property("enabled").toBool());
         QVERIFY(!setButton->property("visible").toBool());
@@ -1142,9 +1141,13 @@ private slots:
         settings->handleEvent("avatar", "Progress",
                               QVariantMap{{"acc", "me@example.com"},
                                           {"message", "Updating metadata..."}});
-        QCoreApplication::processEvents();
         QCOMPARE(avatarStatus->property("text").toString(),
                  QString("Updating metadata..."));
+
+        // No interpreter behind this window, so that request never reached a
+        // wire; the backend answers it rather than leave the page waiting.
+        QCoreApplication::processEvents();
+        QVERIFY(!settings->avatarBusy());
 
         QObject *list = w->findChild<QObject *>("deviceList");
         QVERIFY(list);

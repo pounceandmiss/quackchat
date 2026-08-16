@@ -33,6 +33,15 @@ static QList<qlonglong> marks(const QSignalSpy &spy) {
     return out;
 }
 
+// How many `message history` calls a spy on TackyBackend::sent saw.
+static int historyCalls(const QSignalSpy &spy) {
+    int n = 0;
+    for (const QList<QVariant> &call : spy)
+        if (call.at(1).toString() == QLatin1String("history"))
+            ++n;
+    return n;
+}
+
 // Stands in for the palette's; the markup only ever passes it through.
 static const QString kQuote = QStringLiteral("#0a0");
 
@@ -55,6 +64,10 @@ private slots:
     void resetToBottomUnwedgesALostInitialLoad();
     void cancelOnlyTellsTheBackendAboutLiveRequests();
     void anErroredRequestDoesNotWedgeTheFeed();
+    void aFailedPageSaysSoAndStopsTheAutomaticFill();
+    void retryAsksAgainForWhatFailed();
+    void comingBackOnlineRetriesOnlyWhatFailed();
+    void connStateDrivesTheOnlineFlag();
     void markReadAdvancesTheWatermarkOnlyForwards();
     void markupWrapsSpans();
     void markupNestsOverlappingSpans();
@@ -308,6 +321,101 @@ void TestChatModel::anErroredRequestDoesNotWedgeTheFeed() {
     m.loadInitial(); // token 2: refused if init were still in flight
     m.handleResult(2, msgs(R"([{"timestamp":100}])"));
     QCOMPARE(m.rowCount(), 1);
+}
+
+// An empty page means the archive is dry and the view stops asking; a failed
+// one means nothing of the sort, so it must not be reported the same way.
+void TestChatModel::aFailedPageSaysSoAndStopsTheAutomaticFill() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
+
+    QSignalSpy loaded(&m, &ChatModel::loaded);
+    m.loadOlder(); // token 2
+    QVERIFY(m.loadingOlder());
+    m.handleError(2, "Couldn't reach the message archive");
+
+    QVERIFY(!m.loadingOlder());
+    QCOMPARE(m.loadError(), QString("Couldn't reach the message archive"));
+    QVERIFY2(loaded.isEmpty(),
+             "loaded(dir, 0) tells the view the archive ran dry, and it "
+             "latches on it");
+
+    // The view's fill re-fires on every scroll; none of those may go out.
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.loadOlder();
+    m.loadOlder();
+    QCOMPARE(historyCalls(sent), 0);
+}
+
+void TestChatModel::retryAsksAgainForWhatFailed() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
+    m.loadOlder(); // token 2
+    m.handleError(2, "Couldn't reach the message archive");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.retry();
+    QCOMPARE(historyCalls(sent), 1);
+    QVERIFY(m.loadingOlder());
+    QVERIFY(m.loadError().isEmpty()); // asking again is what clears it
+
+    m.handleResult(3, msgs(R"([{"timestamp":50}])"));
+    QCOMPARE(m.rowCount(), 3);
+}
+
+// A stream coming back is the one event that can fix a page the archive could
+// not answer - without reload()'s reset of the window being read.
+void TestChatModel::comingBackOnlineRetriesOnlyWhatFailed() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
+
+    QSignalSpy quiet(&backend, &TackyBackend::sent);
+    feedEvent(m, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    QCOMPARE(historyCalls(quiet), 0); // nothing failed, nothing to redo
+
+    m.loadOlder(); // token 2
+    m.handleError(2, "Couldn't reach the message archive");
+    QCOMPARE(m.rowCount(), 2);
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    feedEvent(m, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    QCOMPARE(historyCalls(sent), 1);
+    QCOMPARE(m.rowCount(), 2); // the window it was reading is still there
+    QVERIFY(m.loadError().isEmpty());
+}
+
+// A page waiting on a connection is buffered by tacky, not lost. The view has
+// to tell that apart from one actually in progress, so it does not spin.
+void TestChatModel::connStateDrivesTheOnlineFlag() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    QVERIFY(!m.online());
+
+    feedEvent(m, R"(["event","conn","State",{"acc":"me@h","state":"connecting"}])");
+    QVERIFY(!m.online());
+    feedEvent(m, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])");
+    QVERIFY(m.online());
+    feedEvent(m, R"(["event","conn","Disconnected",{"acc":"me@h"}])");
+    QVERIFY(!m.online());
+
+    // Another account's stream says nothing about this one.
+    feedEvent(m, R"(["event","conn","Ready",{"acc":"other@h"}])");
+    QVERIFY(!m.online());
 }
 
 // Switching chats cancels every direction, but only one is usually out. The

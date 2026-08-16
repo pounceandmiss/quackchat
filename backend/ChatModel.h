@@ -28,10 +28,16 @@ class ChatModel : public QAbstractListModel {
     Q_PROPERTY(bool atTail READ atTail NOTIFY atTailChanged)
     // Inside this chat's catchup bracket; gates live inserts too.
     Q_PROPERTY(bool catchupBusy READ catchupBusy NOTIFY catchupBusyChanged)
-    // A page of older history is out, possibly for good: a `before` fill that
-    // comes up short locally reaches for MAM, and that leg has no timeout. The
-    // view shows this rather than looking idle.
+    // A page of older history is out: a `before` fill that comes up short
+    // locally reaches for the archive, which is slow. The view says so rather
+    // than looking idle.
     Q_PROPERTY(bool loadingOlder READ loadingOlder NOTIFY loadingOlderChanged)
+    // Why the last page failed, or "" if it did not. A failed page leaves the
+    // window as short as an exhausted archive does, so the view is told which.
+    Q_PROPERTY(QString loadError READ loadError NOTIFY loadErrorChanged)
+    // Whether the account has a stream. Without one a page is buffered by
+    // tacky until there is, so the feed is waiting rather than working.
+    Q_PROPERTY(bool online READ online NOTIFY onlineChanged)
     // CSS color for quoted runs in MarkupRole. A QString rather than a QColor:
     // it goes straight into the markup, and QColor would pull QtGui in here.
     Q_PROPERTY(QString quoteColor READ quoteColor WRITE setQuoteColor NOTIFY quoteColorChanged)
@@ -78,6 +84,8 @@ public:
         return m_inflight.contains(QStringLiteral("old")) ||
                m_inflight.contains(QStringLiteral("init"));
     }
+    QString loadError() const { return m_loadError; }
+    bool online() const { return m_online; }
     QString quoteColor() const { return m_quoteColor; }
     QString matchColor() const { return m_matchColor; }
     int thumbMax() const { return m_thumbMax; }
@@ -97,6 +105,8 @@ public:
     Q_INVOKABLE void loadInitial();               // newest page (no cursor)
     Q_INVOKABLE void loadOlder();                 // page below the oldest row
     Q_INVOKABLE void loadNewer();                 // page above the newest row
+    // Ask again for whatever last failed; the automatic fill will not.
+    Q_INVOKABLE void retry();
     Q_INVOKABLE void gotoTimestamp(qlonglong ts,
                                    const QString &source = "local");
     // Jump to whatever the message at `ts` answered. A target the store cannot
@@ -165,6 +175,8 @@ signals:
     void atTailChanged();
     void catchupBusyChanged();
     void loadingOlderChanged();
+    void loadErrorChanged();
+    void onlineChanged();
     void quoteColorChanged();
     void matchColorChanged();
     void thumbMaxChanged();
@@ -199,6 +211,10 @@ private:
     void issueGoto(const QString &method, const QVariantMap &args);
     int insertPos(qlonglong ts) const;
     void issueHistory(const QString &dir, qlonglong cursor, bool haveCursor);
+    void pullConnState();
+    void setLoadError(const QString &message);
+    void setOnline(bool v);
+    void clearFailure(const QString &dir);
     void cancelDir(const QString &dir);
     void cancelAllDirs();
     void markInflight(const QString &dir, bool busy);
@@ -237,6 +253,11 @@ private:
 
     QHash<int, QString> m_pending; // token -> dir
     QSet<QString> m_inflight;
+    // Directions whose last request errored. Gates the automatic fill; a page
+    // that lands, a reload, a jump or a reconnect all clear it.
+    QSet<QString> m_failed;
+    QString m_loadError;
+    bool m_online = false;
 
     // Transfer state, which lives beside the rows rather than in them: one
     // download serves every message quoting the same URL. Dropped on reload -

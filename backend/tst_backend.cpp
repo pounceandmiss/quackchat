@@ -14,6 +14,8 @@ private slots:
     void accountListRoundTrip();
     void errorOnUnknownModule();
     void sentReportsCallsWithoutABackend();
+    void aRequestThatNeverWentOutIsAnswered();
+    void stoppingFailsWhateverWasStillOut();
 };
 
 void TestBackend::startsAndStops() {
@@ -78,6 +80,42 @@ void TestBackend::sentReportsCallsWithoutABackend() {
     QCOMPARE(first.at(2).toMap().value("url").toString(), QString("http://h/a.png"));
     // A defaulted args stays a map rather than reaching the spy as invalid.
     QCOMPARE(spy.takeFirst().at(2).typeId(), QMetaType::QVariantMap);
+}
+
+// request() hands back a token whether or not the frame went anywhere, and the
+// caller waits on it. A dropped frame therefore owes an answer.
+void TestBackend::aRequestThatNeverWentOutIsAnswered() {
+    TackyBackend backend; // never started
+    QSignalSpy errors(&backend, &TackyBackend::error);
+
+    const int tok = backend.request("account", "list", QVariantMap{});
+
+    // Not during the call: the caller records this token after request()
+    // returns, so an answer arriving inside it would find nothing to match.
+    QCOMPARE(errors.count(), 0);
+
+    QTRY_COMPARE(errors.count(), 1);
+    QCOMPARE(errors.first().at(0).toInt(), tok);
+    QVERIFY(!errors.first().at(1).toString().isEmpty());
+}
+
+void TestBackend::stoppingFailsWhateverWasStillOut() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    // No account, so this cannot be answered before the stop below.
+    const int tok = backend.request("message", "history",
+                                    QVariantMap{{"acc", "nobody@h"},
+                                                {"chat", "x@h"},
+                                                {"limit", 50}});
+    QSignalSpy errors(&backend, &TackyBackend::error);
+    backend.stop();
+
+    QTRY_VERIFY(!errors.isEmpty());
+    bool sawOurs = false;
+    for (const QList<QVariant> &row : errors)
+        sawOurs = sawOurs || row.at(0).toInt() == tok;
+    QVERIFY2(sawOurs, "a token still owed when the transport went away must be "
+                      "failed, not dropped");
 }
 
 QTEST_MAIN(TestBackend)

@@ -326,6 +326,9 @@ void ChatModel::reload() {
     setCatchupBusy(false);
     m_tailTs = 0;      // the last <Tail> was the previous chat's
     m_markedRead = 0;  // and so was the watermark we last sent
+    m_failed.clear();  // and so were the pages that failed
+    setLoadError({});
+    pullConnState();
     loadInitial();
 }
 
@@ -335,6 +338,7 @@ void ChatModel::issueHistory(const QString &dir, qlonglong cursor,
         return;
     if (m_inflight.contains(dir))
         return; // one request per direction in flight
+    clearFailure(dir);
 
     QVariantMap a{{QStringLiteral("acc"), m_account},
                   {QStringLiteral("chat"), m_chat},
@@ -352,16 +356,61 @@ void ChatModel::issueHistory(const QString &dir, qlonglong cursor,
 
 void ChatModel::loadInitial() { issueHistory(QStringLiteral("init"), 0, false); }
 
+// The fill calls these on every content change, so a failed direction stays
+// quiet: an unreachable archive would otherwise draw a request per scroll.
 void ChatModel::loadOlder() {
-    if (m_msgs.isEmpty())
+    if (m_msgs.isEmpty() || m_failed.contains(QStringLiteral("old")))
         return;
     issueHistory(QStringLiteral("old"), oldestTs(), true);
 }
 
 void ChatModel::loadNewer() {
-    if (m_msgs.isEmpty())
+    if (m_msgs.isEmpty() || m_failed.contains(QStringLiteral("new")))
         return;
     issueHistory(QStringLiteral("new"), newestTs(), true);
+}
+
+// Straight to issueHistory: the gate above is what this overrides.
+void ChatModel::retry() {
+    const QSet<QString> failed = m_failed;
+    if (failed.contains(QStringLiteral("init")))
+        issueHistory(QStringLiteral("init"), 0, false);
+    if (failed.contains(QStringLiteral("old")) && !m_msgs.isEmpty())
+        issueHistory(QStringLiteral("old"), oldestTs(), true);
+    if (failed.contains(QStringLiteral("new")) && !m_msgs.isEmpty())
+        issueHistory(QStringLiteral("new"), newestTs(), true);
+}
+
+// Re-fires conn <State> as it stands, so a model built after the account
+// connected still learns it.
+void ChatModel::pullConnState() {
+    if (!m_backend || m_account.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("conn"), QStringLiteral("pull"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("event"),
+                                   QStringLiteral("State")}});
+}
+
+void ChatModel::setLoadError(const QString &message) {
+    if (m_loadError == message)
+        return;
+    m_loadError = message;
+    emit loadErrorChanged();
+}
+
+void ChatModel::setOnline(bool v) {
+    if (m_online == v)
+        return;
+    m_online = v;
+    emit onlineChanged();
+}
+
+// The message goes with the last failure standing, so the pill stops naming
+// one nothing is showing.
+void ChatModel::clearFailure(const QString &dir) {
+    if (m_failed.remove(dir) && m_failed.isEmpty())
+        setLoadError({});
 }
 
 // Both jumps land in the same reply handler, which decides then whether the
@@ -549,6 +598,11 @@ void ChatModel::handleError(int token, const QString &message) {
     markInflight(dir, false);
     qWarning("chat history (%s) failed: %s", qUtf8Printable(dir),
              qUtf8Printable(message));
+    // No loaded(dir, 0): that tells the view the archive ran dry, and it
+    // latches on it.
+    m_failed.insert(dir);
+    if (dir == QLatin1String("init") || dir == QLatin1String("old"))
+        setLoadError(message);
 }
 
 void ChatModel::cancelAllDirs() {
@@ -565,6 +619,7 @@ void ChatModel::cancelDir(const QString &dir) {
             QVariantMap{{QStringLiteral("acc"), m_account},
                         {QStringLiteral("tag"), m_chat + QLatin1Char('/') + dir}});
     markInflight(dir, false);
+    clearFailure(dir);
     // Drop the pending token too, so a late reply is ignored.
     for (auto it = m_pending.begin(); it != m_pending.end();) {
         if (it.value() == dir)
@@ -582,6 +637,23 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
         return;
     if (module == QLatin1String("file")) {
         handleFileUpdate(name, a);
+        return;
+    }
+    // TackyBackend::connected is this process attaching to the backend; these
+    // are the account reaching its server, which is what a request needs.
+    if (module == QLatin1String("conn")) {
+        if (name == QLatin1String("Ready")) {
+            setOnline(true);
+            // Not reload(): that empties the window the user is reading.
+            retry();
+        } else if (name == QLatin1String("State")) {
+            setOnline(a.value(QStringLiteral("state")).toString() ==
+                      QLatin1String("connected"));
+        } else if (name == QLatin1String("Disconnected") ||
+                   name == QLatin1String("ConnError") ||
+                   name == QLatin1String("AuthError")) {
+            setOnline(false);
+        }
         return;
     }
     if (module != QLatin1String("message"))
@@ -888,6 +960,7 @@ void ChatModel::handleResult(int token, const QVariant &data) {
         return;
     const QString role = m_pending.take(token);
     markInflight(role, false);
+    clearFailure(role);
 
     const int before = m_msgs.size();
     if (role == QLatin1String("init")) {

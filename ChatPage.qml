@@ -169,6 +169,8 @@ Page {
     // at the tail, fetching nothing, and encrypting nothing.
     readonly property bool atTail: page.chatModel ? page.chatModel.atTail : true
     readonly property bool loadingOlder: page.chatModel ? page.chatModel.loadingOlder : false
+    readonly property string loadError: page.chatModel ? page.chatModel.loadError : ""
+    readonly property bool online: page.chatModel ? page.chatModel.online : false
     readonly property bool canEncrypt: page.omemo ? page.omemo.available : false
     readonly property bool encryptOn: page.omemo ? page.omemo.enabled : false
 
@@ -1294,8 +1296,8 @@ Page {
 
             // Floats over the oldest edge instead of riding along as a footer:
             // content that came and went with the request would move the very
-            // edge the paging measures against. A `before` page can stay out for
-            // a long time - offline it never answers - so say so rather than
+            // edge the paging measures against. A `before` page can stay out
+            // for a long time, and can fail outright, so say which rather than
             // look like the history simply ended.
             Rectangle {
                 id: olderPill
@@ -1303,16 +1305,32 @@ Page {
                 // A ListView's declared children land in its scrolling
                 // contentItem; this one belongs to the viewport.
                 parent: feed
+                // Offline the request is buffered until the account has a
+                // stream, so a spinner would be claiming progress it isn't
+                // making.
+                readonly property bool failed: page.loadError !== ""
+                readonly property bool waiting: page.loadingOlder && !page.online
+                readonly property bool working: page.loadingOlder && page.online
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.top: parent.top
                 anchors.topMargin: 8
-                width: label.width + 32
+                width: label.width + (spinner.visible ? 32 : 20)
                 height: 26
                 radius: 13
                 color: Theme.surface
-                opacity: page.loadingOlder && !feed.olderExhausted ? 0.95 : 0
+                opacity: (page.loadingOlder || failed) && !feed.olderExhausted
+                         ? 0.95 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
+                // The other two states resolve without the user.
+                TapHandler {
+                    enabled: olderPill.failed
+                    onTapped: page.chatModel.retry()
+                }
+                HoverHandler {
+                    enabled: olderPill.failed
+                    cursorShape: Qt.PointingHandCursor
+                }
 
                 // Not a BusyIndicator: the Basic style paints that from its own
                 // palette, which ignores Theme. Animator, so a stalled fetch
@@ -1324,8 +1342,9 @@ Page {
                     anchors.leftMargin: 8
                     width: 12
                     height: 12
+                    visible: olderPill.working
                     RotationAnimator on rotation {
-                        running: olderPill.visible
+                        running: spinner.visible && olderPill.visible
                         loops: Animation.Infinite
                         from: 0; to: 360; duration: 900
                     }
@@ -1346,9 +1365,11 @@ Page {
                 Text {
                     id: label
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: spinner.right
-                    anchors.leftMargin: 6
-                    text: "Loading"
+                    anchors.left: spinner.visible ? spinner.right : parent.left
+                    anchors.leftMargin: spinner.visible ? 6 : 10
+                    text: olderPill.failed ? "Couldn't load — tap to retry"
+                        : olderPill.waiting ? "Offline"
+                        : "Loading"
                     color: Theme.textDim
                     font.pixelSize: 11
                 }

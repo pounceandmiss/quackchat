@@ -8,9 +8,9 @@
 // naming the other one silently turns scroll-up paging into a no-op.
 //
 // Nothing here connects to a server, so a `before` page whose local read comes
-// up short of `limit` reaches for MAM and never answers - tacky documents that
-// leg as having no timeout. Every assertion is about pages the local store can
-// satisfy alone.
+// up short of `limit` reaches for the archive, and tacky buffers that query
+// until there is a stream to carry it - which never comes. Every assertion is
+// about pages the local store can satisfy alone.
 #include <QtTest>
 #include <QGuiApplication>
 #include <QSignalSpy>
@@ -496,8 +496,10 @@ void TestChatPage::underTallViewportPagesWithoutScrolling() {
     QVERIFY(chat.prop("contentHeight") < chat.feed->height());
     QVERIFY(chat.buffer("olderBuffer") < 0.0); // pinned, nothing above
 
-    // The `before` page it fires stays out (no server), so the pill shows.
+    // The `before` page it fires stays out (no stream to carry it), so the
+    // pill shows - as waiting on the network, not as loading.
     QTRY_VERIFY(chat.model()->loadingOlder());
+    QVERIFY(!chat.model()->online());
     QQuickItem *pill = chat.feed->findChild<QQuickItem *>("olderPill");
     QVERIFY(pill);
     QTRY_VERIFY(pill->isVisible());
