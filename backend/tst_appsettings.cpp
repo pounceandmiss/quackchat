@@ -20,7 +20,25 @@ private slots:
     void unsetKeysReadAsTackysOwnDefaults();
     void changedEventsAreGlobal();
     void settingsRoundTripThroughTheBackend();
+    void refreshesWhenTheBackendConnects();
 };
+
+// Persisted values with no event to announce them, and on Android the link is
+// still coming up when AppController first asks.
+void TestAppSettings::refreshesWhenTheBackendConnects() {
+    TackyBackend backend;
+    AppSettings s;
+    s.setBackend(&backend); // bound before the link is up
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    emit backend.connected();
+
+    QCOMPARE(sent.count(), 2);
+    for (const QList<QVariant> &call : sent) {
+        QCOMPARE(call.at(0).toString(), QString("setting"));
+        QCOMPARE(call.at(1).toString(), QString("get"));
+    }
+}
 
 // The store holds nothing until something is written, and "" is not a policy
 // the backend has: unset, it is behaving as `everyone`.

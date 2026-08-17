@@ -18,6 +18,9 @@ void AppSettings::setBackend(TackyBackend *backend) {
     if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &AppSettings::handleEvent);
         connect(m_backend, &TackyBackend::result, this, &AppSettings::handleResult);
+        // Persisted values with no event to announce them, so this edge is
+        // what fetches them when the first ask went out over a dead link.
+        connect(m_backend, &TackyBackend::connected, this, &AppSettings::refresh);
     }
 }
 

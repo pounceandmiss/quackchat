@@ -6,6 +6,8 @@
 #include <QSignalSpy>
 #include <QtTest>
 
+#include "AppSettings.h"
+#include "AudioDevices.h"
 #include "CallsModel.h"
 #include "ChatListModel.h"
 #include "SocketTransport.h"
@@ -210,6 +212,35 @@ private slots:
         QVERIFY(accept());
         QTRY_VERIFY(b.isRunning());
         QTRY_VERIFY(asked(sent, "chatlist", "get"));
+    }
+
+    // The account-free pair: no conn event to hang off, and until now asked
+    // for once from startFromEnvironment, while the socket was still down.
+    void audioAndSettingsResyncOnEveryConnectedEdge() {
+        TackyBackend b;
+        auto *t = new SocketTransport(m_name);
+        t->setRetryInterval(20);
+        b.setTransport(t);
+
+        AudioDevices audio;
+        AppSettings settings;
+        audio.setBackend(&b); // both bind while disconnected
+        settings.setBackend(&b);
+
+        QSignalSpy sent(&b, &TackyBackend::sent);
+        QVERIFY(b.start());
+        QVERIFY(accept());
+        QTRY_VERIFY(b.isRunning());
+        QTRY_VERIFY(asked(sent, "audio", "enumerateDevices"));
+        QTRY_VERIFY(asked(sent, "setting", "get"));
+
+        sent.clear();
+        m_peer->abort();
+        QTRY_VERIFY(!b.isRunning());
+        QVERIFY(accept());
+        QTRY_VERIFY(b.isRunning());
+        QTRY_VERIFY(asked(sent, "audio", "enumerateDevices"));
+        QTRY_VERIFY(asked(sent, "setting", "get"));
     }
 
     // Calls re-seed off conn rather than the connected edge, so the reconnect

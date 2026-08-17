@@ -139,10 +139,11 @@ void AppController::startFromEnvironment() {
     }
 
     // Accounts already on disk auto-connect but never re-emit <Added>, so the
-    // rail only sees them if we enumerate.
+    // rail only sees them if we enumerate; same for the audio prefs and the
+    // app's own, which are persisted settings rather than events. On Android
+    // the socket is still coming up here, so these can go nowhere - each of
+    // them also re-asks on the connected edge, which is what delivers.
     m_accounts.refresh();
-    // Same for the audio prefs and the app's own: they are persisted settings,
-    // not events, so nothing announces them.
     m_audio.refresh();
     m_settings.refresh();
 }

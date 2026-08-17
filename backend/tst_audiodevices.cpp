@@ -21,10 +21,30 @@ private slots:
     void volumeEventDrivesMuted();
     void unmuteReturnsToThePreviousLevel();
     void preferredDeviceEventIsGlobal();
+    void refreshesWhenTheBackendConnects();
     // Against a real backend:
     void enumeratesRealDevices();
     void preferencesRoundTripThroughTheBackend();
 };
+
+// The device list and the stored prefs are answers, not events, and on Android
+// the link is still coming up when AppController first asks.
+void TestAudioDevices::refreshesWhenTheBackendConnects() {
+    TackyBackend backend;
+    AudioDevices a;
+    a.setBackend(&backend); // bound before the link is up
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    emit backend.connected();
+
+    QStringList asked;
+    for (const QList<QVariant> &call : sent)
+        asked << call.at(1).toString();
+    QCOMPARE(asked, QStringList({"enumerateDevices", "getPreferredDevice",
+                                 "getPreferredDevice", "getVolume",
+                                 "getVolume"}));
+    QCOMPARE(sent.first().at(0).toString(), QString("audio"));
+}
 
 void TestAudioDevices::volumeEventDrivesMuted() {
     AudioDevices a;
