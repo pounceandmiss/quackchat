@@ -173,6 +173,9 @@ Page {
     readonly property bool online: page.chatModel ? page.chatModel.online : false
     readonly property bool canEncrypt: page.omemo ? page.omemo.available : false
     readonly property bool encryptOn: page.omemo ? page.omemo.enabled : false
+    // `encryptOn` is tacky's default until the read answers, so a padlock drawn
+    // from it before then is a guess.
+    readonly property bool encryptKnown: page.omemo ? page.omemo.known : false
 
     // Pushed onto the shared model rather than declared with it. The palette's
     // literals, since the markup wants CSS colors and the typed accessors would
@@ -1468,7 +1471,7 @@ Page {
                 // and its own press handling would swallow the long press.
                 Item {
                     objectName: "omemoToggle"
-                    visible: page.canEncrypt && page.hasChat
+                    visible: page.canEncrypt && page.hasChat && page.encryptKnown
                     Layout.preferredWidth: visible ? 32 : 0
                     Layout.fillHeight: true
                     Text {

@@ -8,8 +8,14 @@ void OmemoChat::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend)
+    if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &OmemoChat::handleEvent);
+        connect(m_backend, &TackyBackend::result, this, &OmemoChat::handleResult);
+        connect(m_backend, &TackyBackend::error, this, &OmemoChat::handleError);
+        // A read made before the link was up went nowhere, and on Android the
+        // link comes up after the first chat is already on screen.
+        connect(m_backend, &TackyBackend::connected, this, &OmemoChat::refresh);
+    }
     emit backendChanged();
     refresh();
 }
@@ -49,27 +55,53 @@ void OmemoChat::setGroupchat(bool v) {
 
 // The answer on screen belongs to the chat we just left, and one chat's "off"
 // showing over another's composer would misreport how the next message goes
-// out. Back to the default until this chat's own answer lands.
+// out. Back to knowing nothing until this chat's own answer lands.
 void OmemoChat::refresh() {
-    applyEnabled(true);
+    setKnown(false);
+    m_readToken = -1;
     m_prepared = false;
     if (!m_backend || !available())
         return;
-    // No getter exists for this: `pull` re-emits <Enabled> with the stored
-    // value, which the handler below picks up like any other change. The event
-    // name goes bare - tacky's json layer puts the brackets back.
-    m_backend->notify(QStringLiteral("omemo"), QStringLiteral("pull"),
-                      QVariantMap{{QStringLiteral("acc"), m_account},
-                                  {QStringLiteral("jid"), m_jid},
-                                  {QStringLiteral("event"), QStringLiteral("Enabled")}});
+    m_readToken = m_backend->request(
+        QStringLiteral("omemo"), QStringLiteral("isEnabled"),
+        QVariantMap{{QStringLiteral("acc"), m_account},
+                    {QStringLiteral("jid"), m_jid}});
+}
+
+void OmemoChat::handleResult(int token, const QVariant &data) {
+    if (token != m_readToken)
+        return;
+    m_readToken = -1;
+    applyEnabled(data.toBool());
+    setKnown(true);
+    if (m_enabled)
+        prepare();
+}
+
+// Left unknown rather than guessed at: the next connected edge asks again, and
+// until then there is nothing to draw.
+void OmemoChat::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    if (token != m_readToken)
+        return;
+    m_readToken = -1;
+}
+
+void OmemoChat::setKnown(bool v) {
+    if (m_known == v)
+        return;
+    m_known = v;
+    emit knownChanged();
 }
 
 void OmemoChat::setEnabled(bool on) {
     if (!available() || m_enabled == on)
         return;
     // Optimistic, as with blind trust: the padlock follows the click and
-    // <Enabled> confirms it.
+    // <Enabled> confirms it. The switch is only offered once the state is
+    // known, so this settles it rather than guessing at it.
     applyEnabled(on);
+    setKnown(true);
     if (!m_backend)
         return;
     m_backend->notify(QStringLiteral("omemo"), QStringLiteral("setEnabled"),
@@ -89,7 +121,10 @@ void OmemoChat::handleEvent(const QString &module, const QString &name,
         if (a.value(QStringLiteral("jid")).toString() != m_jid)
             return;
         const bool on = a.value(QStringLiteral("value")).toBool();
+        // A change is an answer too, and it outranks a read still in flight.
+        m_readToken = -1;
         applyEnabled(on);
+        setKnown(true);
         if (on)
             prepare();
     } else if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
@@ -99,7 +134,7 @@ void OmemoChat::handleEvent(const QString &module, const QString &name,
     }
 }
 
-// Hung off the answer to the pull rather than off opening the chat: the fetch
+// Hung off the answer to the read rather than off opening the chat: the fetch
 // goes out every time it is asked for, cache or no cache, so a chat the user
 // has turned encryption off for should not pay for it. Once per chat is enough
 // - the latch clears when the chat does, and on a reconnect, where the keys

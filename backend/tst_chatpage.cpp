@@ -167,6 +167,22 @@ class TestChatPage : public QObject {
     // its chance to.
     static void settle() { QTest::qWait(400); }
 
+    // The padlock is only drawn once the backend has said what the chat's
+    // setting is, so anything reading or clicking it has to wait for that.
+    static QQuickItem *shownLock(QQuickWindow *win) {
+        auto *lock = win->findChild<QQuickItem *>("omemoToggle");
+        if (lock)
+            QTest::qWaitFor(
+                [&] {
+                    // Width as well: it lays out from zero as the control
+                    // appears, and a coordinate taken before then misses.
+                    return lock->property("visible").toBool() &&
+                           lock->width() > 0;
+                },
+                5000);
+        return lock;
+    }
+
     // The XML viewer is its own top-level window, so it is reached through the
     // application rather than down any one chat window's tree. Matched on the
     // window and not the page inside it: the mobile sheet hosts that same page
@@ -1263,7 +1279,7 @@ void TestChatPage::exposedMessagesFollowTheChatsLock() {
 void TestChatPage::composerLockIsHiddenInRooms() {
     const Chat oneToOne = open("quiet@example.com");
     QVERIFY(oneToOne.win());
-    auto *lock = oneToOne.win()->findChild<QQuickItem *>("omemoToggle");
+    auto *lock = shownLock(oneToOne.win());
     QVERIFY(lock);
     QVERIFY(lock->property("visible").toBool());
 
@@ -1499,7 +1515,7 @@ void TestChatPage::togglingTheComposerLockChangesWhatIsSent() {
 void TestChatPage::keysOpenFromTheComposerLock() {
     const Chat chat = open("quiet@example.com");
     QVERIFY(chat.win());
-    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
+    auto *lock = shownLock(chat.win());
     QVERIFY(lock);
     auto *menu = lock->findChild<QObject *>("lockMenu");
     QVERIFY(menu);
@@ -1569,7 +1585,7 @@ void TestChatPage::tappingTheChatHeaderOpensTheContact() {
 void TestChatPage::aTouchTapOnTheLockOnlyFlipsIt() {
     const Chat chat = open("touch@example.com");
     QVERIFY(chat.win());
-    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
+    auto *lock = shownLock(chat.win());
     QVERIFY(lock);
     auto *menu = lock->findChild<QObject *>("lockMenu");
     QVERIFY(menu);

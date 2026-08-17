@@ -2135,7 +2135,18 @@ private slots:
                                               Q_ARG(QVariant, QVariant(groupchat))));
         };
 
+        // The padlock waits to be told. No backend is running here, so the
+        // read errors and nothing settles it but the event below.
+        const auto tellUs = [&](const QString &jid, bool on) {
+            emit app->backend()->event(
+                "omemo", "Enabled",
+                QVariantMap{{"acc", "me@example.com"}, {"jid", jid},
+                            {"value", on}});
+        };
+
         openChat("friend@example.com", false);
+        QVERIFY2(!lock->isVisible(), "a padlock was drawn before anyone said");
+        tellUs("friend@example.com", true);
         QTRY_VERIFY(lock->isVisible());
         QVERIFY(!people->isVisible());
 
@@ -2145,6 +2156,7 @@ private slots:
         QVERIFY(people->isVisible());
 
         // The other way about: a room must not take the 1:1's padlock with it.
+        // The session is cached, so the answer it already had comes back too.
         openChat("friend@example.com", false);
         QVERIFY(lock->isVisible());
         QVERIFY(!people->isVisible());

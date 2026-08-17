@@ -21,23 +21,86 @@ class TestOmemoChat : public QObject {
     }
 
 private slots:
-    void defaultsToEnabled();
+    void saysNothingUntilItHasBeenTold();
+    void readsWithATokenSoAFailureIsVisible();
+    void theAnswerSettlesIt();
+    void aFailedReadLeavesItUnknown();
+    void reReadsOnTheConnectedEdge();
     void followsTheEvent();
     void eventsAreScopedToAccountAndJid();
-    void switchingChatsResetsToTheDefault();
+    void switchingChatsGoesBackToUnknown();
     void groupchatIsUnavailable();
     void toggleFlipsBeforeTheEventLands();
     void readyReReadsTheSetting();
-    void integrationPullAnswersWithTheStoredValue();
+    void integrationReadAnswersWithTheStoredValue();
 };
 
-// Nothing has been asked yet and nothing may be assumed, so the composer starts
-// where tacky does: encrypted.
-void TestOmemoChat::defaultsToEnabled() {
+// The default is on, which over a chat that is really off would draw a padlock
+// on a conversation going out in the clear. So until the read answers there is
+// nothing to draw, and `enabled` is a placeholder rather than a state.
+void TestOmemoChat::saysNothingUntilItHasBeenTold() {
     OmemoChat o;
-    QVERIFY(o.enabled());
+    QVERIFY(!o.known());
     chat(o);
-    QVERIFY(o.enabled());
+    QVERIFY(!o.known());
+}
+
+void TestOmemoChat::readsWithATokenSoAFailureIsVisible() {
+    TackyBackend backend; // never started: `sent` still reports what was asked
+    OmemoChat o;
+    o.setBackend(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    chat(o);
+
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("omemo"));
+    QCOMPARE(sent.first().at(1).toString(), QString("isEnabled"));
+    QCOMPARE(sent.first().at(2).toMap().value("acc").toString(), QString("me@h"));
+    QCOMPARE(sent.first().at(2).toMap().value("jid").toString(), QString("a@h"));
+}
+
+void TestOmemoChat::theAnswerSettlesIt() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    QSignalSpy spy(&o, &OmemoChat::knownChanged);
+    chat(o); // token 1
+
+    o.handleResult(1, false);
+    QVERIFY(o.known());
+    QVERIFY(!o.enabled());
+    QCOMPARE(spy.count(), 1);
+}
+
+// A read that went out over a dead link answers with an error. It stays unknown
+// rather than falling back to the default, and the next connected edge asks
+// again.
+void TestOmemoChat::aFailedReadLeavesItUnknown() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    chat(o); // token 1
+
+    o.handleError(1, QStringLiteral("omemo/isEnabled was not sent: no backend"));
+    QVERIFY(!o.known());
+    // And a late answer on the spent token cannot settle it either.
+    o.handleResult(1, true);
+    QVERIFY(!o.known());
+}
+
+// On Android the link comes up after the first chat is already on screen, so
+// the read that went out then reached nothing.
+void TestOmemoChat::reReadsOnTheConnectedEdge() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    chat(o);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    emit backend.connected();
+
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(1).toString(), QString("isEnabled"));
 }
 
 void TestOmemoChat::followsTheEvent() {
@@ -67,22 +130,23 @@ void TestOmemoChat::eventsAreScopedToAccountAndJid() {
     QVERIFY(!o.enabled());
 }
 
-// The pull for a new chat is in flight when the old chat's answer is still on
+// The read for a new chat is in flight while the old chat's answer is still on
 // screen; showing an open padlock over a chat that encrypts (or the reverse) is
 // the one thing this control must never do.
-void TestOmemoChat::switchingChatsResetsToTheDefault() {
+void TestOmemoChat::switchingChatsGoesBackToUnknown() {
     OmemoChat o;
     chat(o);
     feedEvent(o, R"(["event","omemo","Enabled",
         {"acc":"me@h","jid":"a@h","value":false}])");
+    QVERIFY(o.known());
     QVERIFY(!o.enabled());
 
     o.setJid("b@h");
-    QVERIFY(o.enabled());
-    // a@h's pull, answered after the switch, is about the chat we left.
+    QVERIFY(!o.known());
+    // a@h's answer, arriving after the switch, is about the chat we left.
     feedEvent(o, R"(["event","omemo","Enabled",
         {"acc":"me@h","jid":"a@h","value":false}])");
-    QVERIFY(o.enabled());
+    QVERIFY(!o.known());
 }
 
 // A room has no OMEMO at all - tacky sends its messages in the clear whatever
@@ -118,15 +182,15 @@ void TestOmemoChat::readyReReadsTheSetting() {
     QVERIFY(!o.enabled());
 
     feedEvent(o, R"(["event","conn","Ready",{"acc":"other@h"}])");
-    QVERIFY(!o.enabled());
+    QVERIFY(o.known());
     feedEvent(o, R"(["event","conn","Ready",{"acc":"me@h"}])");
-    QVERIFY(o.enabled());
+    QVERIFY(!o.known());
 }
 
-// A fixture cannot catch the pull being addressed wrongly - the event name
-// travels bare and tacky puts the brackets back - so this leg goes through the
-// real backend, with no server needed for a setting read.
-void TestOmemoChat::integrationPullAnswersWithTheStoredValue() {
+// A fixture cannot catch the read being addressed wrongly, or a schema entry
+// that would hand a bool back as a string, so this leg goes through the real
+// backend. No server is needed for a setting read.
+void TestOmemoChat::integrationReadAnswersWithTheStoredValue() {
     TackyBackend backend;
     QVERIFY(backend.start());
     backend.notify("account", "add",
@@ -139,6 +203,8 @@ void TestOmemoChat::integrationPullAnswersWithTheStoredValue() {
     o.setBackend(&backend);
     o.setAccount("me@example.com");
     o.setJid("peer@example.com");
+    // A chat nobody has set reads back on, from the backend rather than here.
+    QTRY_VERIFY(o.known());
     QVERIFY(o.enabled());
 
     o.setEnabled(false);
@@ -146,9 +212,10 @@ void TestOmemoChat::integrationPullAnswersWithTheStoredValue() {
 
     // Leave and come back: the answer has to be read again, not remembered.
     o.setJid("elsewhere@example.com");
-    QVERIFY(o.enabled());
+    QVERIFY(!o.known());
     o.setJid("peer@example.com");
-    QTRY_VERIFY(!o.enabled());
+    QTRY_VERIFY(o.known());
+    QVERIFY(!o.enabled());
 
     backend.stop();
 }
