@@ -21,6 +21,8 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const {
         return a.connState;
     case EnabledRole:
         return a.enabled;
+    case StatusKnownRole:
+        return a.statusKnown();
     default:
         return {};
     }
@@ -31,6 +33,7 @@ QHash<int, QByteArray> AccountsModel::roleNames() const {
         {JidRole, "jid"},
         {ConnStateRole, "connState"},
         {EnabledRole, "enabled"},
+        {StatusKnownRole, "statusKnown"},
     };
 }
 
@@ -52,6 +55,9 @@ void AccountsModel::setBackend(TackyBackend *backend) {
 void AccountsModel::refresh() {
     if (!m_backend)
         return;
+    // Rows built while the enabled query is in flight have nothing to read the
+    // flag off, so they count as unknown rather than as disabled.
+    m_enabledKnown = false;
     // The list reply is bare JIDs, so enabled-ness needs its own query; either
     // can land first and applyList/applyEnabledList reconcile.
     //
@@ -86,6 +92,12 @@ QString AccountsModel::connStateFor(const QString &jid) const {
 bool AccountsModel::isEnabled(const QString &jid) const {
     const int i = indexOfJid(jid);
     return i >= 0 && m_accounts.at(i).enabled;
+}
+
+// False for an account with no row at all: there is nothing to say about it.
+bool AccountsModel::statusKnownFor(const QString &jid) const {
+    const int i = indexOfJid(jid);
+    return i >= 0 && m_accounts.at(i).statusKnown();
 }
 
 QString AccountsModel::firstJid() const {
@@ -192,6 +204,7 @@ void AccountsModel::applyList(const QVariantList &jids) {
         Account a;
         a.jid = jid;
         a.enabled = m_enabledJids.contains(jid);
+        a.enabledKnown = m_enabledKnown;
         m_accounts.insert(pos, a);
         endInsertRows();
     }
@@ -210,14 +223,18 @@ void AccountsModel::applyEnabledList(const QVariantList &jids) {
         if (!jid.isEmpty())
             m_enabledJids.insert(jid);
     }
+    // The reply covers every account, so absence from it settles a row as
+    // disabled just as much as presence settles it as enabled.
+    m_enabledKnown = true;
     for (int i = 0; i < m_accounts.size(); ++i) {
         const bool en = m_enabledJids.contains(m_accounts.at(i).jid);
-        if (m_accounts[i].enabled != en) {
+        if (m_accounts[i].enabled != en || !m_accounts[i].enabledKnown) {
             m_accounts[i].enabled = en;
+            m_accounts[i].enabledKnown = true;
             ++m_connRev;
             emit connRevChanged();
             const QModelIndex idx = index(i);
-            emit dataChanged(idx, idx, {EnabledRole});
+            emit dataChanged(idx, idx, {EnabledRole, StatusKnownRole});
         }
     }
 }
@@ -230,6 +247,7 @@ void AccountsModel::applyAdded(const QString &jid) {
     Account a;
     a.jid = jid;
     a.enabled = m_enabledJids.contains(jid);
+    a.enabledKnown = m_enabledKnown;
     m_accounts.insert(pos, a);
     endInsertRows();
     emit countChanged();
@@ -259,13 +277,15 @@ void AccountsModel::setEnabled(const QString &jid, bool enabled) {
         applyAdded(jid);
         i = indexOfJid(jid);
     }
-    if (i < 0 || m_accounts.at(i).enabled == enabled)
+    if (i < 0 || (m_accounts.at(i).enabled == enabled &&
+                  m_accounts.at(i).enabledKnown))
         return;
     m_accounts[i].enabled = enabled;
+    m_accounts[i].enabledKnown = true;
     ++m_connRev;
     emit connRevChanged();
     const QModelIndex idx = index(i);
-    emit dataChanged(idx, idx, {EnabledRole});
+    emit dataChanged(idx, idx, {EnabledRole, StatusKnownRole});
 }
 
 void AccountsModel::setConnState(const QString &jid, const QString &state) {
@@ -275,11 +295,13 @@ void AccountsModel::setConnState(const QString &jid, const QString &state) {
         applyAdded(jid);
         i = indexOfJid(jid);
     }
-    if (i < 0 || m_accounts.at(i).connState == state)
+    if (i < 0 || (m_accounts.at(i).connState == state &&
+                  m_accounts.at(i).stateKnown))
         return;
     m_accounts[i].connState = state;
+    m_accounts[i].stateKnown = true;
     ++m_connRev;
     emit connRevChanged();
     const QModelIndex idx = index(i);
-    emit dataChanged(idx, idx, {ConnStateRole});
+    emit dataChanged(idx, idx, {ConnStateRole, StatusKnownRole});
 }

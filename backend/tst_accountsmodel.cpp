@@ -16,6 +16,9 @@ class TestAccountsModel : public QObject {
     static bool enabledAt(const AccountsModel &m, int row) {
         return m.data(m.index(row), AccountsModel::EnabledRole).toBool();
     }
+    static bool knownAt(const AccountsModel &m, int row) {
+        return m.data(m.index(row), AccountsModel::StatusKnownRole).toBool();
+    }
 
 private slots:
     void listSortsAndMarksEnabled();
@@ -27,7 +30,59 @@ private slots:
     void lookups();
     void integrationListsAddedAccount();
     void pullsConnStateForRowsFromTheList();
+    void statusIsUnknownUntilBothRepliesLand();
+    void aDisabledAccountNeedsNoConnState();
+    void statusKnownBumpsConnRev();
 };
+
+// The three replies that make up a row arrive separately, and the rail draws
+// whatever it has: "offline"/"disabled" in that window is a claim about an
+// account that may well be connected.
+void TestAccountsModel::statusIsUnknownUntilBothRepliesLand() {
+    AccountsModel m;
+    m.applyList(QVariantList{"amy@h"});
+    QVERIFY(!knownAt(m, 0));
+
+    m.applyEnabledList(QVariantList{"amy@h"});
+    QVERIFY2(!knownAt(m, 0), "enabled alone says nothing about the connection");
+
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", "connected"}});
+    QVERIFY(knownAt(m, 0));
+    QVERIFY(m.statusKnownFor("amy@h"));
+    // Nothing is known about an account with no row at all.
+    QVERIFY(!m.statusKnownFor("nobody@h"));
+}
+
+// A disabled account never gets a conn event, so waiting for one would leave it
+// indeterminate for good.
+void TestAccountsModel::aDisabledAccountNeedsNoConnState() {
+    AccountsModel m;
+    m.applyList(QVariantList{"amy@h", "bob@h"});
+    m.applyEnabledList(QVariantList{"amy@h"});
+    QVERIFY(knownAt(m, 1)); // bob@h, absent from the enabled subset
+    QVERIFY(!knownAt(m, 0));
+
+    // The same the other way round: the enabled subset can land first.
+    AccountsModel n;
+    n.applyEnabledList(QVariantList{"amy@h"});
+    n.applyList(QVariantList{"amy@h", "bob@h"});
+    QVERIFY(knownAt(n, 1));
+    QVERIFY(!knownAt(n, 0));
+}
+
+// statusKnownFor() is a call, so the header badge's binding re-runs off connRev
+// or not at all.
+void TestAccountsModel::statusKnownBumpsConnRev() {
+    AccountsModel m;
+    m.applyList(QVariantList{"amy@h"});
+    QSignalSpy rev(&m, &AccountsModel::connRevChanged);
+    m.applyEnabledList(QVariantList{"amy@h"});
+    QCOMPARE(rev.count(), 1);
+    // Same value as the row was built with, but now it is a fact.
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", ""}});
+    QCOMPARE(rev.count(), 2);
+    QVERIFY(knownAt(m, 0));
+}
 
 // conn state only ever arrives as an event. Attaching to a backend whose
 // accounts are already online means those events are long past, so the rows

@@ -25,6 +25,7 @@ public:
         JidRole = Qt::UserRole + 1,
         ConnStateRole, // "", connecting, connected, waiting, auth-error, ...
         EnabledRole,
+        StatusKnownRole, // false while the row is still waiting to be told
     };
     Q_ENUM(Role)
 
@@ -49,6 +50,7 @@ public:
     // Per-JID lookups; the rail keys everything off the JID.
     Q_INVOKABLE QString connStateFor(const QString &jid) const;
     Q_INVOKABLE bool isEnabled(const QString &jid) const;
+    Q_INVOKABLE bool statusKnownFor(const QString &jid) const;
     Q_INVOKABLE bool contains(const QString &jid) const { return indexOfJid(jid) >= 0; }
     Q_INVOKABLE QString firstJid() const;
 
@@ -85,10 +87,19 @@ private:
 
     int m_connRev = 0;
 
+    // A row from `account list` carries no state at all: the enabled subset and
+    // the conn events land after it, so `enabled` and `connState` are defaults
+    // rather than facts until the flags below say otherwise.
     struct Account {
         QString jid;
         QString connState;
         bool enabled = false;
+        bool enabledKnown = false;
+        bool stateKnown = false;
+
+        // There is something true to say once the account is known disabled, or
+        // known enabled with its connection state in hand.
+        bool statusKnown() const { return enabledKnown && (!enabled || stateKnown); }
     };
 
     int indexOfJid(const QString &jid) const;
@@ -98,6 +109,7 @@ private:
     int m_listToken = -1;
     int m_enabledToken = -1;
     QSet<QString> m_enabledJids;
+    bool m_enabledKnown = false; // the enabled subset has come back at least once
     QList<Account> m_accounts;
 };
 
