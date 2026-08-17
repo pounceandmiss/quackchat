@@ -37,7 +37,11 @@ Rectangle {
 
     // The state in words beside the badge's dot: one red dot cannot say whether
     // the server is unreachable or the password was rejected.
-    function stateText(state, enabled) {
+    function stateText(state, enabled, known) {
+        // The backend answers the account list before it answers what those
+        // accounts are doing, and "offline" would be a guess in between.
+        if (!known)
+            return "checking…"
         if (!enabled)
             return "disabled"
         switch (state) {
@@ -74,6 +78,7 @@ Rectangle {
                 readonly property string jid: cell.model.jid
                 readonly property string connState: cell.model.connState
                 readonly property bool acctEnabled: cell.model.enabled
+                readonly property bool statusKnown: cell.model.statusKnown
                 width: ListView.view.width
                 height: 64
 
@@ -104,11 +109,13 @@ Rectangle {
 
                 AccountBadge {
                     id: badge
+                    objectName: "accountRowBadge"
                     x: 16
                     anchors.verticalCenter: parent.verticalCenter
                     jid: cell.jid
                     connState: cell.connState
                     acctEnabled: cell.acctEnabled
+                    statusKnown: cell.statusKnown
                     current: cell.current
                 }
 
@@ -143,7 +150,8 @@ Rectangle {
                     Text {
                         objectName: "accountRowState"
                         Layout.fillWidth: true
-                        text: rail.stateText(cell.connState, cell.acctEnabled)
+                        text: rail.stateText(cell.connState, cell.acctEnabled,
+                                             cell.statusKnown)
                         color: badge.stateColor
                         font.pixelSize: 11
                         elide: Text.ElideRight

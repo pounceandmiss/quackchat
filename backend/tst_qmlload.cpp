@@ -1918,6 +1918,74 @@ private slots:
         assertNoQmlErrors(warnings);
     }
 
+    // Android kills the UI process while the service keeps the accounts online.
+    // On reopen the account list comes back before anything about those
+    // accounts does, and a rail that reads the blanks as facts walks a
+    // connected account through "disabled" and "offline" on the way in.
+    void theRailSaysNothingUntilItHasBeenTold() {
+        QStringList warnings;
+        QQmlEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
+            for (const QQmlError &w : ws)
+                warnings << w.toString();
+        });
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+
+        app->accounts()->applyList({"me@example.com"});
+
+        QQuickWindow win;
+        win.resize(360, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AccountRail");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"width", win.width()}, {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *rail = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(rail);
+        rail->setParentItem(win.contentItem());
+
+        const auto states = findItems(rail, "accountRowState");
+        QCOMPARE(states.size(), 1);
+        QQuickItem *badge = findItem(rail, "accountRowBadge");
+        QVERIFY(badge);
+        QCOMPARE(states.at(0)->property("text").toString(), QString("checking…"));
+        QVERIFY(!badge->property("statusKnown").toBool());
+        // No dimming either: 45% opacity is how the rail says "disabled".
+        QQuickItem *avatar = findItem(badge, "accountBadgeAvatar");
+        QVERIFY(avatar);
+        QCOMPARE(avatar->opacity(), qreal(1.0));
+
+        // The enabled subset on its own still leaves the connection open.
+        app->accounts()->applyEnabledList({"me@example.com"});
+        QCoreApplication::processEvents();
+        QCOMPARE(states.at(0)->property("text").toString(), QString("checking…"));
+        QCOMPARE(badge->property("stateColor").value<QColor>(),
+                 theme->property("textDim").value<QColor>());
+
+        app->accounts()->setConnState("me@example.com", "connected");
+        QTRY_COMPARE(states.at(0)->property("text").toString(), QString("connected"));
+        QTRY_COMPARE(badge->property("stateColor").value<QColor>(),
+                     theme->property("positive").value<QColor>());
+
+        // A disabled account waits for nothing: no conn event is coming for it.
+        app->accounts()->applyAdded("off@example.com");
+        app->accounts()->applyEnabledList({"me@example.com"});
+        QTRY_COMPARE(findItems(rail, "accountRowState").size(), 2);
+        QStringList words;
+        for (QQuickItem *item : findItems(rail, "accountRowState"))
+            words << item->property("text").toString();
+        std::sort(words.begin(), words.end());
+        QCOMPARE(words, QStringList({"connected", "disabled"}));
+
+        assertNoQmlErrors(warnings);
+    }
+
     // Stacked, opening a chat is a push, not a swap: the chat comes in from
     // the right edge over the list, and the list only drops out once it lands.
     // Both panes are on screen at full width for the length of that, which no

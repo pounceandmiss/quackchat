@@ -37,6 +37,10 @@ Page {
         App.accounts.connRev
         return App.accounts.isEnabled(page.account)
     }
+    readonly property bool accountStatusKnown: {
+        App.accounts.connRev
+        return App.accounts.statusKnownFor(page.account)
+    }
 
     // What the list actually shows: the account's chats, narrowed by the search
     // box and in the order this window was asked for. Per view, so typing here
@@ -86,6 +90,7 @@ Page {
                         jid: page.account
                         connState: page.connState
                         acctEnabled: page.accountEnabled
+                        statusKnown: page.accountStatusKnown
                         dotSize: 11
                         ringColor: Theme.surface
                     }
@@ -530,6 +535,8 @@ Page {
             const failure = page.chatList ? page.chatList.loadError : ""
             if (failure !== "")
                 return "Couldn't load conversations.\n" + failure
+            if (!page.accountStatusKnown)
+                return "Checking " + page.account + " …"
             switch (page.connState) {
             case "connected":
                 return "Connected as " + page.account + ".\nNo conversations yet."

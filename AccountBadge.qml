@@ -9,6 +9,9 @@ Item {
     property string jid: ""
     property string connState: ""
     property bool acctEnabled: true
+    // False while the model is still waiting to be told: the dot goes hollow
+    // rather than claiming a state the backend has not sent yet.
+    property bool statusKnown: true
     property bool current: false
     property real dotSize: 13
     // Punches the dot out of the fill it sits on: the rail's in the drawer, the
@@ -19,7 +22,7 @@ Item {
     implicitHeight: 44
 
     readonly property color stateColor: {
-        if (!badge.acctEnabled)
+        if (!badge.statusKnown || !badge.acctEnabled)
             return Theme.textDim
         switch (badge.connState) {
         case "connected": return Theme.positive
@@ -34,9 +37,11 @@ Item {
 
     // Circle that squares off into a rounded tile while current.
     Avatar {
+        objectName: "accountBadgeAvatar"
         anchors.fill: parent
         radius: badge.current ? width / 4 : width / 2
-        opacity: badge.acctEnabled ? 1.0 : 0.45
+        // Dimming is what says "disabled", so it waits until that is settled.
+        opacity: badge.statusKnown && !badge.acctEnabled ? 0.45 : 1.0
         Behavior on radius { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
         initialsPixelSize: Math.round(height * 0.4)
         account: badge.jid
@@ -44,13 +49,22 @@ Item {
         label: badge.jid
     }
 
+    // The ring that punches the dot out of the fill, with the state inside it:
+    // filled once the state is in, an empty outline until then.
     Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         width: badge.dotSize; height: badge.dotSize
         radius: width / 2
-        color: badge.stateColor
-        border.width: 2
-        border.color: badge.ringColor
+        color: badge.ringColor
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 2
+            radius: width / 2
+            color: badge.statusKnown ? badge.stateColor : "transparent"
+            border.width: badge.statusKnown ? 0 : 1.5
+            border.color: badge.stateColor
+        }
     }
 }
