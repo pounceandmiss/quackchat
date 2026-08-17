@@ -1,9 +1,14 @@
 // Every live voice call, one row each, exposed to QML as `App.calls`.
 //
-// The backend has no way to enumerate calls - there is no `calls pull` and no
-// getter - so the only picture of what is in flight is the one built from the
-// event stream. That makes this model the single source of truth, and it has to
-// outlive any window: it hangs off AppController, not off a shell.
+// Rows are built from the event stream and rebuilt from `calls list`. The
+// backend holds what is really in flight and this is a cache of it, which has to
+// outlive any window: it hangs off AppController, not a shell.
+//
+// Rebuilding matters most on Android, where the interpreter lives in a service
+// process that outlives this one and frames emitted while no UI is attached are
+// dropped. Without it a UI returning from an activity destroy shows nothing for
+// a call that is still up, and cannot even hang it up: every action below needs
+// the row.
 //
 // Rows survive their call ending. A window needs to say "Ended" or offer a
 // retry after "Failed", so a terminal row stays until QML calls dismiss().
@@ -19,7 +24,9 @@
 //   incoming    incoming, waiting for us to pick up       <Incoming>
 //   connecting  we accepted, media is being set up        accept() (no event)
 //   active      RTP flowing                               <Active>
-//   ended       terminal, normal teardown                 <Ended>, hangup/reject
+//   ended       terminal, normal teardown                 <Ended>, hangup/reject,
+//                                                         or a snapshot that no
+//                                                         longer names the call
 //   failed      terminal, unrecoverable                   <Failed>
 // A call ends on exactly one of <Ended>/<Failed>; <Warning> is informational
 // and only ever fills in the `warning` role.
@@ -29,6 +36,7 @@
 #include <QAbstractListModel>
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QVariant>
 #include <QtQml/qqmlregistration.h>
@@ -86,11 +94,18 @@ public:
     // outcome; nothing else prunes, so a row lasts until then.
     Q_INVOKABLE void dismiss(const QString &acc, const QString &sid);
 
+    // Ask what `acc` has in flight and reconcile the rows against the answer.
+    // Driven by that account's conn events; exposed so a view can force one.
+    Q_INVOKABLE void refreshFor(const QString &acc);
+
     static bool isTerminal(const QString &state);
 
-    // Public so tests can drive the state machine with canned events.
+    // Public so tests can drive the state machine with canned events, and hand
+    // over a snapshot without guessing its token.
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);
+    void handleResult(int token, const QVariant &data);
+    void handleError(int token, const QString &message);
 
 signals:
     void countChanged();
@@ -106,10 +121,6 @@ signals:
     // asked for so the page that tried can be the one to say so.
     void microphoneDenied(const QString &account, const QString &peer);
 
-private slots:
-    void onResult(int token, const QVariant &data);
-    void onError(int token, const QString &message);
-
 private:
     struct Call {
         QString sid;
@@ -119,10 +130,30 @@ private:
         QString state;
         QString warning;
         QString reason;
+        // Insert order, so a reconcile can tell a row older than the request it
+        // answers from one that arrived while that request was out.
+        quint64 seq = 0;
     };
 
+    // A `calls list` still out, and how far the rows had got when it went.
+    struct PendingList {
+        QString acc;
+        quint64 seq;
+    };
+
+    static QString key(const QString &acc, const QString &sid);
+    // tacky's state words to ours. Both spell one "ringing": tacky means we are
+    // being rung, we mean a peer device is. Direction separates them.
+    static QString snapshotState(const QString &raw, const QString &direction,
+                                 bool peerRinging);
+    // How far along a state is. A snapshot only moves a row forward, having been
+    // taken before any local move since.
+    static int progress(const QString &state);
+    void applySnapshot(const QString &acc, const QVariantList &rows,
+                       quint64 asOf);
+
     int indexOf(const QString &acc, const QString &sid) const;
-    void insertCall(const Call &call);
+    void insertCall(Call call);
     // Applies only if the row exists; emits dataChanged for the roles that moved.
     void setState(const QString &acc, const QString &sid, const QString &state);
     void setField(const QString &acc, const QString &sid, Role role,
@@ -142,6 +173,11 @@ private:
     // before the method runs, and a server request that goes unanswered for a
     // minute of connected time - so entries do not pile up.
     QHash<int, QPair<QString, QString>> m_startTokens;
+    QHash<int, PendingList> m_listTokens;
+    // Torn down here since that account's last reconcile, so a snapshot taken
+    // before the backend heard about it cannot put them back.
+    QSet<QString> m_dismissed;
+    quint64 m_seq = 0;
 };
 
 #endif // CALLSMODEL_H

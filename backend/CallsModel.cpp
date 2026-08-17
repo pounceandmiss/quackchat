@@ -63,9 +63,16 @@ void CallsModel::setBackend(TackyBackend *backend) {
     m_backend = backend;
     if (m_backend) {
         connect(m_backend, &TackyBackend::event, this, &CallsModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &CallsModel::onResult);
-        connect(m_backend, &TackyBackend::error, this, &CallsModel::onError);
+        connect(m_backend, &TackyBackend::result, this, &CallsModel::handleResult);
+        connect(m_backend, &TackyBackend::error, this, &CallsModel::handleError);
+        // Not TackyBackend::connected, which every other model re-seeds off:
+        // that edge names no account, and `calls list` takes one. The conn
+        // events handleEvent watches are the same edge, per account.
     }
+}
+
+QString CallsModel::key(const QString &acc, const QString &sid) {
+    return acc + QLatin1Char('\n') + sid;
 }
 
 int CallsModel::indexOf(const QString &acc, const QString &sid) const {
@@ -75,9 +82,10 @@ int CallsModel::indexOf(const QString &acc, const QString &sid) const {
     return -1;
 }
 
-void CallsModel::insertCall(const Call &call) {
+void CallsModel::insertCall(Call call) {
     if (call.sid.isEmpty() || indexOf(call.account, call.sid) >= 0)
         return; // a carbon of our own propose, or a sid we already track
+    call.seq = ++m_seq;
     const int pos = m_calls.size();
     beginInsertRows({}, pos, pos);
     m_calls.append(call);
@@ -117,16 +125,28 @@ void CallsModel::setField(const QString &acc, const QString &sid, Role role,
 
 void CallsModel::handleEvent(const QString &module, const QString &name,
                              const QVariant &args) {
-    if (module != QLatin1String("calls"))
-        return;
     const QVariantMap a = args.toMap();
-    const QString sid = a.value(QStringLiteral("sid")).toString();
-    if (sid.isEmpty())
-        return;
     // Event names arrive bare on the JSON wire (the backend strips the Tcl <>).
     // Every calls event carries acc - client.tcl injects it - even though the
     // reference's signatures leave it out.
     const QString acc = a.value(QStringLiteral("acc")).toString();
+
+    // Another module's events, but our trigger. <State> rather than <Ready>,
+    // which fires from the same three lines of the backend and so would only
+    // ask twice: this one is also the only half that can be pulled, and a
+    // pull is what a UI reattaching to a backend that never went away gets.
+    if (module == QLatin1String("conn")) {
+        if (name == QLatin1String("State") &&
+            a.value(QStringLiteral("state")).toString() ==
+                QLatin1String("connected"))
+            refreshFor(acc);
+        return;
+    }
+    if (module != QLatin1String("calls"))
+        return;
+    const QString sid = a.value(QStringLiteral("sid")).toString();
+    if (sid.isEmpty())
+        return;
     qCDebug(lcCalls).noquote() << "event" << name << acc << sid << a;
 
     if (name == QLatin1String("Outgoing")) {
@@ -158,20 +178,128 @@ void CallsModel::handleEvent(const QString &module, const QString &name,
     }
 }
 
-// The sid in the reply is the one <Outgoing> already gave us, so there is
-// nothing to do with it - this is only here to let the token go.
-void CallsModel::onResult(int token, const QVariant &data) {
-    Q_UNUSED(data)
+void CallsModel::refreshFor(const QString &acc) {
+    if (!m_backend || acc.isEmpty())
+        return;
+    // Only the newest list for an account counts: an older one describes a
+    // moment already passed, and would undo what the newer one settled.
+    for (auto it = m_listTokens.begin(); it != m_listTokens.end();)
+        it = it->acc == acc ? m_listTokens.erase(it) : std::next(it);
+    const int token = m_backend->request(
+        QStringLiteral("calls"), QStringLiteral("list"),
+        QVariantMap{{QStringLiteral("acc"), acc}});
+    m_listTokens.insert(token, {acc, m_seq});
+}
+
+void CallsModel::handleResult(int token, const QVariant &data) {
+    const auto pending = m_listTokens.constFind(token);
+    if (pending != m_listTokens.cend()) {
+        const PendingList p = pending.value();
+        m_listTokens.erase(pending);
+        applySnapshot(p.acc, data.toList(), p.seq);
+        return;
+    }
+    // The sid in a start reply is the one <Outgoing> already gave us, so there
+    // is nothing to do with it - this is only here to let the token go.
     m_startTokens.remove(token);
 }
 
-void CallsModel::onError(int token, const QString &message) {
+void CallsModel::handleError(int token, const QString &message) {
+    if (m_listTokens.remove(token)) {
+        // A backend too old for the method, or an account that went away
+        // between the conn event and the request. Nothing to show a user, and
+        // the rows we hold are still the best picture there is.
+        qCDebug(lcCalls).noquote() << "list failed" << message;
+        return;
+    }
     const auto it = m_startTokens.constFind(token);
     if (it == m_startTokens.cend())
         return;
     const QPair<QString, QString> target = it.value();
     m_startTokens.erase(it);
     emit startFailed(target.first, target.second, message);
+}
+
+QString CallsModel::snapshotState(const QString &raw, const QString &direction,
+                                  bool peerRinging) {
+    if (raw == QLatin1String("ringing") && direction == kIncoming)
+        return QStringLiteral("incoming");
+    if (raw == QLatin1String("proposed") && direction == kOutgoing)
+        return peerRinging ? QStringLiteral("ringing")
+                           : QStringLiteral("calling");
+    if (raw == QLatin1String("active"))
+        return QStringLiteral("active");
+    // Cleanup drops a session in the same frame that ends it, so this cannot
+    // arrive - but do not invent a live call if it ever does.
+    if (isTerminal(raw))
+        return raw;
+    // proceeded, new, connecting, and anything a later backend adds: media
+    // coming up is the safe reading of all of them.
+    return QStringLiteral("connecting");
+}
+
+int CallsModel::progress(const QString &state) {
+    if (state == QLatin1String("incoming") || state == QLatin1String("calling"))
+        return 0;
+    if (state == QLatin1String("ringing"))
+        return 1;
+    if (state == QLatin1String("connecting"))
+        return 2;
+    if (state == QLatin1String("active"))
+        return 3;
+    return 4; // ended, failed
+}
+
+void CallsModel::applySnapshot(const QString &acc, const QVariantList &rows,
+                               quint64 asOf) {
+    QSet<QString> seen;
+    for (const QVariant &v : rows) {
+        const QVariantMap r = v.toMap();
+        const QString sid = r.value(QStringLiteral("sid")).toString();
+        if (sid.isEmpty())
+            continue;
+        seen.insert(sid);
+        if (m_dismissed.contains(key(acc, sid)))
+            continue;
+        const QString direction = r.value(QStringLiteral("direction")).toString();
+        const QString state =
+            snapshotState(r.value(QStringLiteral("state")).toString(), direction,
+                          r.value(QStringLiteral("peer_ringing")).toBool());
+
+        const int i = indexOf(acc, sid);
+        if (i < 0) {
+            insertCall({sid, acc, r.value(QStringLiteral("peer")).toString(),
+                        direction, state, {}, {}, 0});
+            continue;
+        }
+        // Forward only. A local move made since the request went out - an
+        // accept() that set connecting, a hangup() that set ended - is newer
+        // than this. It also holds an active row through the connecting that
+        // follows an ICE consent loss, as the event path does.
+        const Call &c = m_calls.at(i);
+        if (c.direction != direction || isTerminal(c.state) ||
+            progress(state) <= progress(c.state))
+            continue;
+        setState(acc, sid, state);
+    }
+
+    // Whatever the backend does not mention is over. Rows younger than the
+    // request are exempt: the snapshot predates them and says nothing of them.
+    QStringList gone;
+    for (const Call &c : std::as_const(m_calls))
+        if (c.account == acc && c.seq <= asOf && !seen.contains(c.sid) &&
+            !isTerminal(c.state))
+            gone.append(c.sid);
+    // Collected first: setState runs QML bindings, one of which can reach
+    // dismiss() and remove from the list being walked.
+    for (const QString &sid : std::as_const(gone))
+        setState(acc, sid, QStringLiteral("ended"));
+
+    // Only lists already in flight need shadowing; by the next reconcile the
+    // backend has heard about the teardown.
+    for (auto it = m_dismissed.begin(); it != m_dismissed.end();)
+        it = it->startsWith(acc + QLatin1Char('\n')) ? m_dismissed.erase(it)
+                                                     : std::next(it);
 }
 
 void CallsModel::withMicrophone(const QString &acc, const QString &peer,
@@ -273,6 +401,7 @@ void CallsModel::dismiss(const QString &acc, const QString &sid) {
     const int i = indexOf(acc, sid);
     if (i < 0)
         return;
+    m_dismissed.insert(key(acc, sid));
     beginRemoveRows({}, i, i);
     m_calls.removeAt(i);
     endRemoveRows();

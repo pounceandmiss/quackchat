@@ -18,6 +18,12 @@ static QString state(const CallsModel &m, int row = 0) {
     return m.data(m.index(row), CallsModel::StateRole).toString();
 }
 
+// A `calls list` answer for one outstanding token. A fresh TackyBackend hands
+// out tokens from 1, so the number is how many requests have been made.
+static void snapshot(CallsModel &m, int token, const QByteArray &json) {
+    m.handleResult(token, QJsonDocument::fromJson(json).array().toVariantList());
+}
+
 class TestCalls : public QObject {
     Q_OBJECT
 private slots:
@@ -35,8 +41,23 @@ private slots:
     void hangupEndsRowWithoutAnEvent();
     void sendsTheAccountAndSidTheRowHolds();
     void perCallDeviceOverrideNamesBothEndpoints();
+    // Re-seeding from `calls list`:
+    void listsOnConnectedAndNoOtherState();
+    void readyDoesNotAskASecondTime();
+    void connEventsDoNotSwallowCallsEvents();
+    void snapshotSeedsRowsAfterAReattach();
+    void snapshotMapsTackysStateWords();
+    void snapshotEndsRowsItDoesNotMention();
+    void rowsBornWhileTheListWasOutSurviveTheSweep();
+    void snapshotDoesNotWalkARowBackwards();
+    void snapshotDoesNotResurrectATerminalRow();
+    void snapshotDoesNotResurrectADismissedCall();
+    void snapshotIsPerAccount();
+    void aNewerListSupersedesAnOlderOne();
+    void aFailedListLeavesTheRowsAlone();
     // Against a real backend:
     void startEmitsOutgoingWithRealSid();
+    void listRoundTripsThroughRealTacky();
     void startOnABadJidReportsFailure();
     void startOnAMissingAccountReportsFailure();
 };
@@ -382,6 +403,315 @@ void TestCalls::startOnAMissingAccountReportsFailure() {
     QCOMPARE(failed.first().at(1).toString(), QString("friend@example.com"));
     QVERIFY(!failed.first().at(2).toString().isEmpty());
     QCOMPARE(m.rowCount(), 0);
+
+    backend.stop();
+}
+
+// <State> is what a UI reattaching to a backend that never disconnected gets,
+// since AccountsModel pulls it per account. Only the connected value means
+// there is anything to ask about.
+void TestCalls::listsOnConnectedAndNoOtherState() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    for (const char *s : {"connecting", "waiting", "disconnected", "auth-error"})
+        feed(m, QByteArray(R"(["event","conn","State",{"acc":"me@host","state":")") +
+                    s + R"("}])");
+    QCOMPARE(sent.count(), 0);
+
+    feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("calls"));
+    QCOMPARE(sent.first().at(1).toString(), QString("list"));
+    QCOMPARE(sent.first().at(2).toMap().value("acc").toString(),
+             QString("me@host"));
+}
+
+// The backend sets conn state to connected and emits <Ready> from the same
+// three lines, so listening to both would ask twice and throw one answer away.
+// <Ready> is also not pullable, so it never arrives on the reattach this is for.
+void TestCalls::readyDoesNotAskASecondTime() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
+    feed(m, R"(["event","conn","Ready",{"acc":"me@host","resumed":false}])");
+
+    QCOMPARE(sent.count(), 1);
+}
+
+// The conn branch sits ahead of the module guard, so it has to let everything
+// else through untouched.
+void TestCalls::connEventsDoNotSwallowCallsEvents() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+
+    feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"friend@host"}])");
+
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(state(m), QString("calling"));
+}
+
+void TestCalls::snapshotSeedsRowsAfterAReattach() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    QSignalSpy added(&m, &CallsModel::callAdded);
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([
+        {"sid":"tk-1","peer":"friend@host","direction":"outgoing",
+         "state":"active","peer_ringing":false},
+        {"sid":"tk-2","peer":"other@host","direction":"incoming",
+         "state":"ringing","peer_ringing":false}])");
+
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(added.count(), 2);
+    QCOMPARE(m.data(m.index(0), CallsModel::PeerRole).toString(),
+             QString("friend@host"));
+    QCOMPARE(m.data(m.index(0), CallsModel::AccountRole).toString(),
+             QString("me@host"));
+    QCOMPARE(state(m, 0), QString("active"));
+    QCOMPARE(m.data(m.index(1), CallsModel::DirectionRole).toString(),
+             QString("incoming"));
+    QCOMPARE(state(m, 1), QString("incoming"));
+}
+
+// tacky's "ringing" is the callee being alerted, ours is a peer device alerting
+// the caller: same word, opposite ends, told apart by direction.
+void TestCalls::snapshotMapsTackysStateWords() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([
+        {"sid":"a","peer":"p@h","direction":"outgoing","state":"proposed",
+         "peer_ringing":false},
+        {"sid":"b","peer":"p@h","direction":"outgoing","state":"proposed",
+         "peer_ringing":true},
+        {"sid":"c","peer":"p@h","direction":"incoming","state":"ringing",
+         "peer_ringing":false},
+        {"sid":"d","peer":"p@h","direction":"incoming","state":"proceeded",
+         "peer_ringing":false},
+        {"sid":"e","peer":"p@h","direction":"outgoing","state":"new",
+         "peer_ringing":false},
+        {"sid":"f","peer":"p@h","direction":"outgoing","state":"connecting",
+         "peer_ringing":false},
+        {"sid":"g","peer":"p@h","direction":"outgoing","state":"active",
+         "peer_ringing":false},
+        {"sid":"h","peer":"p@h","direction":"outgoing","state":"hovering",
+         "peer_ringing":false}])");
+
+    QStringList got;
+    for (int i = 0; i < m.rowCount(); ++i)
+        got << state(m, i);
+    QCOMPARE(got, QStringList({"calling", "ringing", "incoming", "connecting",
+                               "connecting", "connecting", "active",
+                               "connecting"}));
+}
+
+// The row stays: CallWindow says "Call ended" and dismisses itself, which is
+// the same exit a call ending in front of us takes.
+void TestCalls::snapshotEndsRowsItDoesNotMention() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"friend@host"}])");
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-2","to":"other@host"}])");
+    QSignalSpy removed(&m, &CallsModel::callRemoved);
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([{"sid":"tk-1","peer":"friend@host",
+        "direction":"outgoing","state":"active","peer_ringing":false}])");
+
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(state(m, 0), QString("active"));
+    QCOMPARE(state(m, 1), QString("ended"));
+    QCOMPARE(removed.count(), 0);
+}
+
+void TestCalls::rowsBornWhileTheListWasOutSurviveTheSweep() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"me@host","sid":"tk-new","from":"friend@host"}])");
+    snapshot(m, 1, R"([])");
+
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(state(m), QString("incoming"));
+}
+
+// Local moves have no event behind them, and the snapshot was taken before
+// they happened.
+void TestCalls::snapshotDoesNotWalkARowBackwards() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"me@host","sid":"tk-1","from":"friend@host"}])");
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-2","to":"other@host"}])");
+    feed(m, R"(["event","calls","Active",{"acc":"me@host","sid":"tk-2"}])");
+    m.accept(QStringLiteral("me@host"), QStringLiteral("tk-1"));
+    QCOMPARE(state(m, 0), QString("connecting"));
+
+    m.refreshFor(QStringLiteral("me@host"));
+    snapshot(m, 2, R"([
+        {"sid":"tk-1","peer":"friend@host","direction":"incoming",
+         "state":"ringing","peer_ringing":false},
+        {"sid":"tk-2","peer":"other@host","direction":"outgoing",
+         "state":"proceeded","peer_ringing":false}])");
+
+    QCOMPARE(state(m, 0), QString("connecting"));
+    QCOMPARE(state(m, 1), QString("active"));
+}
+
+void TestCalls::snapshotDoesNotResurrectATerminalRow() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"friend@host"}])");
+    feed(m, R"(["event","calls","Ended",{"acc":"me@host","sid":"tk-1"}])");
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([{"sid":"tk-1","peer":"friend@host",
+        "direction":"outgoing","state":"active","peer_ringing":false}])");
+
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(state(m), QString("ended"));
+}
+
+// A hangup whose list request was already out: the backend answers with a call
+// it has since forgotten, late enough that the window has gone. Unguarded, the
+// row comes back with no events left to move it.
+void TestCalls::snapshotDoesNotResurrectADismissedCall() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"friend@host"}])");
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    m.hangup(QStringLiteral("me@host"), QStringLiteral("tk-1"));
+    m.dismiss(QStringLiteral("me@host"), QStringLiteral("tk-1"));
+    QCOMPARE(m.rowCount(), 0);
+
+    snapshot(m, 1, R"([{"sid":"tk-1","peer":"friend@host",
+        "direction":"outgoing","state":"active","peer_ringing":false}])");
+    QCOMPARE(m.rowCount(), 0);
+}
+
+// Calling one of our own accounts from another puts one sid in two rows. A
+// snapshot answers for one account and must not touch the other's.
+void TestCalls::snapshotIsPerAccount() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"other@host"}])");
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"other@host","sid":"tk-1","from":"me@host"}])");
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([])");
+
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(state(m, 0), QString("ended"));
+    QCOMPARE(state(m, 1), QString("incoming"));
+}
+
+// Two lists in flight for one account: the older describes a moment already
+// passed, and applying it after the newer would undo it.
+void TestCalls::aNewerListSupersedesAnOlderOne() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1, superseded
+    m.refreshFor(QStringLiteral("me@host")); // token 2
+
+    snapshot(m, 1, R"([{"sid":"stale","peer":"p@h","direction":"outgoing",
+        "state":"active","peer_ringing":false}])");
+    QCOMPARE(m.rowCount(), 0);
+
+    snapshot(m, 2, R"([{"sid":"fresh","peer":"p@h","direction":"outgoing",
+        "state":"active","peer_ringing":false}])");
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(m.data(m.index(0), CallsModel::SidRole).toString(),
+             QString("fresh"));
+}
+
+void TestCalls::aFailedListLeavesTheRowsAlone() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"friend@host"}])");
+    QSignalSpy failed(&m, &CallsModel::startFailed);
+
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    m.handleError(1, QStringLiteral("unknown method"));
+
+    QCOMPARE(failed.count(), 0);
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(state(m), QString("calling"));
+
+    // And the token is spent, so a late answer on it cannot sweep anything.
+    snapshot(m, 1, R"([])");
+    QCOMPARE(state(m), QString("calling"));
+}
+
+// The one test that runs the real Tcl, so it catches what the canned ones
+// cannot: a missing tackyd-json schema entry (the list would arrive as one
+// string and every row would be swept) or a field name that does not match.
+void TestCalls::listRoundTripsThroughRealTacky() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "x"},
+                               {"domain", "example.com"},
+                               {"username", "me"}});
+
+    CallsModel m;
+    m.setBackend(&backend);
+    m.start(QStringLiteral("me@example.com"), QStringLiteral("friend@example.com"));
+    QTRY_VERIFY_WITH_TIMEOUT(m.rowCount() == 1, 5000);
+    const QString sid = m.data(m.index(0), CallsModel::SidRole).toString();
+
+    // A second model has no history of its own, which is the reattach case:
+    // every field has to come off the wire rather than an existing row.
+    CallsModel fresh;
+    fresh.setBackend(&backend);
+    fresh.refreshFor(QStringLiteral("me@example.com"));
+
+    QTRY_VERIFY_WITH_TIMEOUT(fresh.rowCount() == 1, 5000);
+    QCOMPARE(fresh.data(fresh.index(0), CallsModel::SidRole).toString(), sid);
+    QCOMPARE(fresh.data(fresh.index(0), CallsModel::PeerRole).toString(),
+             QString("friend@example.com"));
+    QCOMPARE(fresh.data(fresh.index(0), CallsModel::DirectionRole).toString(),
+             QString("outgoing"));
+    QCOMPARE(fresh.data(fresh.index(0), CallsModel::AccountRole).toString(),
+             QString("me@example.com"));
+    QCOMPARE(state(fresh), QString("calling"));
+
+    // And the call we already knew of is not swept by its own snapshot.
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(state(m), QString("calling"));
 
     backend.stop();
 }

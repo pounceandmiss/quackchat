@@ -6,6 +6,7 @@
 #include <QSignalSpy>
 #include <QtTest>
 
+#include "CallsModel.h"
 #include "ChatListModel.h"
 #include "SocketTransport.h"
 #include "TackyBackend.h"
@@ -209,6 +210,37 @@ private slots:
         QVERIFY(accept());
         QTRY_VERIFY(b.isRunning());
         QTRY_VERIFY(asked(sent, "chatlist", "get"));
+    }
+
+    // Calls re-seed off conn rather than the connected edge, so the reconnect
+    // has to carry a `calls list` through that route too.
+    void callsResyncWhenAnAccountReportsConnected() {
+        TackyBackend b;
+        auto *t = new SocketTransport(m_name);
+        t->setRetryInterval(20);
+        b.setTransport(t);
+
+        CallsModel calls;
+        calls.setBackend(&b);
+
+        QSignalSpy sent(&b, &TackyBackend::sent);
+        QVERIFY(b.start());
+        QVERIFY(accept());
+        QTRY_VERIFY(b.isRunning());
+
+        // What AccountsModel's `conn pull` brings back on every attach.
+        emit b.event("conn", "State",
+                     QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
+        QTRY_VERIFY(asked(sent, "calls", "list"));
+
+        sent.clear();
+        m_peer->abort();
+        QTRY_VERIFY(!b.isRunning());
+        QVERIFY(accept());
+        QTRY_VERIFY(b.isRunning());
+        emit b.event("conn", "State",
+                     QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
+        QTRY_VERIFY(asked(sent, "calls", "list"));
     }
 
 private:
