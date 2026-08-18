@@ -131,4 +131,8 @@ modules:
           - .git
           - build
           - build-android
+          - build-win
           - flatpak
+          # The submodule, whose own build tree runs to gigabytes. tacky is
+          # built by the module above from its pinned sources instead.
+          - third_party
