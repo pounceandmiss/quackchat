@@ -286,6 +286,86 @@ class TestQmlLoad : public QObject {
         return shell->findChild<QObject *>("accountDrawer");
     }
 
+    // One contact's details window, held open by `holder`.
+    static QQuickWindow *openContactDetails(QQmlEngine &e,
+                                            QScopedPointer<QObject> &holder) {
+        QQmlComponent comp(&e, "Quack", "ContactDetailsWindow");
+        if (!comp.isReady()) {
+            qWarning("%s", qPrintable(comp.errorString()));
+            return nullptr;
+        }
+        holder.reset(comp.createWithInitialProperties({{"account", "me@example.com"},
+                                                       {"jid", "friend@example.com"},
+                                                       {"name", "Friend"}}));
+        auto *w = qobject_cast<QQuickWindow *>(holder.data());
+        if (!w)
+            return nullptr;
+        w->grabWindow(); // force a render so the cards' bindings evaluate
+        QCoreApplication::processEvents();
+        return w;
+    }
+
+    // The roster entry the contact page reads itself through.
+    static void rosterEntry(AppController *app, const QString &subscription,
+                            const QString &ask) {
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        if (!chats)
+            return;
+        QVariantMap entry{{"jid", "friend@example.com"},
+                          {"name", "Friend Renamed"},
+                          {"source", "roster"},
+                          {"subscription", subscription},
+                          {"last_activity", 300}};
+        if (!ask.isEmpty())
+            entry["ask"] = ask;
+        chats->applyList({entry});
+        QCoreApplication::processEvents();
+    }
+
+    // One room's details window, held open by `holder`.
+    static QQuickWindow *openMucDetails(QQmlEngine &e,
+                                        QScopedPointer<QObject> &holder) {
+        QQmlComponent comp(&e, "Quack", "MucDetailsWindow");
+        if (!comp.isReady()) {
+            qWarning("%s", qPrintable(comp.errorString()));
+            return nullptr;
+        }
+        holder.reset(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"jid", "room@muc.example.com?join"},
+             {"name", "The Room"}}));
+        auto *w = qobject_cast<QQuickWindow *>(holder.data());
+        if (!w)
+            return nullptr;
+        w->grabWindow(); // force a render so the cards' bindings evaluate
+        QCoreApplication::processEvents();
+        return w;
+    }
+
+    // A joined room with one of each role, us among them as "amy": a moderator
+    // the room discloses an address for, ourselves with only a status word, and
+    // a visitor with neither.
+    static MucRoomModel *joinedRoom(QQuickWindow *w) {
+        auto *room = w->findChild<MucRoomModel *>();
+        if (!room)
+            return nullptr;
+        room->applyJoined(true);
+        room->applyOccupants({QVariantMap{{"nick", "mo"},
+                                          {"role", "moderator"},
+                                          {"affiliation", "owner"},
+                                          {"jid", "mo@elsewhere.example"},
+                                          {"caps", QVariantMap{{"kick", true}}}},
+                              QVariantMap{{"nick", "amy"}, {"role", "participant"},
+                                          {"affiliation", "none"},
+                                          {"status", "online"}},
+                              QVariantMap{{"nick", "zoe"}, {"role", "visitor"},
+                                          {"affiliation", "member"}}});
+        room->applyMyNick("amy");
+        room->applySubject("what this room is about");
+        QCoreApplication::processEvents();
+        return room;
+    }
+
 private slots:
     void loadsApp() {
         AppEngine e;
@@ -1526,28 +1606,17 @@ private slots:
         e.assertNoErrors();
     }
 
-    // The mirror of the account page: who the roster says the contact is, and
-    // the same devices model as the account's own panel pointed at them
-    // instead - every device they have is listed, and none of it is ours.
-    void loadsContactDetailsWindow() {
+    // The mirror of the account page: who the roster says the contact is. The
+    // identity card is read through the chat list rather than handed over, so
+    // one opened before the list loaded fills in once it has.
+    void contactDetailsFillsInWhenTheRosterArrives() {
         Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-
-        QQmlComponent comp(&e, "Quack", "ContactDetailsWindow");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> win(
-            comp.createWithInitialProperties({{"account", "me@example.com"},
-                                              {"jid", "friend@example.com"},
-                                              {"name", "Friend"}}));
-        QVERIFY(!win.isNull());
-        auto *w = qobject_cast<QQuickWindow *>(win.data());
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openContactDetails(e, holder);
         QVERIFY(w);
-        w->grabWindow();
-        QCoreApplication::processEvents();
 
-        // The identity card is read through the chat list rather than handed
-        // over, so one opened before the list loaded fills in once it has.
         QObject *standing = w->findChild<QObject *>("contactStanding");
         QObject *sharing = w->findChild<QObject *>("contactSharing");
         QObject *shownName = w->findChild<QObject *>("contactName");
@@ -1559,15 +1628,7 @@ private slots:
         QCOMPARE(w->findChild<QObject *>("contactJid")->property("text").toString(),
                  QString("friend@example.com"));
 
-        ChatListModel *chats = app->chatListFor("me@example.com");
-        QVERIFY(chats);
-        chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"friend@example.com","name":"Friend Renamed","source":"roster",
-             "subscription":"to","last_activity":300}
-        ])")
-                             .array()
-                             .toVariantList());
-        QCoreApplication::processEvents();
+        rosterEntry(app, "to", QString());
         QCOMPARE(standing->property("text").toString(), QString("In your contacts"));
         QCOMPARE(sharing->property("text").toString(),
                  QString("You see their status. They cannot see yours."));
@@ -1575,17 +1636,37 @@ private slots:
         // rename lands here first.
         QCOMPARE(shownName->property("text").toString(), QString("Friend Renamed"));
 
-        // A request out and nothing back yet is its own state, not "no
-        // sharing" - the entry carries `ask` alongside the subscription.
-        chats->applyItem(QJsonDocument::fromJson(R"(
-            {"jid":"friend@example.com","name":"Friend Renamed","source":"roster",
-             "subscription":"none","ask":"subscribe","last_activity":300}
-        )")
-                             .object()
-                             .toVariantMap());
-        QCoreApplication::processEvents();
+        e.assertNoErrors();
+    }
+
+    // A request out and nothing back yet is its own state, not "no sharing" -
+    // the entry carries `ask` alongside the subscription.
+    void aPendingRequestIsItsOwnSharingState() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openContactDetails(e, holder);
+        QVERIFY(w);
+
+        rosterEntry(app, "none", "subscribe");
+        QObject *sharing = w->findChild<QObject *>("contactSharing");
+        QVERIFY(sharing);
         QCOMPARE(sharing->property("text").toString(),
                  QString("Waiting for them to approve your request."));
+
+        e.assertNoErrors();
+    }
+
+    // The same devices model as the account's own panel, pointed at the contact
+    // instead: every device they have is listed, and none of it is ours.
+    void contactDetailsShowsTheirDevicesAndOurOwnKey() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openContactDetails(e, holder);
+        QVERIFY(w);
 
         // Two models: the contact's devices, and this account's own key for the
         // other half of a comparison.
@@ -1628,7 +1709,10 @@ private slots:
         QVERIFY(!findItem(w->contentItem(), "blindTrustBox"));
 
         // One window per contact: a second view of the same trust state would
-        // argue with the first over what is on screen.
+        // argue with the first over what is on screen. This rides along here
+        // rather than standing on its own, since AppWindows keeps the window it
+        // makes and on an engine holding nothing else it is the last thing
+        // alive on the way down.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first, again;
@@ -1649,50 +1733,48 @@ private slots:
         e.assertNoErrors();
     }
 
-    void loadsMucDetailsWindow() {
+    // A page with no room yet, which is how one built inside a chat's sheet sits
+    // until somebody opens it. The card drawing our own row is hidden then - but
+    // a hidden item's bindings run all the same, and a JID built by hand out of
+    // two empty halves came out as "/", which tacky answers by throwing rather
+    // than by missing.
+    void aMucPageWithNoRoomBuildsNoJidOutOfNothing() {
         Engine e;
-        auto *app = e.singletonInstance<AppController *>("Quack", "App");
-        QVERIFY(app);
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
 
-        // A page with no room yet, which is how one built inside a chat's sheet
-        // sits until somebody opens it. The card drawing our own row is hidden
-        // then - but a hidden item's bindings run all the same, and a JID built
-        // by hand out of two empty halves came out as "/", which tacky answers
-        // by throwing rather than by missing.
-        QQmlComponent blankComp(&e, "Quack", "MucDetailsWindow");
-        QVERIFY2(blankComp.isReady(), qPrintable(blankComp.errorString()));
-        QScopedPointer<QObject> blank(blankComp.createWithInitialProperties(
+        QQmlComponent comp(&e, "Quack", "MucDetailsWindow");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> blank(comp.createWithInitialProperties(
             {{"account", "me@example.com"}, {"jid", ""}}));
         QVERIFY(!blank.isNull());
         auto *blankWin = qobject_cast<QQuickWindow *>(blank.data());
+        QVERIFY(blankWin);
         blankWin->grabWindow();
         QCoreApplication::processEvents();
+
         QQuickItem *blankAvatar = findItem(blankWin->contentItem(), "myAvatar");
         QVERIFY(blankAvatar);
         QCOMPARE(blankAvatar->property("jid").toString(), QString());
         QVERIFY(QMetaObject::invokeMethod(blank.data(), "close"));
         QCoreApplication::processEvents();
 
-        QQmlComponent comp(&e, "Quack", "MucDetailsWindow");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> win(comp.createWithInitialProperties(
-            {{"account", "me@example.com"},
-             {"jid", "room@muc.example.com?join"},
-             {"name", "The Room"}}));
-        QVERIFY(!win.isNull());
-        auto *w = qobject_cast<QQuickWindow *>(win.data());
+        e.assertNoErrors();
+    }
+
+    // The page is handed the chat JID and cuts the suffix off itself; until the
+    // room answers, it says which of the three empty rooms this is.
+    void anUnjoinedRoomSaysWhichEmptyRoomItIs() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
         QVERIFY(w);
-        w->grabWindow();
-        QCoreApplication::processEvents();
 
         auto *room = w->findChild<MucRoomModel *>();
         QVERIFY(room);
-        // The page is handed the chat JID and cuts the suffix off itself.
         QCOMPARE(room->roomJid(), QString("room@muc.example.com"));
 
-        QQuickItem *list = findItem(w->contentItem(), "occupantList");
-        QVERIFY(list);
-        // Nothing known yet says which of the three empty rooms this is.
+        QVERIFY(findItem(w->contentItem(), "occupantList"));
         QObject *empty = w->findChild<QObject *>("emptyNotice");
         QVERIFY(empty);
         QVERIFY(empty->property("visible").toBool());
@@ -1700,28 +1782,28 @@ private slots:
         QVERIFY(notJoined);
         QVERIFY(notJoined->property("visible").toBool());
 
-        room->applyJoined(true);
-        room->applyOccupants({QVariantMap{{"nick", "mo"},
-                                          {"role", "moderator"},
-                                          {"affiliation", "owner"},
-                                          {"jid", "mo@elsewhere.example"},
-                                          {"caps", QVariantMap{{"kick", true}}}},
-                              QVariantMap{{"nick", "amy"}, {"role", "participant"},
-                                          {"affiliation", "none"},
-                                          {"status", "online"}},
-                              QVariantMap{{"nick", "zoe"}, {"role", "visitor"},
-                                          {"affiliation", "member"}}});
-        room->applyMyNick("amy");
-        room->applySubject("what this room is about");
-        QCoreApplication::processEvents();
-
-        QCOMPARE(list->property("count").toInt(), 3);
+        QVERIFY(joinedRoom(w));
         QVERIFY(!empty->property("visible").toBool());
         QVERIFY(!notJoined->property("visible").toBool());
 
-        // One heading per role present, in the model's order. Through QTRY,
-        // because the section items are built on the view's next polish rather
-        // than when the rows land.
+        e.assertNoErrors();
+    }
+
+    // One heading per role present, in the model's order. Through QTRY, because
+    // the section items are built on the view's next polish rather than when the
+    // rows land.
+    void occupantsAreHeadedByRoleInTheModelsOrder() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QVERIFY(joinedRoom(w));
+
+        QQuickItem *list = findItem(w->contentItem(), "occupantList");
+        QVERIFY(list);
+        QCOMPARE(list->property("count").toInt(), 3);
+
         const auto textsOf = [&](const QString &name, const char *prop) {
             QStringList out;
             for (QQuickItem *i : findItems(w->contentItem(), name))
@@ -1733,18 +1815,42 @@ private slots:
         QTRY_COMPARE(textsOf("occupantNick", "text"),
                      QStringList({"mo", "amy", "zoe"}));
 
-        // Under each nick: their real address where the room discloses one, and
-        // otherwise their own status text, quoted so it does not read as a word
-        // this app chose. Nothing at all where there is neither - a presence
-        // word here would sit beside somebody's "online" pretending to be one.
+        e.assertNoErrors();
+    }
+
+    // Under each nick: their real address where the room discloses one, and
+    // otherwise their own status text, quoted so it does not read as a word this
+    // app chose. Nothing at all where there is neither - a presence word here
+    // would sit beside somebody's "online" pretending to be one.
+    void eachOccupantsSecondLineIsTheirAddressOrTheirOwnWords() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QVERIFY(joinedRoom(w));
+
+        // Through QTRY: the rows are built on the view's next polish rather than
+        // when the occupants land.
+        QTRY_COMPARE(findItems(w->contentItem(), "occupantSecondLine").size(), 3);
         const QList<QQuickItem *> lines =
             findItems(w->contentItem(), "occupantSecondLine");
-        QCOMPARE(lines.size(), 3);
         QCOMPARE(lines.at(0)->property("text").toString(),
                  QString("mo@elsewhere.example"));
         QCOMPARE(lines.at(1)->property("text").toString(),
                  QString(u"“online”"));
         QVERIFY(!lines.at(2)->isVisible());
+
+        e.assertNoErrors();
+    }
+
+    void theRoomCardCarriesTheSubjectAndOurOwnNick() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QVERIFY(joinedRoom(w));
 
         QObject *subject = w->findChild<QObject *>("roomSubject");
         QVERIFY(subject);
@@ -1753,26 +1859,52 @@ private slots:
         QObject *myNick = w->findChild<QObject *>("myNick");
         QVERIFY(myNick);
         QCOMPARE(myNick->property("text").toString(), QString("amy"));
-        // And with a room and a nick to hand, a whole one.
+        // And with a room and a nick to hand, a whole JID.
         QQuickItem *myAvatar = findItem(w->contentItem(), "myAvatar");
         QVERIFY(myAvatar);
         QCOMPARE(myAvatar->property("jid").toString(),
                  QString("room@muc.example.com/amy"));
 
-        // Exactly one row is ours, and only the one we may act on offers a menu.
-        int selfMarks = 0;
-        for (QQuickItem *c : findItems(w->contentItem(), "selfChip"))
-            if (c->isVisible())
-                ++selfMarks;
-        QCOMPARE(selfMarks, 1);
-        int actionable = 0;
-        for (QQuickItem *b : findItems(w->contentItem(), "occupantMenuButton"))
-            if (b->isVisible())
-                ++actionable;
-        QCOMPARE(actionable, 1);
+        e.assertNoErrors();
+    }
 
-        // The filter narrows the rows without touching the room, so the heading
-        // still counts everyone in the group.
+    // Exactly one row is ours, and only the one we may act on offers a menu.
+    void onlyOurOwnRowIsMarkedAndOnlyOneOffersAMenu() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QVERIFY(joinedRoom(w));
+
+        // Through QTRY: the rows are built on the view's next polish rather than
+        // when the occupants land.
+        const auto shown = [&](const QString &name) {
+            int n = 0;
+            for (QQuickItem *i : findItems(w->contentItem(), name))
+                if (i->isVisible())
+                    ++n;
+            return n;
+        };
+        QTRY_COMPARE(shown("selfChip"), 1);
+        QTRY_COMPARE(shown("occupantMenuButton"), 1);
+
+        e.assertNoErrors();
+    }
+
+    // The filter narrows the rows without touching the room, so the heading
+    // still counts everyone in the group.
+    void theOccupantFilterNarrowsTheRowsNotTheRoom() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        MucRoomModel *room = joinedRoom(w);
+        QVERIFY(room);
+
+        QQuickItem *list = findItem(w->contentItem(), "occupantList");
+        QVERIFY(list);
         room->setFilter("z");
         QCoreApplication::processEvents();
         QCOMPARE(list->property("count").toInt(), 1);
@@ -1782,7 +1914,10 @@ private slots:
         QCOMPARE(list->property("count").toInt(), 3);
 
         // One window per room, for the same reason the contact window is one per
-        // contact: both are written from, not only read.
+        // contact: both are written from, not only read. It rides along here
+        // rather than standing on its own, since AppWindows keeps the window it
+        // makes and on an engine holding nothing else it is the last thing alive
+        // on the way down.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first, again;
@@ -1803,6 +1938,7 @@ private slots:
 
         e.assertNoErrors();
     }
+
 
     // Closing the window is not a way to walk out on a running call: it hangs
     // up, and only then does the row (and with it the window) go.
