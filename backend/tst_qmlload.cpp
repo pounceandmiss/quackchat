@@ -57,6 +57,44 @@ public:
 bool isPicture(const QColor &c) {
     return c.red() > 150 && c.green() < 100 && c.blue() < 100;
 }
+// An engine that keeps the warnings it emits. A binding error - a ReferenceError,
+// a TypeError on a missing property, a layout that will not settle - fails
+// nothing by itself, so a test that never reads them back goes green over a page
+// that drew nothing. Every test drives one of these and ends by asking it what
+// it saw.
+template <class Base>
+class CollectingEngine : public Base {
+public:
+    CollectingEngine() {
+        QObject::connect(this, &QQmlEngine::warnings,
+                         [this](const QList<QQmlError> &ws) {
+                             for (const QQmlError &w : ws)
+                                 m_warnings << w.toString();
+                         });
+    }
+
+    void assertNoErrors() const {
+        for (const QString &w : m_warnings)
+            if (w.contains("ReferenceError") || w.contains("is not defined") ||
+                w.contains("TypeError") ||
+                // A layout whose size depends on what it is sizing. The layout
+                // gives up after two passes and leaves whatever it had, so this
+                // is a real defect that otherwise only shows as a stray line on
+                // stderr.
+                w.contains("recursive rearrange") ||
+                // A property that feeds itself. Qt breaks the cycle wherever
+                // it notices, so what is on screen is whichever pass got there
+                // last.
+                w.contains("Binding loop"))
+                QFAIL(qPrintable("QML error: " + w));
+    }
+
+private:
+    QStringList m_warnings;
+};
+
+using Engine = CollectingEngine<QQmlEngine>;
+using AppEngine = CollectingEngine<QQmlApplicationEngine>;
 } // namespace
 
 class TestQmlLoad : public QObject {
@@ -132,50 +170,24 @@ class TestQmlLoad : public QObject {
                                    QRectF(0, 0, item->width(), item->height()));
     }
 
-    static void assertNoQmlErrors(const QStringList &warnings) {
-        for (const QString &w : warnings)
-            if (w.contains("ReferenceError") || w.contains("is not defined") ||
-                w.contains("TypeError") ||
-                // A layout whose size depends on what it is sizing. The layout
-                // gives up after two passes and leaves whatever it had, so this
-                // is a real defect that otherwise only shows as a stray line on
-                // stderr.
-                w.contains("recursive rearrange") ||
-                // A property that feeds itself. Qt breaks the cycle wherever
-                // it notices, so what is on screen is whichever pass got there
-                // last.
-                w.contains("Binding loop"))
-                QFAIL(qPrintable("QML error: " + w));
-    }
 
 private slots:
     void loadsApp() {
-        QStringList warnings;
-        QQmlApplicationEngine e;
+        AppEngine e;
         // create the App singleton up front; backend stays unstarted
         e.singletonInstance<AppController *>("Quack", "App");
-        QObject::connect(&e, &QQmlApplicationEngine::warnings,
-                         [&](const QList<QQmlError> &ws) {
-                             for (const QQmlError &w : ws)
-                                 warnings << w.toString();
-                         });
         e.loadFromModule("Quack", "Main");
         QVERIFY(!e.rootObjects().isEmpty());
         auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
         QVERIFY(win);
         win->grabWindow(); // force a render so lazy bindings evaluate
         QCoreApplication::processEvents();
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     void loadsMultiWindow() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         e.singletonInstance<AppController *>("Quack", "App");
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQmlComponent chatWin(&e, "Quack", "ChatWindow");
         QVERIFY2(chatWin.isReady(), qPrintable(chatWin.errorString()));
@@ -193,19 +205,14 @@ private slots:
                                           Q_ARG(QVariant, QVariant(QString()))));
         QVERIFY2(ret.value<QObject *>() != nullptr, "newShell returned no window");
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Hits are drawn from several chats at once, each of which brings its own
     // name cache - the part of the section that only runs with rows in it.
     void drawsSearchResults() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         e.singletonInstance<AppController *>("Quack", "App");
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQuickWindow win;
         win.resize(360, 500);
@@ -247,21 +254,16 @@ private slots:
         QTRY_COMPARE(hits->property("authorsByChat").toMap().size(), 2);
         win.grabWindow(); // force the delegates to lay out and bind
         QCoreApplication::processEvents();
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // A heading stands only while there is something under it, so it changes
     // height as the list it is in re-lays out. Nothing it reads may come back
     // from that layout.
     void sectionHeadingsDoNotFightTheList() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
@@ -327,13 +329,13 @@ private slots:
         win.grabWindow();
         QCoreApplication::processEvents();
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The roster arrives whole, so a search standing when one lands is standing
     // on a model that resets under it.
     void searchResultsSurviveAChatListReload() {
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
 
@@ -398,7 +400,7 @@ private slots:
     // narrowed to at once, and the messages behind them once the typing
     // settles.
     void oneBoxSearchesChatsAndMessages() {
-        QQmlEngine e;
+        Engine e;
         e.singletonInstance<AppController *>("Quack", "App");
 
         QQuickWindow win;
@@ -447,13 +449,8 @@ private slots:
     // Searching inside a chat walks the hits in the feed instead of listing
     // them, so the step - and what the counter says about it - is the feature.
     void walksHitsInsideTheChat() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         e.singletonInstance<AppController *>("Quack", "App");
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQuickWindow win;
         win.resize(420, 600);
@@ -533,18 +530,13 @@ private slots:
 
         win.grabWindow();
         QCoreApplication::processEvents();
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The bubble decides, from the attachment alone, whether a tap opens the
     // file or has to fetch it first - the same rule the Tk client draws on.
     void drawsAttachments() {
-        QStringList warnings;
-        QQmlEngine e;
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
+        Engine e;
 
         // A real file on disk: the thumbnail's size is the decoded image's.
         // The '#' in the directory is why the model hands over a url and not a
@@ -753,19 +745,14 @@ private slots:
             QCOMPARE(save.first().at(0).toInt(), 0);
         }
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // A failed row picks which half to run again from what tacky said about
     // the transfer: one that never got its file up has no message to resend.
     void chatPageSharesFilesAndRetriesTheRightHalf() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQuickWindow win;
         win.resize(500, 600);
@@ -809,20 +796,15 @@ private slots:
         // Every failed text message asks this on its way to `resend`.
         QVERIFY(!isFailedUpload(QVariant()));
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The image settings left the overflow menu for a page of their own. The
     // dots say what is in force, and picking one writes it through.
     void imageSettingsArePickedFromThePreferencesPage() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQuickWindow win;
         win.resize(360, 500);
@@ -948,7 +930,7 @@ private slots:
         prefs.reset();
         QCoreApplication::processEvents();
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The picture is masked to the avatar's rounded shape, and the mask cuts at
@@ -1000,7 +982,7 @@ private slots:
         if (QGuiApplication::platformName() == QLatin1String("offscreen"))
             QSKIP("Shape needs a renderer the offscreen platform lacks");
 
-        QQmlEngine e;
+        Engine e;
         auto *icons = e.singletonInstance<QObject *>("Quack", "Icons");
         QVERIFY(icons);
 
@@ -1037,13 +1019,8 @@ private slots:
     }
 
     void loadsAccountSettings() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         e.singletonInstance<AppController *>("Quack", "App");
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQmlComponent comp(&e, "Quack", "AccountSettingsWindow");
         QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
@@ -1278,7 +1255,7 @@ private slots:
         win.reset();
         QCoreApplication::processEvents();
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Call windows are never asked for: they follow a CallsModel row, with the
@@ -1289,15 +1266,9 @@ private slots:
     // A ringing call is the dialog's, not the call window's - the window only
     // appears once there is a call in it, as tacky's Tk GUI does it.
     void ringingCallShowsTheDialogUntilItIsAnswered() {
-        QStringList warnings;
-        QQmlApplicationEngine e;
+        AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlApplicationEngine::warnings,
-                         [&](const QList<QQmlError> &ws) {
-                             for (const QQmlError &w : ws)
-                                 warnings << w.toString();
-                         });
         e.loadFromModule("Quack", "Main"); // ShellWindow arms AppWindows
         QVERIFY(!e.rootObjects().isEmpty());
 
@@ -1330,21 +1301,15 @@ private slots:
         QCoreApplication::processEvents();
         QTRY_COMPARE(visibleWindows().size(), before);
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Declining never shows a call window, so nothing is left holding the row
     // open: it has to clear itself or it sits in the model unseen forever.
     void decliningARingingCallClearsTheRow() {
-        QStringList warnings;
-        QQmlApplicationEngine e;
+        AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlApplicationEngine::warnings,
-                         [&](const QList<QQmlError> &ws) {
-                             for (const QQmlError &w : ws)
-                                 warnings << w.toString();
-                         });
         e.loadFromModule("Quack", "Main");
         QVERIFY(!e.rootObjects().isEmpty());
 
@@ -1364,21 +1329,16 @@ private slots:
         QTRY_COMPARE(calls->rowCount(), 0);
         QTRY_COMPARE(visibleWindows().size(), before);
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The mirror of the account page: who the roster says the contact is, and
     // the same devices model as the account's own panel pointed at them
     // instead - every device they have is listed, and none of it is ours.
     void loadsContactDetailsWindow() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQmlComponent comp(&e, "Quack", "ContactDetailsWindow");
         QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
@@ -1492,18 +1452,13 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
         QCoreApplication::processEvents();
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     void loadsMucDetailsWindow() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         // A page with no room yet, which is how one built inside a chat's sheet
         // sits until somebody opens it. The card drawing our own row is hidden
@@ -1652,21 +1607,15 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
         QCoreApplication::processEvents();
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Closing the window is not a way to walk out on a running call: it hangs
     // up, and only then does the row (and with it the window) go.
     void closingACallWindowHangsUp() {
-        QStringList warnings;
-        QQmlApplicationEngine e;
+        AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlApplicationEngine::warnings,
-                         [&](const QList<QQmlError> &ws) {
-                             for (const QQmlError &w : ws)
-                                 warnings << w.toString();
-                         });
         e.loadFromModule("Quack", "Main");
         QVERIFY(!e.rootObjects().isEmpty());
 
@@ -1690,7 +1639,7 @@ private slots:
         // The window's own timer clears the finished row shortly after.
         QTRY_COMPARE_WITH_TIMEOUT(calls->rowCount(), 0, 4000);
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Calling one of your own accounts from another is one session but two
@@ -1700,15 +1649,9 @@ private slots:
     // nothing about the other: a sibling device answering ends the callee end
     // while the caller end is up and audible.
     void bothEndsOfACallBetweenOwnAccountsShowOneWindowAndOneDialog() {
-        QStringList warnings;
-        QQmlApplicationEngine e;
+        AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlApplicationEngine::warnings,
-                         [&](const QList<QQmlError> &ws) {
-                             for (const QQmlError &w : ws)
-                                 warnings << w.toString();
-                         });
         e.loadFromModule("Quack", "Main");
         QVERIFY(!e.rootObjects().isEmpty());
 
@@ -1750,21 +1693,16 @@ private slots:
         QCoreApplication::processEvents();
         QTRY_COMPARE(visibleWindows().size(), before);
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The account rail is a pull-out drawer at every width, never a column: the
     // list header's badge is the way in and back is the way out, at 400px and at
     // 1000px alike.
     void theAccountRailIsADrawerAtEveryWidth() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         app->accounts()->applyList({"me@example.com", "alt@example.com"});
         // Both signed in: a disabled account says so instead of saying what
@@ -1932,7 +1870,7 @@ private slots:
 
         win.grabWindow();
         QCoreApplication::processEvents();
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Android kills the UI process while the service keeps the accounts online.
@@ -1940,14 +1878,9 @@ private slots:
     // accounts does, and a rail that reads the blanks as facts walks a
     // connected account through "disabled" and "offline" on the way in.
     void theRailSaysNothingUntilItHasBeenTold() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(theme);
 
@@ -2000,7 +1933,7 @@ private slots:
         std::sort(words.begin(), words.end());
         QCOMPARE(words, QStringList({"connected", "disabled"}));
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Stacked, opening a chat is a push, not a swap: the chat comes in from
@@ -2011,14 +1944,9 @@ private slots:
         constexpr int kNarrow = 400; // one column, under the 720 breakpoint
         constexpr int kWide = 1000;  // rail, list and chat side by side
 
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
         app->accounts()->applyList({"me@example.com"});
 
         // Sized for the widest the shell gets: the divider drag at the end is a
@@ -2103,21 +2031,16 @@ private slots:
 
         win.grabWindow();
         QCoreApplication::processEvents();
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Opening a room straight after a 1:1 asked for its session with the last
     // chat's kind and kept that answer, so the room drew a padlock - shut, at
     // that, since a setting never asked about reads back as tacky's default.
     void openingARoomAfterAOneToOneLeavesNoPadlock() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
         app->accounts()->applyList({"me@example.com"});
 
         QQuickWindow win;
@@ -2180,7 +2103,7 @@ private slots:
 
         win.grabWindow();
         QCoreApplication::processEvents();
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Every colour in the active palette has to reach the property named after
@@ -2189,7 +2112,7 @@ private slots:
     // its initialiser and every icon drawn on an accent fill came out
     // default-constructed black.
     void themePropertiesCarryTheirPaletteColour() {
-        QQmlEngine e;
+        Engine e;
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(theme);
         const QVariantMap palette = theme->property("p").toMap();
@@ -2214,7 +2137,7 @@ private slots:
     // reads as an invalid colour and whatever it painted comes out black. So
     // check the key sets match rather than trusting nine hand edits.
     void everyPaletteCarriesTheSameKeys() {
-        QQmlEngine e;
+        Engine e;
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(theme);
         const QVariantMap palettes = theme->property("palettes").toMap();
@@ -2235,7 +2158,7 @@ private slots:
     // paint. They cannot be told apart at all if a palette hands both the same
     // value.
     void theRailNeverSharesAFillWithTheChatList() {
-        QQmlEngine e;
+        Engine e;
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(theme);
         const QVariantMap palettes = theme->property("palettes").toMap();
@@ -2257,13 +2180,7 @@ private slots:
     // tick tracks the current id rather than a position, and that picking
     // reports the id instead of the label.
     void deviceMenuListsEveryDeviceAndReportsThePick() {
-        QStringList warnings;
-        QQmlEngine e;
-        QObject::connect(&e, &QQmlEngine::warnings,
-                         [&](const QList<QQmlError> &ws) {
-                             for (const QQmlError &w : ws)
-                                 warnings << w.toString();
-                         });
+        Engine e;
         QQuickWindow win;
         win.resize(400, 120);
         win.show();
@@ -2308,20 +2225,15 @@ private slots:
         QCOMPARE(picked.count(), 2);
         QCOMPARE(picked.at(1).at(0).toString(), QString());
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The badge is the row's only sign of unread mail, so it has to carry the
     // count and, once the chat is read, leave without a trace.
     void unreadChatsWearABadge() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
@@ -2383,22 +2295,17 @@ private slots:
                                      {"unread", 0}});
         QTRY_VERIFY(!badge(0)->isVisible());
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // A room's row says what state it is in, which is the only place a failed
     // join or a room we have been dropped from is visible without opening it.
     void roomRowsAreStyledByTheirState() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(theme);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
@@ -2481,20 +2388,15 @@ private slots:
         QTRY_VERIFY(!mention(1)->isVisible());
         QVERIFY(findItem(rowAt(1), "unreadBadge")->isVisible());
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // A touch point carries no button, so the row's right-click handler was
     // offered every tap: on a phone the menu came up over the chat it opened.
     void aTouchTapOnARowOnlyOpensTheChat() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
@@ -2546,21 +2448,16 @@ private slots:
         QVERIFY2(!menu->property("opened").toBool(),
                  "a tap on a row brought up its menu");
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The row menu is one instance shared by every row, so which verbs it shows
     // is entirely a function of the entry it was opened for. A contact offered
     // a room's join, or a room offered a call, would both be nonsense.
     void rowMenuFollowsTheRowItWasOpenedFor() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
@@ -2642,7 +2539,7 @@ private slots:
         QCOMPARE(menu->property("chatTitle").toString(),
                  QString("cy@example.com")); // unnamed: goes by its JID
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Starting a chat with someone not on the list yet: the chat opens either
@@ -2650,14 +2547,9 @@ private slots:
     // bare lower case first, or the chat opened would be one the list can never
     // produce a row for.
     void newChatOpensTheChatAndOptionallyAddsTheContact() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQuickWindow win;
         win.resize(360, 500);
@@ -2710,20 +2602,15 @@ private slots:
         QCOMPARE(opened.at(0).at(0).toString(), QString("cy@example.com"));
         QCOMPARE(sent.count(), 0);
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Joining a room is a bookmark write with autojoin set - that is what keeps
     // tacky rejoining it - and the typed nick and password have to ride along.
     void joinRoomWritesABookmark() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         QQuickWindow win;
         win.resize(480, 600);
@@ -2765,20 +2652,15 @@ private slots:
         QCOMPARE(args.value("password").toString(), QString("s3cret"));
         QCOMPARE(args.value("autojoin").toInt(), 1);
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Joining from the menu has to reach the backend as a bookmark write, and a
     // remove has to wait for the confirmation rather than fire on the click.
     void rowMenuEditsReachTheBackend() {
-        QStringList warnings;
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
 
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
@@ -2853,7 +2735,7 @@ private slots:
         QCOMPARE(refreshed, QStringList({"roster/request", "bookmarks/request",
                                          "chatlist/get"}));
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // Android lays the keyboard over the window instead of resizing it, so a
@@ -2863,12 +2745,7 @@ private slots:
     // dead centre under the keyboard. Nothing raises a keyboard on a headless
     // platform, so the top edge is placed by hand.
     void aDialogCentresInTheStripTheKeyboardLeaves() {
-        QStringList warnings;
-        QQmlEngine e;
-        QObject::connect(&e, &QQmlEngine::warnings, [&](const QList<QQmlError> &ws) {
-            for (const QQmlError &w : ws)
-                warnings << w.toString();
-        });
+        Engine e;
 
         QQuickWindow win;
         win.resize(360, 800);
@@ -2910,13 +2787,13 @@ private slots:
         sheet->setProperty("keyboardTop", 40);
         QTRY_COMPARE(sheet->property("y").toReal(), qreal(12));
 
-        assertNoQmlErrors(warnings);
+        e.assertNoErrors();
     }
 
     // The per-account models are cached on the App singleton, so nothing else
     // would ever let go of one for an account that has been removed.
     void removingAnAccountDropsWhatWasCachedForIt() {
-        QQmlEngine e;
+        Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
         app->accounts()->applyAdded("gone@example.com");
