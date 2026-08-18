@@ -1018,40 +1018,64 @@ private slots:
         QCOMPARE(dots, 3);
     }
 
-    void loadsAccountSettings() {
-        Engine e;
-        e.singletonInstance<AppController *>("Quack", "App");
-
+    // Opens one account's settings window into `holder`. Taller than the
+    // shipped 760 so every card is in the viewport at once: what is scrolled
+    // out is still there to find, but a synthesized drag needs its target on
+    // screen.
+    static QQuickWindow *openAccountSettings(QQmlEngine &e,
+                                             QScopedPointer<QObject> &holder) {
         QQmlComponent comp(&e, "Quack", "AccountSettingsWindow");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> win(
-            comp.createWithInitialProperties({{"account", "me@example.com"}}));
-        QVERIFY(!win.isNull());
-        auto *w = qobject_cast<QQuickWindow *>(win.data());
-        QVERIFY(w);
-        // Taller than the shipped 760 so every card is inside the viewport at
-        // once: the trust picker below is dragged with synthesized mouse
-        // events, which need it on screen rather than scrolled out of reach.
+        if (!comp.isReady()) {
+            qWarning("%s", qPrintable(comp.errorString()));
+            return nullptr;
+        }
+        holder.reset(comp.createWithInitialProperties({{"account", "me@example.com"}}));
+        auto *w = qobject_cast<QQuickWindow *>(holder.data());
+        if (!w)
+            return nullptr;
         w->setHeight(1400);
         w->grabWindow(); // force a render so the cards' bindings evaluate
         QCoreApplication::processEvents();
+        return w;
+    }
 
-        // The device rows come from the same model the backend feeds, so canned
-        // rows are enough to check the list and the set-all rule are wired up.
-        auto *app = e.singletonInstance<AppController *>("Quack", "App");
-        QVERIFY(app);
+    // The OMEMO rows the backend would have sent: this device, its fingerprint,
+    // and three others in three different states of trust. They come from the
+    // same model the backend feeds, so canned rows are enough.
+    static AccountSettings *seedDevices(AppController *app) {
         AccountSettings *settings = app->accountSettingsFor("me@example.com");
-        QVERIFY(settings);
+        if (!settings)
+            return nullptr;
         settings->devices()->applyOwnDevice(7);
         settings->devices()->applyOwnFingerprint(QString(64, QChar('b')));
         settings->devices()->applyTrustList({device(7, "trusted"), device(8, "undecided"),
                                              device(9, "untrusted")});
         QCoreApplication::processEvents();
+        return settings;
+    }
 
-        // The form fields read the stored credential and name.
+    static void publishedAvatar(AppController *app, const QString &hash) {
+        app->avatars()->handleEvent("avatar", "Update",
+                                    QVariantMap{{"acc", "me@example.com"},
+                                                {"jid", "me@example.com"},
+                                                {"hash", hash}});
+        QCoreApplication::processEvents();
+    }
+
+    void accountSettingsShowsTheStoredCredentials() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+
+        AccountSettings *settings = app->accountSettingsFor("me@example.com");
+        QVERIFY(settings);
         settings->applyAccount(QVariantMap{{"password", "hunter2"}});
         settings->applyNick("Kitsunia");
         QCoreApplication::processEvents();
+
         QObject *password = w->findChild<QObject *>("passwordField");
         QVERIFY(password);
         QCOMPARE(password->property("text").toString(), QString("hunter2"));
@@ -1059,16 +1083,27 @@ private slots:
         QVERIFY(nick);
         QCOMPARE(nick->property("text").toString(), QString("Kitsunia"));
 
-        // The picture itself is the control. Nothing has been asked of it yet,
-        // so it takes taps and the line under it is empty.
+        // Tear the page down inside the test rather than at the end of scope,
+        // so anything its destruction logs is still collected. Note this does
+        // not reproduce the delegate teardown seen in the running app.
+        holder.reset();
+        QCoreApplication::processEvents();
+
+        e.assertNoErrors();
+    }
+
+    // The picture itself is the control, and removing is a second action on the
+    // same chip - offered only once there is something to remove.
+    void theAvatarOffersRemovalOnlyWithSomethingToRemove() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+
         QQuickItem *editor = findItem(w->contentItem(), "avatarEditor");
-        QObject *avatarTap = w->findChild<QObject *>("avatarTap");
-        QObject *avatarStatus = w->findChild<QObject *>("avatarStatus");
         QVERIFY(editor);
-        QVERIFY(avatarTap);
-        QVERIFY(avatarStatus);
-        QVERIFY(avatarTap->property("enabled").toBool());
-        QVERIFY(!avatarStatus->property("visible").toBool());
 
         // The chip that says the picture is tappable sits within its bounds
         // rather than off the edge of it.
@@ -1077,18 +1112,11 @@ private slots:
         QVERIFY(setButton->property("visible").toBool());
         QVERIFY(editor->boundingRect().contains(itemRect(setButton, editor)));
 
-        // Removing is its own action on the same chip, offered only once there
-        // is something to remove.
         QQuickItem *remove = findItem(editor, "avatarRemoveButton");
         QVERIFY(remove);
         QVERIFY(!remove->property("visible").toBool()); // nothing published yet
 
-        app->avatars()->handleEvent(
-            "avatar", "Update",
-            QVariantMap{{"acc", "me@example.com"},
-                        {"jid", "me@example.com"},
-                        {"hash", "abc123"}});
-        QCoreApplication::processEvents();
+        publishedAvatar(app, "abc123");
         w->grabWindow(); // the chip grew by an action; let the Row place it
         QVERIFY(remove->property("visible").toBool());
         QVERIFY(editor->boundingRect().contains(itemRect(remove, editor)));
@@ -1097,23 +1125,57 @@ private slots:
                  "the avatar's two actions overlap");
 
         // And it goes away again when the avatar does.
-        app->avatars()->handleEvent("avatar", "Update",
-                                    QVariantMap{{"acc", "me@example.com"},
-                                                {"jid", "me@example.com"},
-                                                {"hash", ""}});
-        QCoreApplication::processEvents();
+        publishedAvatar(app, "");
         QVERIFY(!remove->property("visible").toBool());
 
-        // A build with no QImage side refuses the picture instead of sending
-        // it, and the refusal reaches the page.
+        e.assertNoErrors();
+    }
+
+    // A build with no QImage side refuses the picture instead of sending it,
+    // and the refusal reaches the page rather than leaving it looking busy.
+    void anAvatarWithNoEncoderIsRefusedOnThePage() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+
+        AccountSettings *settings = app->accountSettingsFor("me@example.com");
+        QVERIFY(settings);
+        QObject *avatarStatus = w->findChild<QObject *>("avatarStatus");
+        QVERIFY(avatarStatus);
+        QVERIFY(!avatarStatus->property("visible").toBool()); // nothing asked yet
+
         settings->setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
         QCoreApplication::processEvents();
         QVERIFY(!settings->avatarBusy());
         QVERIFY(avatarStatus->property("visible").toBool());
         QVERIFY(!avatarStatus->property("text").toString().isEmpty());
 
-        // With an encoder the publish goes out, and the picture stops taking
-        // taps until it answers - along with the chip that advertises them.
+        e.assertNoErrors();
+    }
+
+    // With an encoder the publish goes out, and the picture stops taking taps
+    // until it answers - along with the chip that advertises them.
+    void publishingAnAvatarLocksThePictureAndNarratesIt() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+
+        AccountSettings *settings = app->accountSettingsFor("me@example.com");
+        QVERIFY(settings);
+        QObject *avatarTap = w->findChild<QObject *>("avatarTap");
+        QObject *avatarStatus = w->findChild<QObject *>("avatarStatus");
+        QQuickItem *setButton = findItem(w->contentItem(), "avatarSetButton");
+        QVERIFY(avatarTap);
+        QVERIFY(avatarStatus);
+        QVERIFY(setButton);
+        QVERIFY(avatarTap->property("enabled").toBool());
+
         StubEncoder encoder;
         settings->setAvatarEncoder(&encoder);
         settings->setAvatar(QUrl::fromLocalFile("/tmp/whatever.png"));
@@ -1134,16 +1196,49 @@ private slots:
         QCoreApplication::processEvents();
         QVERIFY(!settings->avatarBusy());
 
+        e.assertNoErrors();
+    }
+
+    // Set-all is offered while there is more than one device left to set, and
+    // this device is never one of the rows.
+    void theDeviceListLeavesOutOurOwnDevice() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        AccountSettings *settings = seedDevices(app);
+        QVERIFY(settings);
+
         QObject *list = w->findChild<QObject *>("deviceList");
         QVERIFY(list);
-        QCOMPARE(list->property("count").toInt(), 2); // our own device is not one of them
+        QCOMPARE(list->property("count").toInt(), 2);
 
         QObject *setAll = w->findChild<QObject *>("setAllRow");
         QVERIFY(setAll);
         QVERIFY(setAll->property("visible").toBool()); // two settable devices
 
-        // Every trust control sits on the page's centre line, set-all included,
-        // so they line up with each other as well.
+        // One left to set, so there is nothing to set them all to.
+        settings->devices()->applyTrustList({device(7, "trusted"), device(8, "undecided"),
+                                             device(9, "compromised")});
+        QCoreApplication::processEvents();
+        QVERIFY(!setAll->property("visible").toBool());
+
+        e.assertNoErrors();
+    }
+
+    // Every trust control sits on the page's centre line, set-all included, so
+    // they line up with each other as well.
+    void theTrustPickersShareAColumn() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        QVERIFY(seedDevices(app));
+
         QQuickItem *setAllPicker = findItem(w->contentItem(), "setAllPicker");
         QQuickItem *devicePicker = findItem(w->contentItem(), "devicePicker");
         QVERIFY(setAllPicker);
@@ -1153,6 +1248,7 @@ private slots:
         QVERIFY2(qAbs(apart) <= 1.0,
                  qPrintable(QString("the two pickers start %1 apart").arg(apart)));
         QCOMPARE(setAllPicker->width(), devicePicker->width());
+
         QQuickItem *pickerRow = devicePicker->parentItem();
         QVERIFY(pickerRow);
         const qreal offCentre = devicePicker->x() + devicePicker->width() / 2
@@ -1160,21 +1256,35 @@ private slots:
         QVERIFY2(qAbs(offCentre) <= 1.0,
                  qPrintable(QString("picker is %1 off centre").arg(offCentre)));
 
-        // The thumb settles under the segment the device's trust names, and
-        // slides when that changes under it. Device 8 is undecided, the middle
-        // of the three.
+        e.assertNoErrors();
+    }
+
+    // The thumb settles under the segment the device's trust names, slides when
+    // that changes under it, and picks the segment it is dragged onto.
+    void theTrustThumbFollowsTheDeviceAndTakesADrag() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        AccountSettings *settings = seedDevices(app);
+        QVERIFY(settings);
+
+        QQuickItem *devicePicker = findItem(w->contentItem(), "devicePicker");
+        QVERIFY(devicePicker);
         const qreal seg = devicePicker->property("segmentWidth").toReal();
         const qreal inset = devicePicker->property("inset").toReal();
         QVERIFY(seg > 0);
         QQuickItem *thumb = findItem(devicePicker, "trustThumb");
         QVERIFY(thumb);
+        // Device 8 is undecided, the middle of the three.
         QTRY_COMPARE(thumb->x(), inset + seg);
 
         settings->devices()->applyTrustList({device(7, "trusted"), device(8, "trusted"),
                                              device(9, "untrusted")});
         QTRY_COMPARE(thumb->x(), inset);
 
-        // Dragging the thumb one segment along picks that one on release.
         const QPoint from = w->contentItem()
                                 ->mapFromItem(thumb, QPointF(thumb->width() / 2,
                                                              thumb->height() / 2))
@@ -1186,8 +1296,20 @@ private slots:
         QTest::mouseRelease(w, Qt::LeftButton, Qt::NoModifier, to);
         QTRY_COMPARE(thumb->x(), inset + seg);
 
-        // A fingerprint spreads its groups over the width it is given, and each
-        // row starts on the same column boundaries as the one above it.
+        e.assertNoErrors();
+    }
+
+    // A fingerprint spreads its groups over the width it is given, and each row
+    // starts on the same column boundaries as the one above it.
+    void aFingerprintWrapsOnItsColumns() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        QVERIFY(seedDevices(app));
+
         QQuickItem *fpGrid = findItem(w->contentItem(), "fingerprintGroups");
         QVERIFY(fpGrid);
         QList<QQuickItem *> groups;
@@ -1206,15 +1328,16 @@ private slots:
         QCOMPARE(groups.at(columns)->x(), groups.at(0)->x());
         QVERIFY(groups.at(columns)->y() > groups.at(0)->y());
 
-        // One left to set, so there is nothing to set them all to.
-        settings->devices()->applyTrustList({device(7, "trusted"), device(8, "undecided"),
-                                             device(9, "compromised")});
-        QCoreApplication::processEvents();
-        QVERIFY(!setAll->property("visible").toBool());
+        e.assertNoErrors();
+    }
 
-        // The same account twice is one window, not two stacked on each other.
+    // The same account twice is one window, not two stacked on each other.
+    void oneAccountHasOneSettingsWindow() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
+
         QVariant first;
         QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
                                           Q_RETURN_ARG(QVariant, first),
@@ -1226,16 +1349,14 @@ private slots:
                                           Q_ARG(QVariant, QVariant("me@example.com"))));
         QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
 
-        // AppWindows holds this one, so it would otherwise outlive the engine's
-        // singletons and re-evaluate its bindings against them on the way down.
-        // QQmlApplicationEngine drops its windows first.
+        // Closing only hides it, and AppWindows goes on holding it. Left alive
+        // it outlives the engine's singletons and re-evaluates its bindings
+        // against them on the way down, which segfaults inside a singleton
+        // property lookup. Take it down here, while what it reads is still
+        // there.
         QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
         QCoreApplication::processEvents();
-
-        // Tear the page down inside the test rather than at the end of scope,
-        // so anything its destruction logs is still collected. Note this does
-        // not reproduce the delegate teardown seen in the running app.
-        win.reset();
+        first.value<QObject *>()->deleteLater();
         QCoreApplication::processEvents();
 
         e.assertNoErrors();
