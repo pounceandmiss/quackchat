@@ -39,9 +39,14 @@ modules:
       - install -Dm644 dist/libtacky.a /app/lib/tacky/dist/libtacky.a
       - install -Dm644 embed/tacky.h /app/lib/tacky/embed/tacky.h
     sources:
+      # Pinned rather than tracking main, so the release is built from the
+      # archive it was tested against. Keep it equal to what third_party/tacky
+      # is checked out at; flatpak-builder cannot read the submodule, so this
+      # is the one place the commit is repeated. flatpak/check-pin.sh compares
+      # the two.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        branch: main
+        commit: d20ed6140d9f2f29d9437c27dbb8d5a0c0960513
 
       # zippy's pins, generated and replaced wholesale rather than edited.
       # After a bump, in a tacky checkout:
