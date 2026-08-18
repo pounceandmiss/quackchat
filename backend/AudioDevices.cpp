@@ -1,5 +1,7 @@
 #include "AudioDevices.h"
 
+#include "BackendBinding.h"
+
 #include "TackyBackend.h"
 
 namespace {
@@ -15,13 +17,8 @@ void AudioDevices::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &AudioDevices::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &AudioDevices::handleResult);
-        // Persisted values with no event to announce them, so this edge is
-        // what fetches them when the first ask went out over a dead link.
-        connect(m_backend, &TackyBackend::connected, this, &AudioDevices::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &AudioDevices::refresh);
 }
 
 void AudioDevices::refresh() {
@@ -57,6 +54,19 @@ void AudioDevices::handleResult(int token, const QVariant &data) {
         applyVolume(kCapture, data.toDouble());
     } else if (token == m_playbackVolumeToken) {
         applyVolume(kPlayback, data.toDouble());
+    }
+}
+
+// A device list or a stored preference that never came. The pickers keep what
+// they have rather than emptying, and the connected edge asks again.
+void AudioDevices::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    for (int *t : {&m_devicesToken, &m_captureDeviceToken, &m_playbackDeviceToken,
+                   &m_captureVolumeToken, &m_playbackVolumeToken}) {
+        if (*t == token) {
+            *t = -1;
+            return;
+        }
     }
 }
 

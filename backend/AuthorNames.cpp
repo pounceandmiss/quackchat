@@ -1,5 +1,7 @@
 #include "AuthorNames.h"
 
+#include "BackendBinding.h"
+
 AuthorNames::AuthorNames(QObject *parent) : QObject(parent) {}
 
 void AuthorNames::setBackend(TackyBackend *backend) {
@@ -8,11 +10,8 @@ void AuthorNames::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &AuthorNames::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &AuthorNames::handleResult);
-        connect(m_backend, &TackyBackend::connected, this, &AuthorNames::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &AuthorNames::refresh);
     emit backendChanged();
     refresh();
 }
@@ -59,6 +58,13 @@ void AuthorNames::handleResult(int token, const QVariant &data) {
 
 // <Changed> re-resolves one sender in place: a roster edit, a nick change, a
 // newly arrived occupant. Refetching the whole map for one of them is waste.
+// The names stay as they were; the next connected edge asks again.
+void AuthorNames::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    if (token == m_pending)
+        m_pending = 0;
+}
+
 void AuthorNames::handleEvent(const QString &module, const QString &name,
                               const QVariant &args) {
     // Occupants are rebuilt when the session comes up, so whatever we resolved

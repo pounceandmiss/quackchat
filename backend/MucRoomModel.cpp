@@ -1,5 +1,7 @@
 #include "MucRoomModel.h"
 
+#include "BackendBinding.h"
+
 #include <algorithm>
 
 namespace {
@@ -100,12 +102,8 @@ void MucRoomModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &MucRoomModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &MucRoomModel::handleResult);
-        connect(m_backend, &TackyBackend::error, this, &MucRoomModel::handleError);
-        connect(m_backend, &TackyBackend::connected, this, &MucRoomModel::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &MucRoomModel::refresh);
     emit backendChanged();
     refresh();
 }

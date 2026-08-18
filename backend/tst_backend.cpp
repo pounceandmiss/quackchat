@@ -5,6 +5,7 @@
 #include <QSignalSpy>
 #include <QVariantList>
 
+#include "BackendBinding.h"
 #include "TackyBackend.h"
 
 class TestBackend : public QObject {
@@ -16,7 +17,52 @@ private slots:
     void sentReportsCallsWithoutABackend();
     void aRequestThatNeverWentOutIsAnswered();
     void stoppingFailsWhateverWasStillOut();
+    void bindingCarriesEverySignalAModelNeeds();
+    void optingOutLeavesOnlyTheReSeedBehind();
 };
+
+// A stand-in for any of the models: the three handlers bindBackend requires,
+// and the re-read it drives on the connected edge.
+class BoundModel : public QObject {
+    Q_OBJECT
+public:
+    int events = 0, results = 0, errors = 0, reseeds = 0;
+    void handleEvent(const QString &, const QString &, const QVariant &) { ++events; }
+    void handleResult(int, const QVariant &) { ++results; }
+    void handleError(int, const QString &) { ++errors; }
+    void reseed() { ++reseeds; }
+};
+
+// Pinned here rather than once per model: the binding is the same for all of
+// them, and a dropped connection is invisible until something goes unanswered.
+void TestBackend::bindingCarriesEverySignalAModelNeeds() {
+    TackyBackend backend;
+    BoundModel m;
+    bindBackend(&m, &backend, &BoundModel::reseed);
+
+    emit backend.event("omemo", "Enabled", QVariantMap{});
+    emit backend.result(1, QVariant());
+    emit backend.error(1, QStringLiteral("nope"));
+    emit backend.connected();
+
+    QCOMPARE(m.events, 1);
+    QCOMPARE(m.results, 1);
+    QCOMPARE(m.errors, 1);
+    QCOMPARE(m.reseeds, 1);
+}
+
+// The opt-out drops the re-read and nothing else: a failure is still heard.
+void TestBackend::optingOutLeavesOnlyTheReSeedBehind() {
+    TackyBackend backend;
+    BoundModel m;
+    bindBackendWithoutReseed(&m, &backend);
+
+    emit backend.error(1, QStringLiteral("nope"));
+    emit backend.connected();
+
+    QCOMPARE(m.errors, 1);
+    QCOMPARE(m.reseeds, 0);
+}
 
 void TestBackend::startsAndStops() {
     TackyBackend backend;

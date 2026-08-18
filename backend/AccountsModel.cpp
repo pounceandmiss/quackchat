@@ -1,5 +1,7 @@
 #include "AccountsModel.h"
 
+#include "BackendBinding.h"
+
 #include "TackyBackend.h"
 
 #include <utility> // std::as_const
@@ -43,11 +45,8 @@ void AccountsModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &AccountsModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &AccountsModel::handleResult);
-        connect(m_backend, &TackyBackend::connected, this, &AccountsModel::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &AccountsModel::refresh);
     emit backendChanged();
     refresh();
 }
@@ -163,6 +162,16 @@ void AccountsModel::handleResult(int token, const QVariant &data) {
         applyList(data.toList());
     else if (token == m_enabledToken)
         applyEnabledList(data.toList());
+}
+
+// The list did not arrive, so the rows stay as they are: one that has never been
+// told still says so rather than guessing.
+void AccountsModel::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    if (token == m_listToken)
+        m_listToken = -1;
+    else if (token == m_enabledToken)
+        m_enabledToken = -1;
 }
 
 int AccountsModel::indexOfJid(const QString &jid) const {

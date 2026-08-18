@@ -1,5 +1,7 @@
 #include "OmemoChat.h"
 
+#include "BackendBinding.h"
+
 OmemoChat::OmemoChat(QObject *parent) : QObject(parent) {}
 
 void OmemoChat::setBackend(TackyBackend *backend) {
@@ -8,14 +10,8 @@ void OmemoChat::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &OmemoChat::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &OmemoChat::handleResult);
-        connect(m_backend, &TackyBackend::error, this, &OmemoChat::handleError);
-        // A read made before the link was up went nowhere, and on Android the
-        // link comes up after the first chat is already on screen.
-        connect(m_backend, &TackyBackend::connected, this, &OmemoChat::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &OmemoChat::refresh);
     emit backendChanged();
     refresh();
 }

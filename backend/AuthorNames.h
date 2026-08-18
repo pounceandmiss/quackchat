@@ -36,6 +36,7 @@ public:
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);
     void handleResult(int token, const QVariant &data);
+    void handleError(int token, const QString &message);
 
 signals:
     void backendChanged();

@@ -1,5 +1,7 @@
 #include "OmemoDevicesModel.h"
 
+#include "BackendBinding.h"
+
 #include "TackyBackend.h"
 
 OmemoDevicesModel::OmemoDevicesModel(QObject *parent)
@@ -45,14 +47,8 @@ void OmemoDevicesModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this,
-                &OmemoDevicesModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this,
-                &OmemoDevicesModel::handleResult);
-        connect(m_backend, &TackyBackend::connected, this,
-                &OmemoDevicesModel::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &OmemoDevicesModel::refresh);
     emit backendChanged();
     refresh();
 }
@@ -153,6 +149,19 @@ void OmemoDevicesModel::setBlindTrust(bool on) {
     m_backend->notify(QStringLiteral("omemo"), QStringLiteral("setBlindTrust"),
                       QVariantMap{{QStringLiteral("acc"), m_account},
                                   {QStringLiteral("value"), on ? 1 : 0}});
+}
+
+// The key list did not arrive. The rows on screen are the last ones that did,
+// which is better than an empty list reading as "this peer has no keys".
+void OmemoDevicesModel::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    for (int *t : {&m_trustToken, &m_blindToken, &m_fingerprintToken,
+                   &m_deviceToken}) {
+        if (*t == token) {
+            *t = -1;
+            return;
+        }
+    }
 }
 
 void OmemoDevicesModel::handleEvent(const QString &module, const QString &name,

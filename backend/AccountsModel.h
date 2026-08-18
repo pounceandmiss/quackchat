@@ -65,6 +65,7 @@ public:
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);
     void handleResult(int token, const QVariant &data);
+    void handleError(int token, const QString &message);
 
     void applyList(const QVariantList &jids);        // full set (account list)
     void applyEnabledList(const QVariantList &jids); // enabled subset

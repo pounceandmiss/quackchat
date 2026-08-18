@@ -1,5 +1,7 @@
 #include "ChatModel.h"
 
+#include "BackendBinding.h"
+
 #include <QFile>
 #include <QFileInfo>
 
@@ -221,12 +223,8 @@ void ChatModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &ChatModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &ChatModel::handleResult);
-        connect(m_backend, &TackyBackend::connected, this, &ChatModel::reload);
-        connect(m_backend, &TackyBackend::error, this, &ChatModel::handleError);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &ChatModel::reload);
     emit backendChanged();
     reload();
 }

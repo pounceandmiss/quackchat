@@ -1,5 +1,7 @@
 #include "AccountSettings.h"
 
+#include "BackendBinding.h"
+
 #include "AvatarEncoder.h"
 #include "TackyBackend.h"
 
@@ -23,16 +25,8 @@ void AccountSettings::setBackend(TackyBackend *backend) {
         m_backend->disconnect(this);
     m_backend = backend;
     m_devices.setBackend(backend);
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this,
-                &AccountSettings::handleEvent);
-        connect(m_backend, &TackyBackend::result, this,
-                &AccountSettings::handleResult);
-        connect(m_backend, &TackyBackend::error, this,
-                &AccountSettings::handleError);
-        connect(m_backend, &TackyBackend::connected, this,
-                &AccountSettings::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &AccountSettings::refresh);
     refresh();
 }
 

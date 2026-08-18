@@ -308,8 +308,7 @@ void TestSearchModel::failedSearchSaysSoRatherThanShowingNothing() {
 }
 
 // The other way a search fails: not a result carrying `error`, but the request
-// itself refused or abandoned. Left unhandled the token is never let go and
-// `searching` stays true, so the view spins with nothing coming.
+// itself refused or abandoned.
 void TestSearchModel::aSearchThatErrorsOutrightStopsSpinning() {
     TackyBackend backend;
     SearchModel m;

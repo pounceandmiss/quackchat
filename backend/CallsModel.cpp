@@ -1,5 +1,6 @@
 #include "CallsModel.h"
 
+#include "BackendBinding.h"
 #include "TackyBackend.h"
 
 #include <QCoreApplication>
@@ -61,14 +62,11 @@ void CallsModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &CallsModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &CallsModel::handleResult);
-        connect(m_backend, &TackyBackend::error, this, &CallsModel::handleError);
-        // Not TackyBackend::connected, which every other model re-seeds off:
-        // that edge names no account, and `calls list` takes one. The conn
-        // events handleEvent watches are the same edge, per account.
-    }
+    // No re-seed on the connected edge: it names no account and `calls list`
+    // takes one. The conn events handleEvent watches are that same edge, split
+    // up by the account it happened to.
+    if (m_backend)
+        bindBackendWithoutReseed(this, m_backend);
 }
 
 QString CallsModel::key(const QString &acc, const QString &sid) {

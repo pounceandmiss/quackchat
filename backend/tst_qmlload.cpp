@@ -426,10 +426,9 @@ private slots:
         QVERIFY(filter);
         QCOMPARE(filter->query(), QStringLiteral("pizza"));
 
-        // The archive is a round trip, so it comes after the pause. The backend
-        // is unstarted, so watch the frame go out rather than the flag: an
-        // unsendable request is answered with an error at once, which is the
-        // model correctly reporting that nothing is being searched.
+        // The archive is a round trip, so it comes after the pause. Watch the
+        // frame rather than `searching`: the backend is unstarted, so the
+        // request is answered with an error the moment it goes out.
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
         QSignalSpy sent(app->backend(), &TackyBackend::sent);

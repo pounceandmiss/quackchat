@@ -1,5 +1,7 @@
 #include "ChatListModel.h"
 
+#include "BackendBinding.h"
+
 #include "TackyBackend.h"
 
 #include <algorithm>
@@ -33,12 +35,8 @@ void ChatListModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &ChatListModel::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &ChatListModel::handleResult);
-        connect(m_backend, &TackyBackend::connected, this, &ChatListModel::refresh);
-        connect(m_backend, &TackyBackend::error, this, &ChatListModel::handleError);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &ChatListModel::refresh);
     emit backendChanged();
     refresh();
 }

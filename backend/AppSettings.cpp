@@ -1,5 +1,7 @@
 #include "AppSettings.h"
 
+#include "BackendBinding.h"
+
 #include "TackyBackend.h"
 
 namespace {
@@ -15,13 +17,8 @@ void AppSettings::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend) {
-        connect(m_backend, &TackyBackend::event, this, &AppSettings::handleEvent);
-        connect(m_backend, &TackyBackend::result, this, &AppSettings::handleResult);
-        // Persisted values with no event to announce them, so this edge is
-        // what fetches them when the first ask went out over a dead link.
-        connect(m_backend, &TackyBackend::connected, this, &AppSettings::refresh);
-    }
+    if (m_backend)
+        bindBackend(this, m_backend, &AppSettings::refresh);
 }
 
 void AppSettings::refresh() {
@@ -40,6 +37,16 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kAutofetch, data.toString());
     else if (token == m_autofetchMaxToken)
         applyValue(kAutofetchMax, data.toString());
+}
+
+// The stored value never came, so the compiled-in default stands. Dropping the
+// token keeps a late reply from landing on a question already asked again.
+void AppSettings::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    if (token == m_autofetchToken)
+        m_autofetchToken = -1;
+    else if (token == m_autofetchMaxToken)
+        m_autofetchMaxToken = -1;
 }
 
 void AppSettings::handleEvent(const QString &module, const QString &name,

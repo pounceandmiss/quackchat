@@ -260,6 +260,7 @@ qt_add_qml_module(quack
         backend/NotificationController.cpp backend/NotificationController.h
         backend/Notifier.h
         ${_notifier}
+        backend/BackendBinding.h
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
         backend/AppSettings.cpp backend/AppSettings.h
