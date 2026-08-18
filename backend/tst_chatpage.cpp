@@ -305,6 +305,7 @@ private slots:
     void onlyAFailedEncryptionOffersThePlaintextWayOut();
     void viewXmlShowsTheStanzaTheStoreHasRecorded();
     void onlyTheWindowThatAskedOpensTheXmlViewer();
+    void aFingerScrollsTheStanzaRatherThanSelectingIt();
     void aSheetKeepsItsPageClearOfTheSystemBars();
     void aMenuNearTheBottomOpensClearOfTheSystemBars();
     void togglingTheComposerLockChangesWhatIsSent();
@@ -1467,6 +1468,62 @@ void TestChatPage::onlyTheWindowThatAskedOpensTheXmlViewer() {
     settle();
     QCOMPARE(xmlViewerWindows(), 1);
     closeXmlViewer();
+}
+
+// A stanza is one long line, so reading it means dragging it sideways. A
+// TextArea takes that drag for a selection it then never makes, leaving the
+// view stuck; under a finger the text gives the drag up. Driven through the
+// sheet, which is the host that gets touched.
+void TestChatPage::aFingerScrollsTheStanzaRatherThanSelectingIt() {
+    const Chat chat = open("bars@example.com");
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    auto *sheet = chat.win()->findChild<QObject *>("xmlSheet");
+    QVERIFY(sheet);
+    // One line wider than the viewport, so there is somewhere to scroll to.
+    sheet->setProperty("xml", QString("<message to='a@h'>%1</message>")
+                                  .arg(QString("<body>a long way across</body>")
+                                           .repeated(20)));
+    QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+    QTRY_VERIFY(sheet->property("opened").toBool());
+
+    auto *xmlPage = chat.win()->findChild<QQuickItem *>("messageXmlPage");
+    auto *text = chat.win()->findChild<QQuickItem *>("xmlText");
+    auto *scroll = chat.win()->findChild<QQuickItem *>("xmlScroll");
+    QVERIFY(xmlPage);
+    QVERIFY(text);
+    QVERIFY(scroll);
+    auto *flick = scroll->property("contentItem").value<QQuickItem *>();
+    QVERIFY(flick);
+    QTRY_VERIFY(scroll->property("contentWidth").toReal() > scroll->width());
+
+    // A pointer keeps its selection: dragging across the words is how a line
+    // of it gets copied.
+    QCOMPARE(text->property("selectByMouse").toBool(), true);
+    QCOMPARE(text->property("activeFocusOnPress").toBool(), true);
+
+    xmlPage->setProperty("touch", true);
+    QCOMPARE(text->property("selectByMouse").toBool(), false);
+    // Nothing on this page is typed into, and on Android the software keyboard
+    // follows the focus.
+    QCOMPARE(text->property("activeFocusOnPress").toBool(), false);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint from =
+        scroll->mapToScene(QPointF(scroll->width() / 2, scroll->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, from);
+    for (int i = 1; i <= 12; ++i) {
+        // Consecutive moves are compressed in pairs, so each is sent twice.
+        const QPoint to = from - QPoint(10 * i, 0);
+        QTest::touchEvent(chat.win(), finger).move(0, to);
+        QTest::touchEvent(chat.win(), finger).move(0, to);
+    }
+    QVERIFY(flick->property("contentX").toReal() > 0);
+    QVERIFY(!text->property("activeFocus").toBool());
+    QTest::touchEvent(chat.win(), finger).release(0, from - QPoint(120, 0));
+
+    QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
 }
 
 // A sheet is parented to the overlay, past the inset the window applies to its
