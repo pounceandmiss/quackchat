@@ -376,6 +376,38 @@ class TestQmlLoad : public QObject {
     }
 
 private slots:
+    // The app's own startup, then quit with a settings window open. AppWindows
+    // holds that window, so without a teardown its bindings re-run against
+    // singletons that have already gone and the process dies inside a singleton
+    // property lookup - four runs in five, and a hang in the rest.
+    //
+    // In the app the teardown comes from Qt.application.aboutToQuit, which no
+    // test can raise without ending the whole run, so this drives closeAll()
+    // directly and leaves the hook to the one line that connects it.
+    void closingTheWindowsItHoldsSurvivesShutdown() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+
+        auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
+        QVERIFY(mgr);
+        QVariant settings;
+        QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
+                                          Q_RETURN_ARG(QVariant, settings),
+                                          Q_ARG(QVariant, QVariant("me@example.com"))));
+        QVERIFY(settings.value<QObject *>());
+        QCoreApplication::processEvents();
+
+        QPointer<QObject> held(settings.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(mgr, "closeAll"));
+        QCoreApplication::processEvents();
+        QTRY_VERIFY2(held.isNull(), "the settings window outlived closeAll()");
+
+        e.assertNoErrors();
+    }
+
     void loadsApp() {
         AppEngine e;
         // create the App singleton up front; backend stays unstarted

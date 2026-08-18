@@ -118,6 +118,23 @@ QtObject {
         }
     }
 
+    // These windows are held here rather than by the engine, so at shutdown they
+    // outlive the singletons they read: their bindings re-run against an App and
+    // a Theme that have already gone, and the process dies inside a singleton
+    // property lookup. Take them down while what they read is still there.
+    // QQmlApplicationEngine does the same for the windows it loaded itself.
+    property Connections _quit: Connections {
+        target: Qt.application
+        function onAboutToQuit() { mgr.closeAll() }
+    }
+
+    // Every window this object made. The primary shell is the engine's, not
+    // ours, and goes down with it.
+    function closeAll() {
+        for (const w of mgr._windows.slice())
+            mgr._forget(w)
+    }
+
     function _track(w) {
         if (!w)
             return null
