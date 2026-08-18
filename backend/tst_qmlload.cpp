@@ -57,11 +57,9 @@ public:
 bool isPicture(const QColor &c) {
     return c.red() > 150 && c.green() < 100 && c.blue() < 100;
 }
-// An engine that keeps the warnings it emits. A binding error - a ReferenceError,
-// a TypeError on a missing property, a layout that will not settle - fails
-// nothing by itself, so a test that never reads them back goes green over a page
-// that drew nothing. Every test drives one of these and ends by asking it what
-// it saw.
+// An engine that keeps the warnings it emits. A binding error fails nothing by
+// itself, so a test that never reads them back goes green over a page that drew
+// nothing. Every test drives one of these and ends by asking what it saw.
 template <class Base>
 class CollectingEngine : public Base {
 public:
@@ -249,9 +247,8 @@ class TestQmlLoad : public QObject {
             {"error", ""}};
     }
 
-    // Two accounts signed in, one connected and one that could not reach its
-    // server. Both enabled: a disabled account says so instead of saying what
-    // its connection is doing, which is not what the rail tests are about.
+    // Both enabled: a disabled account says so instead of saying what its
+    // connection is doing, which is not what the rail tests are about.
     static void seedTwoAccounts(AppController *app) {
         app->accounts()->applyList({"me@example.com", "alt@example.com"});
         app->accounts()->applyEnabledList({"me@example.com", "alt@example.com"});
@@ -342,9 +339,8 @@ class TestQmlLoad : public QObject {
         return w;
     }
 
-    // A joined room with one of each role, us among them as "amy": a moderator
-    // the room discloses an address for, ourselves with only a status word, and
-    // a visitor with neither.
+    // One occupant of each role, us among them as "amy". Only the moderator has
+    // an address the room discloses, and only the visitor has nothing at all.
     static MucRoomModel *joinedRoom(QQuickWindow *w) {
         auto *room = w->findChild<MucRoomModel *>();
         if (!room)
@@ -364,6 +360,19 @@ class TestQmlLoad : public QObject {
         room->applySubject("what this room is about");
         QCoreApplication::processEvents();
         return room;
+    }
+
+    // The window AppWindows hands back for a second identical request is the one
+    // it already made: a second view of the same state would argue with the
+    // first over what is on screen. Asked from inside a test that holds a page
+    // of its own - on an engine with nothing else on it, AppWindows' window is
+    // the last thing alive at teardown, and its bindings hang or crash re-reading
+    // singletons that have gone.
+    static void oneWindowNotTwo(const QVariant &first, const QVariant &again) {
+        QVERIFY(first.value<QObject *>());
+        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
+        QCoreApplication::processEvents();
     }
 
 private slots:
@@ -886,7 +895,7 @@ private slots:
     // Everything but Cancel acts on a finished file, so a transfer still
     // running offers only the way to stop it, and the other way round once it
     // is done.
-    void theAttachmentMenuOffersCancelOnlyWhileTheTransferRuns() {
+    void theAttachmentMenuFollowsTheTransfer() {
         Engine e;
         Bubbles bubbles(e);
         QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
@@ -1261,26 +1270,17 @@ private slots:
         QVERIFY(nick);
         QCOMPARE(nick->property("text").toString(), QString("Kitsunia"));
 
-        // Asking for the same account twice is one window, not two stacked on
-        // each other. This rides along here rather than standing on its own:
-        // AppWindows keeps the window it makes, and on an engine that holds
-        // nothing else it is the last thing alive on the way down - which
-        // hangs or crashes inside a singleton property lookup depending on what
-        // ran before it.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first;
         QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
                                           Q_RETURN_ARG(QVariant, first),
                                           Q_ARG(QVariant, QVariant("me@example.com"))));
-        QVERIFY(first.value<QObject *>());
         QVariant again;
         QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
                                           Q_RETURN_ARG(QVariant, again),
                                           Q_ARG(QVariant, QVariant("me@example.com"))));
-        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
-        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
-        QCoreApplication::processEvents();
+        oneWindowNotTwo(first, again);
 
         // Tear the page down inside the test rather than at the end of scope,
         // so anything its destruction logs is still collected. Note this does
@@ -1708,11 +1708,6 @@ private slots:
         // per-contact panel is the wrong place to turn it off for everyone.
         QVERIFY(!findItem(w->contentItem(), "blindTrustBox"));
 
-        // One window per contact: a second view of the same trust state would
-        // argue with the first over what is on screen. This rides along here
-        // rather than standing on its own, since AppWindows keeps the window it
-        // makes and on an engine holding nothing else it is the last thing
-        // alive on the way down.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first, again;
@@ -1720,15 +1715,11 @@ private slots:
                                           Q_ARG(QVariant, QVariant("me@example.com")),
                                           Q_ARG(QVariant, QVariant("friend@example.com")),
                                           Q_ARG(QVariant, QVariant("Friend"))));
-        QVERIFY(first.value<QObject *>());
         QVERIFY(QMetaObject::invokeMethod(mgr, "contactDetails", Q_RETURN_ARG(QVariant, again),
                                           Q_ARG(QVariant, QVariant("me@example.com")),
                                           Q_ARG(QVariant, QVariant("friend@example.com")),
                                           Q_ARG(QVariant, QVariant("Friend"))));
-        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
-
-        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
-        QCoreApplication::processEvents();
+        oneWindowNotTwo(first, again);
 
         e.assertNoErrors();
     }
@@ -1822,7 +1813,7 @@ private slots:
     // otherwise their own status text, quoted so it does not read as a word this
     // app chose. Nothing at all where there is neither - a presence word here
     // would sit beside somebody's "online" pretending to be one.
-    void eachOccupantsSecondLineIsTheirAddressOrTheirOwnWords() {
+    void occupantsShowTheirAddressOrTheirOwnWords() {
         Engine e;
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
         QScopedPointer<QObject> holder;
@@ -1830,8 +1821,7 @@ private slots:
         QVERIFY(w);
         QVERIFY(joinedRoom(w));
 
-        // Through QTRY: the rows are built on the view's next polish rather than
-        // when the occupants land.
+        // The rows arrive on the view's next polish, hence QTRY.
         QTRY_COMPARE(findItems(w->contentItem(), "occupantSecondLine").size(), 3);
         const QList<QQuickItem *> lines =
             findItems(w->contentItem(), "occupantSecondLine");
@@ -1877,8 +1867,7 @@ private slots:
         QVERIFY(w);
         QVERIFY(joinedRoom(w));
 
-        // Through QTRY: the rows are built on the view's next polish rather than
-        // when the occupants land.
+        // The rows arrive on the view's next polish, hence QTRY.
         const auto shown = [&](const QString &name) {
             int n = 0;
             for (QQuickItem *i : findItems(w->contentItem(), name))
@@ -1913,11 +1902,7 @@ private slots:
         QCoreApplication::processEvents();
         QCOMPARE(list->property("count").toInt(), 3);
 
-        // One window per room, for the same reason the contact window is one per
-        // contact: both are written from, not only read. It rides along here
-        // rather than standing on its own, since AppWindows keeps the window it
-        // makes and on an engine holding nothing else it is the last thing alive
-        // on the way down.
+        // Both details windows are written from, not only read.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first, again;
@@ -1926,15 +1911,12 @@ private slots:
             Q_ARG(QVariant, QVariant("me@example.com")),
             Q_ARG(QVariant, QVariant("room@muc.example.com?join")),
             Q_ARG(QVariant, QVariant("The Room"))));
-        QVERIFY(first.value<QObject *>());
         QVERIFY(QMetaObject::invokeMethod(
             mgr, "mucDetails", Q_RETURN_ARG(QVariant, again),
             Q_ARG(QVariant, QVariant("me@example.com")),
             Q_ARG(QVariant, QVariant("room@muc.example.com?join")),
             Q_ARG(QVariant, QVariant("The Room"))));
-        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
-        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
-        QCoreApplication::processEvents();
+        oneWindowNotTwo(first, again);
 
         e.assertNoErrors();
     }
@@ -2237,7 +2219,7 @@ private slots:
     // it out too. Whether Android's own edge gesture lets that touch through
     // before claiming it for Back is a system question no offscreen test can
     // answer - this pins the Qt half only.
-    void anEdgeDragPullsTheDrawerOutUnlessAChatHasThatEdge() {
+    void anEdgeDragPullsTheDrawerOutUnlessAChatIsOpen() {
         Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
