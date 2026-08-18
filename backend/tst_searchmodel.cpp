@@ -47,6 +47,7 @@ private slots:
     void accountWideOmitsTheChat();
     void anEmptyCursorMeansComplete();
     void failedSearchSaysSoRatherThanShowingNothing();
+    void aSearchThatErrorsOutrightStopsSpinning();
     void resultChatsAreDistinctAndOrdered();
     void snippetMarksTheRangesTackyReported();
     void snippetFlattensWithoutMovingTheRanges();
@@ -303,6 +304,30 @@ void TestSearchModel::failedSearchSaysSoRatherThanShowingNothing() {
     QVERIFY(m.failed());
     QVERIFY(m.complete()); // no cursor, so nothing to offer behind it
     // Nothing replaced them, so they would be read as this search's answer.
+    QCOMPARE(m.rowCount(), 0);
+}
+
+// The other way a search fails: not a result carrying `error`, but the request
+// itself refused or abandoned. Left unhandled the token is never let go and
+// `searching` stays true, so the view spins with nothing coming.
+void TestSearchModel::aSearchThatErrorsOutrightStopsSpinning() {
+    TackyBackend backend;
+    SearchModel m;
+    scopeTo(m, backend, "a@h");
+    m.setQuery("pizza");
+    m.search();
+    QVERIFY(m.searching());
+
+    // Through the signal, not the handler: the wiring is half the fix.
+    emit backend.error(2, QStringLiteral("Account does not exist: a@h"));
+    QVERIFY(!m.searching());
+    QVERIFY(m.failed());
+    QVERIFY(m.complete());
+    QCOMPARE(m.rowCount(), 0);
+
+    // And a late answer on that token cannot start it up again.
+    m.handleResult(2, res(R"({"messages":[{"timestamp":1,"chat_jid":"a@h"}],
+                             "complete":false,"last":"1"})"));
     QCOMPARE(m.rowCount(), 0);
 }
 

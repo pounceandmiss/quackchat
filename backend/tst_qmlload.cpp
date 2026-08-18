@@ -71,6 +71,15 @@ class TestQmlLoad : public QObject {
 
     // Repeater delegates hang off the visual tree, not the QObject one, so
     // findChild never sees them.
+    // Did a frame for this method go out, whatever else did.
+    static bool asked(const QSignalSpy &spy, const QString &module,
+                      const QString &method) {
+        for (const QList<QVariant> &call : spy)
+            if (call.at(0).toString() == module && call.at(1).toString() == method)
+                return true;
+        return false;
+    }
+
     static QQuickItem *findItem(QQuickItem *root, const QString &name) {
         if (!root)
             return nullptr;
@@ -417,17 +426,23 @@ private slots:
         QVERIFY(filter);
         QCOMPARE(filter->query(), QStringLiteral("pizza"));
 
-        // The archive is a round trip, so it comes after the pause. The
-        // backend is unstarted, so the request only ever goes out.
+        // The archive is a round trip, so it comes after the pause. The backend
+        // is unstarted, so watch the frame go out rather than the flag: an
+        // unsendable request is answered with an error at once, which is the
+        // model correctly reporting that nothing is being searched.
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
         SearchModel *model = nullptr;
         QTRY_VERIFY((model = page->findChild<SearchModel *>()));
         QCOMPARE(model->query(), QStringLiteral("pizza"));
-        QTRY_VERIFY(model->searching());
+        QTRY_VERIFY(asked(sent, "message", "search"));
 
         // And emptying the box calls it off rather than searching for nothing.
+        sent.clear();
         field->setProperty("text", "");
-        QTRY_VERIFY(!model->searching());
         QCOMPARE(filter->query(), QString());
+        QVERIFY(!asked(sent, "message", "search"));
     }
 
     // Searching inside a chat walks the hits in the feed instead of listing
@@ -468,7 +483,10 @@ private slots:
         QVERIFY(field);
         // Typing is the whole of it - nothing here presses Enter.
         field->setProperty("text", "pizza");
-        QTRY_VERIFY_WITH_TIMEOUT(model->searching(), 3000);
+        auto *engineApp = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(engineApp);
+        QSignalSpy searchSent(engineApp->backend(), &TackyBackend::sent);
+        QTRY_VERIFY_WITH_TIMEOUT(asked(searchSent, "message", "search"), 3000);
         model->applyResult(QJsonDocument::fromJson(R"({"messages":[
             {"timestamp":300,"chat_jid":"friend@example.com"},
             {"timestamp":200,"chat_jid":"friend@example.com"},

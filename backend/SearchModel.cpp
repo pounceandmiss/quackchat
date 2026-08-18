@@ -78,8 +78,10 @@ void SearchModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         m_backend->disconnect(this);
     m_backend = backend;
-    if (m_backend)
+    if (m_backend) {
         connect(m_backend, &TackyBackend::result, this, &SearchModel::handleResult);
+        connect(m_backend, &TackyBackend::error, this, &SearchModel::handleError);
+    }
     emit backendChanged();
     reset();
     askRemoteSupport();
@@ -235,6 +237,16 @@ void SearchModel::askRemoteSupport() {
                     {QStringLiteral("chat"), m_chat}});
 }
 
+// Nothing replaced them, so the rows a first page was holding on to would read
+// as its answer. A page-back keeps what it was extending.
+void SearchModel::applyFailure(bool append) {
+    if (!append)
+        clearRows();
+    m_failed = true;
+    emit failedChanged();
+    setComplete(true);
+}
+
 void SearchModel::handleResult(int token, const QVariant &data) {
     if (m_capsToken != 0 && token == m_capsToken) {
         m_capsToken = 0;
@@ -248,18 +260,39 @@ void SearchModel::handleResult(int token, const QVariant &data) {
     applyResult(data.toMap(), append);
 }
 
+// A search can fail two ways and only one of them arrives as a result: a bad
+// account, or the minute of connected time a request is given before it is
+// abandoned, come back here instead. Left unhandled they never clear `searching`
+// and the view spins for good.
+void SearchModel::handleError(int token, const QString &message) {
+    Q_UNUSED(message)
+    if (m_capsToken != 0 && token == m_capsToken) {
+        // Whether the archive can search is still unknown; leave the answer as
+        // it stands rather than claiming either way for it.
+        m_capsToken = 0;
+        return;
+    }
+    if (m_token == 0 || token != m_token)
+        return;
+    const bool append = m_appending;
+    clearInflight();
+    applyFailure(append);
+}
+
 // `error` and `unsupported` sit outside the declared JSON schema, so they come
 // over as the string "1" rather than a bool; QVariant reads either as true.
 void SearchModel::applyResult(const QVariantMap &result, bool append) {
     if (result.value(QStringLiteral("error")).toBool()) {
-        // Nothing replaced them, so the rows a first page was holding on to
-        // would read as its answer. A page-back keeps what it was extending.
-        if (!append)
-            clearRows();
-        m_failed = true;
-        emit failedChanged();
-        setComplete(true);
+        applyFailure(append);
         return;
+    }
+
+    // A page that lands is the search working, so it cannot still be the one
+    // that failed. Ordinarily forgetPage() has already cleared this, but a
+    // result arriving after a failure must not leave both standing.
+    if (m_failed) {
+        m_failed = false;
+        emit failedChanged();
     }
 
     const QVariantList messages = result.value(QStringLiteral("messages")).toList();

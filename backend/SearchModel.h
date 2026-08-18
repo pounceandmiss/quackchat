@@ -100,6 +100,7 @@ public:
 
     // Routing and transforms are public so tests can drive them with canned data.
     void handleResult(int token, const QVariant &data);
+    void handleError(int token, const QString &message);
     void applyResult(const QVariantMap &result, bool append);
 
 signals:
@@ -126,6 +127,8 @@ private:
     void clearRows();  // the results alone
     void forgetPage(); // everything describing them alone
     void askRemoteSupport();
+    // The rows a failed search leaves behind, and the flags that say so.
+    void applyFailure(bool append);
     void setComplete(bool v);
     void setRemoteAvailable(bool v);
     void rebuildResultChats();
