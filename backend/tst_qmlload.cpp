@@ -170,6 +170,84 @@ class TestQmlLoad : public QObject {
                                    QRectF(0, 0, item->width(), item->height()));
     }
 
+    // A window with a ChatBubble component ready to build, and a real 24x12
+    // thumbnail on disk. The '#' in the directory is why the model hands over a
+    // url and not a path - "file:" concatenated onto this one loses everything
+    // after it.
+    class Bubbles {
+    public:
+        explicit Bubbles(QQmlEngine &e) : m_comp(&e, "Quack", "ChatBubble") {
+            if (!m_dir.isValid() || !QDir(m_dir.path()).mkdir("od#d")) {
+                m_error = QStringLiteral("no temporary directory to work in");
+                return;
+            }
+            m_thumb = m_dir.filePath("od#d/a_320.png");
+            QImage png(24, 12, QImage::Format_RGB32);
+            png.fill(Qt::red);
+            if (!png.save(m_thumb)) {
+                m_error = "could not write " + m_thumb;
+                return;
+            }
+            m_win.resize(500, 400);
+            m_win.show();
+            if (!QTest::qWaitForWindowExposed(&m_win)) {
+                m_error = QStringLiteral("the window never appeared");
+                return;
+            }
+            if (!m_comp.isReady())
+                m_error = m_comp.errorString();
+        }
+
+        QString error() const { return m_error; }
+        QString thumbPath() const { return m_thumb; }
+
+        // Width up front: the bubble sizes itself off its parent, and one built
+        // parentless would fall back to measuring its own content instead.
+        QQuickItem *with(const QVariantMap &att) {
+            auto *item = qobject_cast<QQuickItem *>(m_comp.createWithInitialProperties(
+                {{"attachments", QVariantList{att}},
+                 {"text", ""},
+                 {"width", m_win.width()}}));
+            if (item)
+                item->setParentItem(m_win.contentItem());
+            return item;
+        }
+
+        void tap(QQuickItem *target) {
+            const QPoint p = m_win.contentItem()
+                                 ->mapFromItem(target, QPointF(target->width() / 2,
+                                                               target->height() / 2))
+                                 .toPoint();
+            QTest::mouseClick(&m_win, Qt::LeftButton, Qt::NoModifier, p);
+        }
+
+    private:
+        QTemporaryDir m_dir;
+        QQuickWindow m_win;
+        QQmlComponent m_comp;
+        QString m_thumb;
+        QString m_error;
+    };
+
+    // As ChatModel hands them over: what the message said, merged with the
+    // state of the transfer.
+    static QVariantMap attachment(const QString &type, const QString &name,
+                                  const QString &thumb, const QString &state) {
+        return QVariantMap{
+            {"url", "https://h/" + name},
+            {"type", type},
+            {"name", name},
+            {"size", 2048},
+            {"mime", ""},
+            {"state", state},
+            // What the hint and the retry are worded from.
+            {"direction", state.isEmpty() ? QString() : QStringLiteral("download")},
+            {"loaded", 0},
+            {"total", 0},
+            {"localpath", ""},
+            {"thumburl", thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
+            {"error", ""}};
+    }
 
 private slots:
     void loadsApp() {
@@ -535,215 +613,198 @@ private slots:
 
     // The bubble decides, from the attachment alone, whether a tap opens the
     // file or has to fetch it first - the same rule the Tk client draws on.
-    void drawsAttachments() {
+    void aDownloadedImageDrawsItsThumbnailAndOpensOnATap() {
         Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
 
-        // A real file on disk: the thumbnail's size is the decoded image's.
-        // The '#' in the directory is why the model hands over a url and not a
-        // path - "file:" concatenated onto this one loses everything after it.
-        QTemporaryDir dir;
-        QVERIFY(dir.isValid());
-        QVERIFY(QDir(dir.path()).mkdir("od#d"));
-        const QString thumbPath = dir.filePath("od#d/a_320.png");
-        QImage png(24, 12, QImage::Format_RGB32);
-        png.fill(Qt::red);
-        QVERIFY(png.save(thumbPath));
+        QScopedPointer<QQuickItem> b(
+            bubbles.with(attachment("image", "a.png", bubbles.thumbPath(), "done")));
+        QVERIFY(!b.isNull());
+        QQuickItem *thumb = findItem(b.data(), "attachmentThumb");
+        QQuickItem *chip = findItem(b.data(), "attachmentChip");
+        QVERIFY(thumb);
+        QVERIFY(chip);
+        QVERIFY(thumb->isVisible());
+        QVERIFY(!chip->isVisible());
+        QTRY_VERIFY(thumb->width() > 0);
+        QCOMPARE(thumb->height() / thumb->width(), 0.5); // 24x12, kept
 
-        QQuickWindow win;
-        win.resize(500, 400);
-        win.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&win));
+        QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
+        QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+        bubbles.tap(thumb);
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.first().at(0).toInt(), 0);
+        QCOMPARE(loaded.count(), 0);
 
-        QQmlComponent comp(&e, "Quack", "ChatBubble");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        e.assertNoErrors();
+    }
 
-        // As ChatModel hands them over: what the message said, merged with the
-        // state of the transfer.
-        auto attachment = [](const QString &type, const QString &name,
-                             const QString &thumb, const QString &state) {
-            return QVariantMap{
-                {"url", "https://h/" + name},
-                {"type", type},
-                {"name", name},
-                {"size", 2048},
-                {"mime", ""},
-                {"state", state},
-                // What the hint and the retry are worded from.
-                {"direction", state.isEmpty() ? QString() : QStringLiteral("download")},
-                {"loaded", 0},
-                {"total", 0},
-                {"localpath", ""},
-                {"thumburl", thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb)},
-                {"error", ""}};
+    // One nobody has fetched yet is a chip, and a tap fetches it.
+    void anUnfetchedImageIsAChipThatFetches() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(
+            bubbles.with(attachment("image", "b.png", "", "")));
+        QVERIFY(!b.isNull());
+        QQuickItem *chip = findItem(b.data(), "attachmentChip");
+        QVERIFY(chip);
+        QVERIFY(chip->isVisible());
+        QVERIFY(!findItem(b.data(), "attachmentThumb")->isVisible());
+
+        QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
+        QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+        bubbles.tap(chip);
+        QCOMPARE(loaded.count(), 1);
+        QCOMPARE(opened.count(), 0);
+
+        e.assertNoErrors();
+    }
+
+    // A plain file has no thumbnail to wait for: its tap opens, which downloads
+    // first if it has to.
+    void aPlainFileOpensOnATapAndSaysItsSize() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(
+            bubbles.with(attachment("file", "doc.pdf", "", "")));
+        QVERIFY(!b.isNull());
+        QQuickItem *chip = findItem(b.data(), "attachmentChip");
+        QVERIFY(chip);
+        QVERIFY(chip->isVisible());
+
+        QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
+        bubbles.tap(chip);
+        QCOMPARE(opened.count(), 1);
+
+        QVariant size;
+        QVERIFY(QMetaObject::invokeMethod(b.data(), "fmtSize",
+                                          Q_RETURN_ARG(QVariant, size),
+                                          Q_ARG(QVariant, 2048)));
+        QCOMPARE(size.toString(), QString("2.0 KB"));
+
+        e.assertNoErrors();
+    }
+
+    // An image tacky held back, capped or cancelled ends `idle`: nothing on
+    // disk and no error to report, so it draws the same tap-to-load chip as one
+    // nobody has asked for.
+    void aHeldBackImageDrawsTheTapToLoadChip() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(
+            bubbles.with(attachment("image", "d.png", "", "idle")));
+        QVERIFY(!b.isNull());
+        QQuickItem *chip = findItem(b.data(), "attachmentChip");
+        QVERIFY(chip);
+        QVERIFY(chip->isVisible());
+        QVERIFY(!findItem(b.data(), "attachmentProgress")->isVisible());
+
+        QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+        bubbles.tap(chip);
+        QCOMPARE(loaded.count(), 1);
+
+        e.assertNoErrors();
+    }
+
+    void aFailedTransferRetriesInsteadOfOpeningNothing() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(
+            bubbles.with(attachment("file", "doc.pdf", "", "failed")));
+        QVERIFY(!b.isNull());
+        QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
+        bubbles.tap(findItem(b.data(), "attachmentChip"));
+        QCOMPARE(loaded.count(), 1);
+
+        e.assertNoErrors();
+    }
+
+    // Our own share on its way out: the same bar as a download, worded for the
+    // direction, and the picture stays up while its bytes go.
+    void anOutgoingShareKeepsItsPictureUpWhileItSends() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QVariantMap up = attachment("image", "e.png", bubbles.thumbPath(), "active");
+        up["direction"] = "upload";
+        up["loaded"] = 50;
+        up["total"] = 100;
+        QScopedPointer<QQuickItem> b(bubbles.with(up));
+        QVERIFY(!b.isNull());
+        QVERIFY(findItem(b.data(), "attachmentThumb")->isVisible());
+        QVERIFY(findItem(b.data(), "attachmentProgress")->isVisible());
+        QCOMPARE(findItem(b.data(), "attachmentHint")->property("text").toString(),
+                 QString("Uploading…"));
+
+        e.assertNoErrors();
+    }
+
+    // With no message from tacky to show, it still has to say which half of the
+    // trip failed.
+    void aFailedUploadSaysWhichHalfOfTheTripFailed() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QVariantMap up = attachment("file", "doc.pdf", "", "failed");
+        up["direction"] = "upload";
+        QScopedPointer<QQuickItem> b(bubbles.with(up));
+        QVERIFY(!b.isNull());
+        QCOMPARE(findItem(b.data(), "attachmentHint")->property("text").toString(),
+                 QString("Upload failed"));
+
+        e.assertNoErrors();
+    }
+
+    // Everything but Cancel acts on a finished file, so a transfer still
+    // running offers only the way to stop it, and the other way round once it
+    // is done.
+    void theAttachmentMenuOffersCancelOnlyWhileTheTransferRuns() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(
+            bubbles.with(attachment("file", "doc.pdf", "", "done")));
+        QVERIFY(!b.isNull());
+        QObject *menu = b->findChild<QObject *>("attachmentMenu");
+        QVERIFY(menu);
+        auto offered = [&](const char *name) {
+            QObject *o = menu->findChild<QObject *>(QLatin1String(name));
+            return o && o->property("offered").toBool();
         };
-        // Width up front: the bubble sizes itself off its parent, and one built
-        // parentless would fall back to measuring its own content instead.
-        auto bubbleWith = [&](const QVariantMap &att) {
-            auto *item = qobject_cast<QQuickItem *>(comp.createWithInitialProperties(
-                {{"attachments", QVariantList{att}},
-                 {"text", ""},
-                 {"width", win.width()}}));
-            if (item)
-                item->setParentItem(win.contentItem());
-            return item;
-        };
-        auto tap = [&](QQuickItem *target) {
-            const QPoint p = win.contentItem()
-                                 ->mapFromItem(target, QPointF(target->width() / 2,
-                                                               target->height() / 2))
-                                 .toPoint();
-            QTest::mouseClick(&win, Qt::LeftButton, Qt::NoModifier, p);
-        };
 
-        // A downloaded image draws its thumbnail, and a tap opens it.
-        {
-            QScopedPointer<QQuickItem> b(
-                bubbleWith(attachment("image", "a.png", thumbPath, "done")));
-            QVERIFY(!b.isNull());
-            QQuickItem *thumb = findItem(b.data(), "attachmentThumb");
-            QQuickItem *chip = findItem(b.data(), "attachmentChip");
-            QVERIFY(thumb);
-            QVERIFY(chip);
-            QVERIFY(thumb->isVisible());
-            QVERIFY(!chip->isVisible());
-            QTRY_VERIFY(thumb->width() > 0);
-            QCOMPARE(thumb->height() / thumb->width(), 0.5); // 24x12, kept
+        QVariantMap busy = attachment("file", "doc.pdf", "", "active");
+        QVERIFY(QMetaObject::invokeMethod(menu, "openFor", Q_ARG(QVariant, 0),
+                                          Q_ARG(QVariant, QVariant(busy))));
+        QVERIFY(offered("attachmentCancelEntry"));
+        QVERIFY(!offered("attachmentSaveEntry"));
+        QVERIFY(!offered("attachmentUncacheEntry"));
 
-            QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
-            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
-            tap(thumb);
-            QCOMPARE(opened.count(), 1);
-            QCOMPARE(opened.first().at(0).toInt(), 0);
-            QCOMPARE(loaded.count(), 0);
-        }
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "openFor", Q_ARG(QVariant, 0),
+            Q_ARG(QVariant, QVariant(attachment("file", "doc.pdf", "", "done")))));
+        QVERIFY(!offered("attachmentCancelEntry"));
+        QVERIFY(offered("attachmentSaveEntry"));
+        QVERIFY(offered("attachmentFolderEntry"));
+        QVERIFY(offered("attachmentUncacheEntry"));
 
-        // One nobody has fetched yet is a chip, and a tap fetches it.
-        {
-            QScopedPointer<QQuickItem> b(
-                bubbleWith(attachment("image", "b.png", "", "")));
-            QVERIFY(!b.isNull());
-            QQuickItem *chip = findItem(b.data(), "attachmentChip");
-            QVERIFY(chip);
-            QVERIFY(chip->isVisible());
-            QVERIFY(!findItem(b.data(), "attachmentThumb")->isVisible());
-
-            QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
-            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
-            tap(chip);
-            QCOMPARE(loaded.count(), 1);
-            QCOMPARE(opened.count(), 0);
-        }
-
-        // A plain file has no thumbnail to wait for: its tap opens, which
-        // downloads first if it has to.
-        {
-            QScopedPointer<QQuickItem> b(
-                bubbleWith(attachment("file", "doc.pdf", "", "")));
-            QVERIFY(!b.isNull());
-            QQuickItem *chip = findItem(b.data(), "attachmentChip");
-            QVERIFY(chip);
-            QVERIFY(chip->isVisible());
-
-            QSignalSpy opened(b.data(), SIGNAL(attachmentOpenRequested(int)));
-            tap(chip);
-            QCOMPARE(opened.count(), 1);
-
-            QVariant size;
-            QVERIFY(QMetaObject::invokeMethod(b.data(), "fmtSize",
-                                              Q_RETURN_ARG(QVariant, size),
-                                              Q_ARG(QVariant, 2048)));
-            QCOMPARE(size.toString(), QString("2.0 KB"));
-        }
-
-        // An image tacky held back, capped or cancelled ends `idle`: nothing on
-        // disk and no error to report, so it draws the same tap-to-load chip as
-        // one nobody has asked for.
-        {
-            QScopedPointer<QQuickItem> b(
-                bubbleWith(attachment("image", "d.png", "", "idle")));
-            QVERIFY(!b.isNull());
-            QQuickItem *chip = findItem(b.data(), "attachmentChip");
-            QVERIFY(chip);
-            QVERIFY(chip->isVisible());
-            QVERIFY(!findItem(b.data(), "attachmentProgress")->isVisible());
-
-            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
-            tap(chip);
-            QCOMPARE(loaded.count(), 1);
-        }
-
-        // A failed transfer retries rather than opening nothing.
-        {
-            QScopedPointer<QQuickItem> b(
-                bubbleWith(attachment("file", "doc.pdf", "", "failed")));
-            QVERIFY(!b.isNull());
-            QSignalSpy loaded(b.data(), SIGNAL(attachmentLoadRequested(int)));
-            tap(findItem(b.data(), "attachmentChip"));
-            QCOMPARE(loaded.count(), 1);
-        }
-
-        // Our own share on its way out: the same bar as a download, worded for
-        // the direction, and the picture stays up while its bytes go.
-        {
-            QVariantMap up = attachment("image", "e.png", thumbPath, "active");
-            up["direction"] = "upload";
-            up["loaded"] = 50;
-            up["total"] = 100;
-            QScopedPointer<QQuickItem> b(bubbleWith(up));
-            QVERIFY(!b.isNull());
-            QVERIFY(findItem(b.data(), "attachmentThumb")->isVisible());
-            QVERIFY(findItem(b.data(), "attachmentProgress")->isVisible());
-            QCOMPARE(findItem(b.data(), "attachmentHint")->property("text").toString(),
-                     QString("Uploading…"));
-        }
-
-        // With no message from tacky to show, it still has to say which half of
-        // the trip failed.
-        {
-            QVariantMap up = attachment("file", "doc.pdf", "", "failed");
-            up["direction"] = "upload";
-            QScopedPointer<QQuickItem> b(bubbleWith(up));
-            QVERIFY(!b.isNull());
-            QCOMPARE(findItem(b.data(), "attachmentHint")->property("text").toString(),
-                     QString("Upload failed"));
-        }
-
-        // Everything but Cancel acts on a finished file, so a transfer still
-        // running offers only the way to stop it, and the other way round once
-        // it is done.
-        {
-            QScopedPointer<QQuickItem> b(
-                bubbleWith(attachment("file", "doc.pdf", "", "done")));
-            QVERIFY(!b.isNull());
-            QObject *menu = b->findChild<QObject *>("attachmentMenu");
-            QVERIFY(menu);
-            auto offered = [&](const char *name) {
-                QObject *o = menu->findChild<QObject *>(QLatin1String(name));
-                return o && o->property("offered").toBool();
-            };
-
-            QVariantMap busy = attachment("file", "doc.pdf", "", "active");
-            QVERIFY(QMetaObject::invokeMethod(menu, "openFor", Q_ARG(QVariant, 0),
-                                              Q_ARG(QVariant, QVariant(busy))));
-            QVERIFY(offered("attachmentCancelEntry"));
-            QVERIFY(!offered("attachmentSaveEntry"));
-            QVERIFY(!offered("attachmentUncacheEntry"));
-
-            QVERIFY(QMetaObject::invokeMethod(
-                menu, "openFor", Q_ARG(QVariant, 0),
-                Q_ARG(QVariant, QVariant(attachment("file", "doc.pdf", "", "done")))));
-            QVERIFY(!offered("attachmentCancelEntry"));
-            QVERIFY(offered("attachmentSaveEntry"));
-            QVERIFY(offered("attachmentFolderEntry"));
-            QVERIFY(offered("attachmentUncacheEntry"));
-
-            // And each one asks the page for the attachment it was opened on.
-            QSignalSpy save(b.data(), SIGNAL(attachmentSaveRequested(int)));
-            QVERIFY(QMetaObject::invokeMethod(
-                menu->findChild<QObject *>("attachmentSaveEntry"), "triggered"));
-            QCOMPARE(save.count(), 1);
-            QCOMPARE(save.first().at(0).toInt(), 0);
-        }
+        // And each one asks the page for the attachment it was opened on.
+        QSignalSpy save(b.data(), SIGNAL(attachmentSaveRequested(int)));
+        QVERIFY(QMetaObject::invokeMethod(
+            menu->findChild<QObject *>("attachmentSaveEntry"), "triggered"));
+        QCOMPARE(save.count(), 1);
+        QCOMPARE(save.first().at(0).toInt(), 0);
 
         e.assertNoErrors();
     }
@@ -1083,6 +1144,27 @@ private slots:
         QVERIFY(nick);
         QCOMPARE(nick->property("text").toString(), QString("Kitsunia"));
 
+        // Asking for the same account twice is one window, not two stacked on
+        // each other. This rides along here rather than standing on its own:
+        // AppWindows keeps the window it makes, and on an engine that holds
+        // nothing else it is the last thing alive on the way down - which
+        // hangs or crashes inside a singleton property lookup depending on what
+        // ran before it.
+        auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
+        QVERIFY(mgr);
+        QVariant first;
+        QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
+                                          Q_RETURN_ARG(QVariant, first),
+                                          Q_ARG(QVariant, QVariant("me@example.com"))));
+        QVERIFY(first.value<QObject *>());
+        QVariant again;
+        QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
+                                          Q_RETURN_ARG(QVariant, again),
+                                          Q_ARG(QVariant, QVariant("me@example.com"))));
+        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
+        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
+        QCoreApplication::processEvents();
+
         // Tear the page down inside the test rather than at the end of scope,
         // so anything its destruction logs is still collected. Note this does
         // not reproduce the delegate teardown seen in the running app.
@@ -1332,35 +1414,6 @@ private slots:
     }
 
     // The same account twice is one window, not two stacked on each other.
-    void oneAccountHasOneSettingsWindow() {
-        Engine e;
-        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
-        auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
-        QVERIFY(mgr);
-
-        QVariant first;
-        QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
-                                          Q_RETURN_ARG(QVariant, first),
-                                          Q_ARG(QVariant, QVariant("me@example.com"))));
-        QVERIFY(first.value<QObject *>());
-        QVariant again;
-        QVERIFY(QMetaObject::invokeMethod(mgr, "accountSettings",
-                                          Q_RETURN_ARG(QVariant, again),
-                                          Q_ARG(QVariant, QVariant("me@example.com"))));
-        QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
-
-        // Closing only hides it, and AppWindows goes on holding it. Left alive
-        // it outlives the engine's singletons and re-evaluates its bindings
-        // against them on the way down, which segfaults inside a singleton
-        // property lookup. Take it down here, while what it reads is still
-        // there.
-        QVERIFY(QMetaObject::invokeMethod(first.value<QObject *>(), "close"));
-        QCoreApplication::processEvents();
-        first.value<QObject *>()->deleteLater();
-        QCoreApplication::processEvents();
-
-        e.assertNoErrors();
-    }
 
     // Call windows are never asked for: they follow a CallsModel row, with the
     // roles arriving as the delegate's required properties. This is the part
