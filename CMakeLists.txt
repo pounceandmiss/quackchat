@@ -40,8 +40,10 @@ endif()
 qt_standard_project_setup(REQUIRES 6.5)
 
 # tacky has its own (non-CMake) make, so we find what it drops in <root>/dist
-# instead of building it. Point at a checkout with -DTACKY_ROOT=<dir> or
-# $TACKY_ROOT, or name the archive itself with -DTACKY_LIB=<file>.
+# instead of building it. Normally that is the third_party/tacky submodule,
+# which is where the commit this GUI is built against is pinned; a checkout
+# elsewhere is named with -DTACKY_ROOT=<dir> or $TACKY_ROOT, or the archive
+# itself with -DTACKY_LIB=<file>.
 if(ANDROID)
     # bionic arm64 archive; tacky builds it in Docker via `make android-lib`
     set(_tacky_lib_file libtacky-android.a)
@@ -101,8 +103,11 @@ if(NOT TACKY_LIB OR NOT EXISTS "${TACKY_LIB}"
     message(FATAL_ERROR
         "tacky not found (need embed/tacky.h and dist/${_tacky_lib_file}).\n"
         "Searched:\n    ${_tacky_searched}\n"
-        "Build it with `make ${_tacky_make}` in a tacky checkout, then either "
-        "pass -DTACKY_ROOT=<checkout> or set $TACKY_ROOT.")
+        "For the submodule:\n"
+        "    git submodule update --init --recursive\n"
+        "    make -C third_party/tacky ${_tacky_make}\n"
+        "An empty third_party/tacky means the clone missed --recurse-submodules; "
+        "a checkout elsewhere is named with -DTACKY_ROOT=<checkout> or $TACKY_ROOT.")
 endif()
 
 # Rebuilding tacky without leaving the IDE. Nothing depends on this.
