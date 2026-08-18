@@ -15,6 +15,10 @@ Page {
     // The laid-out stanza. Empty for a message that never had one built.
     property string xml: ""
     property bool showClose: true
+    // Read with a finger rather than a pointer, which is what the TextArea
+    // below hands the drag over for. The platform is as much as the page can
+    // tell from here.
+    property bool touch: Theme.mobile
     readonly property bool hasXml: xml !== ""
     signal done
 
@@ -66,6 +70,7 @@ Page {
     // Unwrapped and scrolled both ways: the line breaks are the structure, and
     // folding a long one would read as a break the stanza does not have.
     ScrollView {
+        objectName: "xmlScroll"
         anchors.fill: parent
         anchors.margins: 12
         clip: true
@@ -78,7 +83,14 @@ Page {
                               : "No stanza recorded for this message."
             color: page.hasXml ? Theme.textPrimary : Theme.textDim
             readOnly: true
-            selectByMouse: true
+            // A finger drag over a TextArea that selects by mouse is taken
+            // for a selection, so it never reaches the flick underneath - and
+            // it selects nothing anyway, touch selection going through the
+            // handles. The press takes the focus too, which on Android brings
+            // the keyboard up over a page with nothing to type into. So to a
+            // finger this is text to scroll, and Copy is in the header.
+            selectByMouse: !page.touch
+            activeFocusOnPress: !page.touch
             wrapMode: TextArea.NoWrap
             font.family: "monospace"
             font.pixelSize: 12

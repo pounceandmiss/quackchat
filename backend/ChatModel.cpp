@@ -97,15 +97,20 @@ QVariantMap ChatModel::attachmentAt(qlonglong ts, int idx) const {
     return atts.at(idx).toMap();
 }
 
-// Every message tacky sends carries its stanza, so this reads the row rather
-// than asking the backend a second time. Laid out on the way past, as
-// MarkupRole hands over a body the view can draw as it stands.
-QString ChatModel::rawXml(qlonglong ts) const {
-    const int row = indexOfTs(ts);
-    if (row < 0)
-        return {};
-    return formatMessageXml(
-        m_msgs.at(row).value(QStringLiteral("raw_xml")).toString());
+// The row carries a stanza too, but only the one it arrived with: an upload is
+// stored before there is anything to send, as is a send parked until OMEMO is
+// ready, and tacky fills the stanza in later without re-emitting the row. So
+// the viewer reads the store, which the Tk client's viewer does too.
+int ChatModel::requestRawXml(qlonglong ts) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return 0;
+    const int tok = m_backend->request(
+        QStringLiteral("message"), QStringLiteral("rawxml"),
+        QVariantMap{{QStringLiteral("acc"), m_account},
+                    {QStringLiteral("chat"), m_chat},
+                    {QStringLiteral("timestamp"), ts}});
+    m_xmlPending.insert(tok);
+    return tok;
 }
 
 int ChatModel::rowCount(const QModelIndex &parent) const {
@@ -318,6 +323,8 @@ void ChatModel::reload() {
     m_xfer.clear();
     m_upload.clear();
     m_pendingAction.clear();
+    // A viewer opens on the reply, and this is no longer the chat that asked.
+    m_xmlPending.clear();
     setAtTail(true);
     // Any open bracket belonged to the previous chat; the new one's own
     // <CatchupStarted> re-raises the flag if a sync is running for it.
@@ -586,6 +593,12 @@ void ChatModel::handleError(int token, const QString &message) {
     // the file is told the same either way.
     if (m_pendingAction.contains(token)) {
         finishAction(m_pendingAction.take(token), {});
+        return;
+    }
+    // The tap has to end in a viewer either way, and an empty one says the only
+    // thing still true: nothing was read.
+    if (m_xmlPending.remove(token)) {
+        emit rawXmlReady(token, {});
         return;
     }
     const QString dir = m_pending.take(token);
@@ -950,6 +963,12 @@ void ChatModel::reconcileCatchup() {
 void ChatModel::handleResult(int token, const QVariant &data) {
     if (m_pendingAction.contains(token)) {
         finishAction(m_pendingAction.take(token), data.toString());
+        return;
+    }
+    // Laid out here: the store keeps a stanza on one line, and the viewer draws
+    // what it is handed.
+    if (m_xmlPending.remove(token)) {
+        emit rawXmlReady(token, formatMessageXml(data.toString()));
         return;
     }
     if (!m_pending.contains(token))

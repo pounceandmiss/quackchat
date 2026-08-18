@@ -108,7 +108,7 @@ private slots:
     void catchupBracketMatching();
     void catchupReconcileRepages();
     void catchupReconcileReloadsEmptyWindow();
-    void rawXmlComesStraightOffTheRow();
+    void rawXmlIsAskedOfTheStore();
     void xmlIsLaidOutOneElementPerLine();
     void unparseableXmlIsShownAsItIs();
 };
@@ -1512,21 +1512,58 @@ void TestChatModel::revealAnswersTheFolderTheFileIsIn() {
     QVERIFY(folder.takeFirst().at(0).toUrl().isEmpty());
 }
 
-// tacky ships the stanza with the message, so the viewer needs no round trip -
-// and a row without one answers plainly empty rather than failing.
-void TestChatModel::rawXmlComesStraightOffTheRow() {
+// The row's stanza is the one it arrived with, and tacky fills the store in
+// afterwards for an upload or a parked send without saying so - so the viewer
+// asks, and lays out what comes back.
+void TestChatModel::rawXmlIsAskedOfTheStore() {
+    TackyBackend backend;
     ChatModel m;
-    m.applyBatch(msgs(R"([
-        {"timestamp":100,"raw_xml":"<message to='a@h'><body>hi</body></message>"},
-        {"timestamp":200,"raw_xml":""},
-        {"timestamp":300}
-    ])"));
-    QCOMPARE(m.rawXml(100), QString("<message to=\"a@h\">\n  <body>hi</body>\n</message>"));
-    // Never wired, so nothing was ever built for it.
-    QCOMPARE(m.rawXml(200), QString());
-    // And a row whose map carries no such key at all.
-    QCOMPARE(m.rawXml(300), QString());
-    QCOMPARE(m.rawXml(999), QString());
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h"); // token 1
+    // Stored before its file went up, so the row is carrying nothing.
+    m.applyBatch(msgs(R"([{"timestamp":100,"raw_xml":""}])"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    QSignalSpy ready(&m, &ChatModel::rawXmlReady);
+    QCOMPARE(m.requestRawXml(100), 2);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(1).toString(), QString("rawxml"));
+    const QVariantMap args = sent.first().at(2).toMap();
+    QCOMPARE(args.value("chat").toString(), QString("a@h"));
+    QCOMPARE(args.value("timestamp").toLongLong(), 100LL);
+    // Nothing to show until the store answers.
+    QCOMPARE(ready.count(), 0);
+
+    m.handleResult(2, QVariant(QString("<message to='a@h'><body>hi</body></message>")));
+    QCOMPARE(ready.count(), 1);
+    QCOMPARE(ready.first().at(0).toInt(), 2); // under the token that asked
+    QCOMPARE(ready.takeFirst().at(1).toString(),
+             QString("<message to=\"a@h\">\n  <body>hi</body>\n</message>"));
+
+    // A message that never had a stanza built answers empty.
+    QCOMPARE(m.requestRawXml(100), 3);
+    m.handleResult(3, QVariant(QString()));
+    QCOMPARE(ready.count(), 1);
+    QVERIFY(ready.takeFirst().at(1).toString().isEmpty());
+
+    // And so does a request the backend refuses.
+    QCOMPARE(m.requestRawXml(100), 4);
+    m.handleError(4, QStringLiteral("no such account"));
+    QCOMPARE(ready.count(), 1);
+    QVERIFY(ready.takeFirst().at(1).toString().isEmpty());
+
+    // A late answer to a request the chat switch dropped opens nothing.
+    QCOMPARE(m.requestRawXml(100), 5);
+    m.setChat("b@h");
+    m.handleResult(5, QVariant(QString("<message to='a@h'/>")));
+    QCOMPARE(ready.count(), 0);
+
+    // No backend, no token - and nothing for an answer to arrive on.
+    ChatModel bare;
+    QSignalSpy bareReady(&bare, &ChatModel::rawXmlReady);
+    QCOMPARE(bare.requestRawXml(100), 0);
+    QCOMPARE(bareReady.count(), 0);
 }
 
 // tacky stores the stanza on one line, unreadable at message length. Past the

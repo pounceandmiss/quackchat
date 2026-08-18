@@ -121,16 +121,27 @@ Page {
     }
 
     // One message's stanza, hosted the two ways openContact hosts the contact.
-    // The text is handed over rather than bound, so the viewer keeps showing
-    // the row as it stood when it was asked for.
+    // The stanza has to be asked for, so the viewer opens on the answer rather
+    // than on the tap; the token is which answer is ours, since a second window
+    // on this chat listens to the same model.
+    property int xmlToken: 0
+
     function viewXml(ts) {
-        const xml = page.chatModel.rawXml(ts)
+        page.xmlToken = page.chatModel ? page.chatModel.requestRawXml(ts) : 0
+        // Nothing was asked, and the tap still has to end in a viewer.
+        if (page.xmlToken === 0)
+            page.showXml("")
+    }
+
+    // The text is handed over rather than bound, so the viewer keeps showing
+    // the stanza as it stood when it was asked for.
+    function showXml(xml) {
         if (Theme.mobile) {
             xmlSheet.xml = xml
             xmlSheet.open()
-            return null
+            return
         }
-        return AppWindows.messageXml(xml)
+        AppWindows.messageXml(xml)
     }
 
     // Same contract as closeContact.
@@ -335,6 +346,12 @@ Page {
             page.highlightTs = ts
             highlightFade.restart()
             Qt.callLater(page.scrollToHighlight)
+        }
+        function onRawXmlReady(token, xml) {
+            if (token !== page.xmlToken) // another window's viewer
+                return
+            page.xmlToken = 0
+            page.showXml(xml)
         }
         // The model resolved an attachment to a file on disk; handing it to the
         // desktop is the one part of opening it that has to happen up here.

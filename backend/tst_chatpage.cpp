@@ -200,6 +200,16 @@ class TestChatPage : public QObject {
         return win ? win->findChild<QObject *>("messageXmlPage") : nullptr;
     }
 
+    // Not that a viewer opened, but that exactly one did.
+    static int xmlViewerWindows() {
+        int n = 0;
+        const QWindowList windows = QGuiApplication::topLevelWindows();
+        for (QWindow *w : windows)
+            if (w->objectName() == QLatin1String("messageXmlWindow"))
+                ++n;
+        return n;
+    }
+
     static void closeXmlViewer() {
         if (QQuickWindow *win = xmlViewerWindow())
             win->close();
@@ -293,7 +303,8 @@ private slots:
     void aTouchTapOnTheLockOnlyFlipsIt();
     void resendGatingFollowsTheRow();
     void onlyAFailedEncryptionOffersThePlaintextWayOut();
-    void viewXmlShowsTheStanzaTheRowCameWith();
+    void viewXmlShowsTheStanzaTheStoreHasRecorded();
+    void onlyTheWindowThatAskedOpensTheXmlViewer();
     void aSheetKeepsItsPageClearOfTheSystemBars();
     void aMenuNearTheBottomOpensClearOfTheSystemBars();
     void togglingTheComposerLockChangesWhatIsSent();
@@ -357,6 +368,10 @@ void TestChatPage::initTestCase() {
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "xml@example.com"},
                                          {"body", "look at my stanza"}});
+    m_app->backend()->notify("message", "send",
+                             QVariantMap{{"acc", kAcc},
+                                         {"chat", "twoxml@example.com"},
+                                         {"body", "looked at from two windows"}});
     m_app->backend()->notify("message", "send",
                              QVariantMap{{"acc", kAcc},
                                          {"chat", "bars@example.com"},
@@ -1366,27 +1381,15 @@ void TestChatPage::onlyAFailedEncryptionOffersThePlaintextWayOut() {
     QVERIFY(retry->height() > 0.0);
 }
 
-// The menu hands over the stanza the row is carrying, laid out. This runs on a
-// desktop, so the menu opens a window; the sheet that hosts the same page on
-// mobile is driven directly at the end, Theme.mobile not being forceable here.
-void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
+// The menu asks tacky for the stanza and the viewer opens on the answer. This
+// runs on a desktop, so the menu opens a window; the sheet that hosts the same
+// page on mobile is driven directly at the end, Theme.mobile not being
+// forceable here.
+void TestChatPage::viewXmlShowsTheStanzaTheStoreHasRecorded() {
     const Chat chat = open("xml@example.com");
     QVERIFY(chat.feed);
     QVERIFY(chat.win());
     QTRY_COMPARE(chat.count(), 1);
-    ChatModel *model = chat.model();
-    const qlonglong ts =
-        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
-
-    // Nothing here reaches a server, so the seeded row was never wired and has
-    // no stanza. Patching one in is the only way to give it one, and the row is
-    // where the viewer reads it from either way.
-    model->applyFields(
-        ts, QVariantMap{{"raw_xml",
-                         "<message to='xml@example.com'><body>look</body></message>"}});
-    const QString laidOut = QStringLiteral("<message to=\"xml@example.com\">\n"
-                                           "  <body>look</body>\n"
-                                           "</message>");
 
     QQuickItem *body = findItem(chat.feed, "bubbleText");
     QVERIFY(body);
@@ -1396,9 +1399,29 @@ void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
     QVERIFY(entry);
     QVERIFY(entry->height() > 0.0);
 
+    // Nothing here reaches a server, so the seeded row was never wired and the
+    // store has no stanza for it. The round trip is real all the same: the
+    // viewer opens on tacky's answer, saying what the store had.
+    //
     // The menu's owner is the bubble, so emitting from there is the same trip
-    // the entry makes: bubble signal -> page -> model -> window.
+    // the entry makes: bubble signal -> page -> model -> tacky -> window.
     QVERIFY(QMetaObject::invokeMethod(menu->parent(), "viewXmlRequested"));
+    QTRY_VERIFY(xmlViewer() != nullptr);
+    auto *empty = xmlViewer()->findChild<QQuickItem *>("xmlText");
+    QVERIFY(empty);
+    QVERIFY(empty->property("text").toString().contains("No stanza"));
+    closeXmlViewer();
+
+    // And what the viewer makes of a message the store does have a stanza for.
+    // Which stanza tacky answers with is the model's end, driven from
+    // tst_chatmodel; this is the half that hosts one.
+    const QString laidOut = QStringLiteral("<message to=\"xml@example.com\">\n"
+                                           "  <body>look</body>\n"
+                                           "</message>");
+    auto *pane = chat.win()->findChild<QQuickItem *>("chatPane");
+    QVERIFY(pane);
+    QVERIFY(QMetaObject::invokeMethod(pane, "showXml",
+                                      Q_ARG(QVariant, QVariant(laidOut))));
     QTRY_VERIFY(xmlViewer() != nullptr);
 
     QObject *viewer = xmlViewer();
@@ -1406,15 +1429,6 @@ void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
     auto *shown = viewer->findChild<QQuickItem *>("xmlText");
     QVERIFY(shown);
     QCOMPARE(shown->property("text").toString(), laidOut);
-
-    // A row with nothing recorded says so, rather than opening on a blank box.
-    closeXmlViewer();
-    model->applyFields(ts, QVariantMap{{"raw_xml", QString()}});
-    QVERIFY(QMetaObject::invokeMethod(menu->parent(), "viewXmlRequested"));
-    QTRY_VERIFY(xmlViewer() != nullptr);
-    auto *empty = xmlViewer()->findChild<QQuickItem *>("xmlText");
-    QVERIFY(empty);
-    QVERIFY(empty->property("text").toString().contains("No stanza"));
     closeXmlViewer();
 
     // The mobile host is the same page full-screen, so it renders the same way.
@@ -1428,6 +1442,31 @@ void TestChatPage::viewXmlShowsTheStanzaTheRowCameWith() {
     QVERIFY(inSheet);
     QCOMPARE(inSheet->property("text").toString(), laidOut);
     QVERIFY(QMetaObject::invokeMethod(sheet, "close"));
+}
+
+// The stanza is fetched, and the model doing the fetching belongs to the chat
+// rather than to a window on it - so its answer reaches every window at once.
+// Only the one that asked opens a viewer on it.
+void TestChatPage::onlyTheWindowThatAskedOpensTheXmlViewer() {
+    const QString jid = QStringLiteral("twoxml@example.com");
+    const Chat first = open(jid);
+    const Chat second = alsoOpen(jid);
+    QVERIFY(first.feed);
+    QVERIFY(second.feed);
+    QTRY_COMPARE(first.count(), 1);
+    QTRY_COMPARE(second.count(), 1);
+    QCOMPARE(second.model(), first.model());
+
+    QQuickItem *body = findItem(second.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+    QVERIFY(QMetaObject::invokeMethod(menu->parent(), "viewXmlRequested"));
+    QTRY_COMPARE(xmlViewerWindows(), 1);
+    // Long enough for the other window to have opened one of its own.
+    settle();
+    QCOMPARE(xmlViewerWindows(), 1);
+    closeXmlViewer();
 }
 
 // A sheet is parented to the overlay, past the inset the window applies to its

@@ -113,10 +113,10 @@ public:
     // resolve comes back empty and leaves the window alone.
     Q_INVOKABLE void gotoReplyTarget(qlonglong ts);
     Q_INVOKABLE int rowOfTimestamp(qlonglong ts) const { return indexOfTs(ts); }
-    // The stanza tacky recorded for a message, laid out for the viewer. Empty
-    // for a row that never had one built, an outgoing message still waiting on
-    // a connection being the usual case.
-    Q_INVOKABLE QString rawXml(qlonglong ts) const;
+    // Ask tacky for the stanza it recorded for a message; rawXmlReady carries
+    // the answer, laid out, under the token this returns. 0 when there was
+    // nothing to ask, where no answer is coming.
+    Q_INVOKABLE int requestRawXml(qlonglong ts);
     Q_INVOKABLE void resetToBottom();
     // Advance our read watermark to the newest row. tacky has no "the user is
     // looking at this chat" call - this is the gate that stops notify <Notify>
@@ -193,6 +193,11 @@ signals:
     void attachmentFolder(const QUrl &url);
     // `error` is empty when the copy landed.
     void attachmentSaved(const QUrl &dest, const QString &error);
+    // What requestRawXml asked for, under the token it answers - every window
+    // on a chat shares one model, so that is what tells them apart. Empty for
+    // a message that never had a stanza built, and for a request the backend
+    // refused: the viewer's empty state covers both.
+    void rawXmlReady(int token, const QString &xml);
 
 private:
     // What a resolved download was wanted for: the path it answers with says
@@ -267,6 +272,7 @@ private:
     // carries a local path, which no other row shares.
     QHash<qlonglong, QVariantMap> m_upload; // ts -> transfer fields
     QHash<int, PendingAction> m_pendingAction;
+    QSet<int> m_xmlPending; // tokens of outstanding `message rawxml` requests
 };
 
 #endif // CHATMODEL_H
