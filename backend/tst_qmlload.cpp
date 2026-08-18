@@ -249,6 +249,43 @@ class TestQmlLoad : public QObject {
             {"error", ""}};
     }
 
+    // Two accounts signed in, one connected and one that could not reach its
+    // server. Both enabled: a disabled account says so instead of saying what
+    // its connection is doing, which is not what the rail tests are about.
+    static void seedTwoAccounts(AppController *app) {
+        app->accounts()->applyList({"me@example.com", "alt@example.com"});
+        app->accounts()->applyEnabledList({"me@example.com", "alt@example.com"});
+        app->accounts()->setConnState("me@example.com", "connected");
+        app->accounts()->setConnState("alt@example.com", "conn-error");
+    }
+
+    // An AppShell filling `win`, held open by `holder`.
+    static QQuickItem *openShell(QQmlEngine &e, QQuickWindow &win,
+                                 QScopedPointer<QObject> &holder) {
+        win.show();
+        if (!QTest::qWaitForWindowExposed(&win))
+            return nullptr;
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        if (!comp.isReady()) {
+            qWarning("%s", qPrintable(comp.errorString()));
+            return nullptr;
+        }
+        holder.reset(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        auto *shell = qobject_cast<QQuickItem *>(holder.data());
+        if (shell)
+            shell->setParentItem(win.contentItem());
+        return shell;
+    }
+
+    // The rail lives on the window overlay rather than among the shell's own
+    // items, so it is the QObject tree that finds the drawer holding it.
+    static QObject *drawerOf(QQuickItem *shell) {
+        return shell->findChild<QObject *>("accountDrawer");
+    }
+
 private slots:
     void loadsApp() {
         AppEngine e;
@@ -1856,46 +1893,45 @@ private slots:
     // The account rail is a pull-out drawer at every width, never a column: the
     // list header's badge is the way in and back is the way out, at 400px and at
     // 1000px alike.
-    void theAccountRailIsADrawerAtEveryWidth() {
+    // No rail among the shell's own items at either width: the only copy is the
+    // drawer's, and the list header holds the way to it.
+    void theRailIsOnlyEverTheDrawersCopy() {
         Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-
-        app->accounts()->applyList({"me@example.com", "alt@example.com"});
-        // Both signed in: a disabled account says so instead of saying what
-        // its connection is doing, which is not what is under test here.
-        app->accounts()->applyEnabledList({"me@example.com", "alt@example.com"});
-        app->accounts()->setConnState("me@example.com", "connected");
-        app->accounts()->setConnState("alt@example.com", "conn-error");
+        seedTwoAccounts(app);
 
         QQuickWindow win;
         win.resize(400, 700);
-        win.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&win));
-
-        QQmlComponent comp(&e, "Quack", "AppShell");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
-            {{"initialAccount", "me@example.com"},
-             {"width", win.width()},
-             {"height", win.height()}}));
-        QVERIFY(!obj.isNull());
-        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
         QVERIFY(shell);
-        shell->setParentItem(win.contentItem());
         QVERIFY(!shell->property("wide").toBool());
 
-        // No rail among the shell's own items at either width: the only copy is
-        // the drawer's, and the list header holds the way to it.
         QVERIFY2(!findItem(shell, "accountRail"), "the rail is back in the layout");
         QQuickItem *accountsBtn = findItem(shell, "accountsButton");
         QVERIFY(accountsBtn);
         QVERIFY(accountsBtn->isVisible());
 
-        // The button wears the current account, and its dot follows the
-        // connection - with the rail shut nothing else shows it.
+        e.assertNoErrors();
+    }
+
+    // The header button wears the current account, and its dot follows the
+    // connection - with the rail shut nothing else shows it.
+    void theAccountsButtonWearsTheConnection() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
         auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(theme);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+
         QQuickItem *badge = findItem(shell, "accountStatusBadge");
         QVERIFY(badge);
         QCOMPARE(badge->property("jid").toString(), QString("me@example.com"));
@@ -1904,14 +1940,27 @@ private slots:
         app->accounts()->setConnState("me@example.com", "auth-error");
         QTRY_COMPARE(badge->property("stateColor").value<QColor>(),
                      theme->property("negative").value<QColor>());
-        app->accounts()->setConnState("me@example.com", "connected");
 
-        // A Drawer hangs off the window overlay rather than the shell's own
-        // items, so it is the QObject tree that finds it.
-        auto *drawer = shell->findChild<QObject *>("accountDrawer");
+        e.assertNoErrors();
+    }
+
+    void theHeaderButtonPullsTheDrawerOut() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+        QObject *drawer = drawerOf(shell);
         QVERIFY(drawer);
         QVERIFY(!drawer->property("opened").toBool());
 
+        QQuickItem *accountsBtn = findItem(shell, "accountsButton");
+        QVERIFY(accountsBtn);
         const QPoint tap = win.contentItem()
                                ->mapFromItem(accountsBtn,
                                              QPointF(accountsBtn->width() / 2,
@@ -1929,12 +1978,33 @@ private slots:
                  qPrintable(QString("drawer rail is only %1 wide")
                                 .arg(drawerRail->width())));
 
-        // A Drawer sizes to its content, and this rail is built from anchors, so
-        // it offers no implicit height. Left alone the drawer opens zero-height:
-        // the list collapses, the column overflows it, and the ＋ button is the
-        // only thing drawn - over nothing, the background having no height
-        // either. Model counts read correct straight through that, so geometry
-        // is what has to be asserted.
+        e.assertNoErrors();
+    }
+
+    // A Drawer sizes to its content, and this rail is built from anchors, so it
+    // offers no implicit height. Left alone the drawer opens zero-height: the
+    // list collapses, the column overflows it, and the ＋ button is the only
+    // thing drawn - over nothing, the background having no height either. Model
+    // counts read correct straight through that, so geometry is what has to be
+    // asserted.
+    void theDrawerRailFillsTheHeightItIsGiven() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+        QObject *drawer = drawerOf(shell);
+        QVERIFY(drawer);
+        QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
+        QTRY_VERIFY(drawer->property("opened").toBool());
+
+        auto *drawerRail = drawer->findChild<QQuickItem *>("accountRail");
+        QVERIFY(drawerRail);
         QCOMPARE(drawerRail->height(), qreal(win.height()));
         QQuickItem *rows = drawerRail->findChild<QQuickItem *>("accountRailList");
         QVERIFY(rows);
@@ -1945,6 +2015,7 @@ private slots:
                  qPrintable(QString("＋ spills out: ends at %1, rail is %2 tall")
                                 .arg(addBtn->y() + addBtn->height())
                                 .arg(drawerRail->height())));
+
         // Both rows are laid out, not collapsed onto each other at the origin.
         const auto rowJids = findItems(drawerRail, "accountRowJid");
         QCOMPARE(rowJids.size(), 2);
@@ -1956,37 +2027,95 @@ private slots:
         const qreal secondY = rowJids.at(1)->mapToItem(drawerRail, QPointF(0, 0)).y();
         QVERIFY(qAbs(secondY - firstY) >= rowJids.at(0)->height());
 
+        e.assertNoErrors();
+    }
+
+    // In words, not just the dot's colour, which is red for both a rejected
+    // password and an unreachable server.
+    void theRailSaysWhatEachConnectionIsDoing() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+        QObject *drawer = drawerOf(shell);
+        QVERIFY(drawer);
+        QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
+        QTRY_VERIFY(drawer->property("opened").toBool());
+        auto *drawerRail = drawer->findChild<QQuickItem *>("accountRail");
+        QVERIFY(drawerRail);
+
         QStringList states;
         const auto stateItems = findItems(drawerRail, "accountRowState");
         for (QQuickItem *item : stateItems)
             states << item->property("text").toString();
         std::sort(states.begin(), states.end());
-        // In words, not just the dot's colour, which is red for both a rejected
-        // password and an unreachable server.
         QCOMPARE(states, QStringList({"connected", "connection failed"}));
 
-        // Android's back closes the drawer before it touches the navigation
-        // underneath it.
+        e.assertNoErrors();
+    }
+
+    // Android's back closes the drawer before it touches the navigation
+    // underneath it, and picking an account - the whole errand - closes it too.
+    void theDrawerClosesOnBackAndOnAPick() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+        QObject *drawer = drawerOf(shell);
+        QVERIFY(drawer);
+        QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
+        QTRY_VERIFY(drawer->property("opened").toBool());
+
         QVariant popped;
         QVERIFY(QMetaObject::invokeMethod(shell, "handleBack",
                                           Q_RETURN_ARG(QVariant, popped)));
         QVERIFY(popped.toBool());
         QTRY_VERIFY(!drawer->property("opened").toBool());
 
-        // Picking an account is the whole errand, so it closes behind you.
         QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
         QTRY_VERIFY(drawer->property("opened").toBool());
+        auto *drawerRail = drawer->findChild<QQuickItem *>("accountRail");
+        QVERIFY(drawerRail);
         QVERIFY(QMetaObject::invokeMethod(drawerRail, "selectAccount",
                                           Q_ARG(QString, QString("alt@example.com"))));
         QCOMPARE(shell->property("currentAccount").toString(),
                  QString("alt@example.com"));
         QTRY_VERIFY(!drawer->property("opened").toBool());
 
-        // The header button is not the only way in; a drag from the left edge
-        // pulls it out too. Whether Android's own edge gesture lets that touch
-        // through before claiming it for Back is a system question no offscreen
-        // test can answer - this pins the Qt half only.
+        e.assertNoErrors();
+    }
+
+    // The header button is not the only way in; a drag from the left edge pulls
+    // it out too. Whether Android's own edge gesture lets that touch through
+    // before claiming it for Back is a system question no offscreen test can
+    // answer - this pins the Qt half only.
+    void anEdgeDragPullsTheDrawerOutUnlessAChatHasThatEdge() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+        QObject *drawer = drawerOf(shell);
+        QVERIFY(drawer);
         QVERIFY(drawer->property("interactive").toBool());
+
         QTest::mousePress(&win, Qt::LeftButton, Qt::NoModifier, QPoint(2, 400));
         for (int x = 10; x <= 260; x += 10)
             QTest::mouseMove(&win, QPoint(x, 400));
@@ -2002,20 +2131,38 @@ private slots:
         QVERIFY(!drawer->property("interactive").toBool());
         QVERIFY(QMetaObject::invokeMethod(shell, "closeChat"));
 
-        // Wide changes nothing about the rail: same drawer, same button, and
-        // the list still starts at the window's edge with no column in front
-        // of it.
+        e.assertNoErrors();
+    }
+
+    // Wide changes nothing about the rail: same drawer, same button, the list
+    // still starting at the window's edge with no column in front of it, and
+    // crossing the breakpoint leaves an open drawer be - there is no second
+    // copy of the rail for it to double.
+    void theDrawerIsTheRailAtEveryWidth() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        QQuickWindow win;
+        win.resize(400, 700);
+        QScopedPointer<QObject> holder;
+        QQuickItem *shell = openShell(e, win, holder);
+        QVERIFY(shell);
+        QObject *drawer = drawerOf(shell);
+        QVERIFY(drawer);
+
         shell->setWidth(1000);
         QTRY_VERIFY(shell->property("wide").toBool());
+        QQuickItem *accountsBtn = findItem(shell, "accountsButton");
+        QVERIFY(accountsBtn);
         QVERIFY(accountsBtn->isVisible());
         QQuickItem *list = findItem(shell, "conversationsPane");
         QVERIFY(list);
         QTRY_COMPARE(list->x(), qreal(0));
+
         QVERIFY(QMetaObject::invokeMethod(drawer, "open"));
         QTRY_VERIFY(drawer->property("opened").toBool());
-
-        // Crossing the breakpoint leaves it be: there is no second copy of the
-        // rail for it to double.
         shell->setWidth(400);
         QTRY_VERIFY(!shell->property("wide").toBool());
         QVERIFY(drawer->property("opened").toBool());
