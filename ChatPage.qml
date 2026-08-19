@@ -257,6 +257,7 @@ Page {
     function toggle(ts, row) {
         armedTs = 0
         textSelectTs = 0
+        dropWords()
         const next = Object.assign({}, selectedRows)
         if (next[ts] !== undefined)
             delete next[ts]
@@ -277,8 +278,14 @@ Page {
     function clearSelection() {
         armedTs = 0
         textSelectTs = 0
+        dropWords()
         selectedRows = ({})
     }
+    // Messages being picked is no time for words to stay picked out of one:
+    // the highlight would hold that body live, and a live body is one that
+    // does not answer the click picking its message. -1 matches no row, so
+    // all of them let go.
+    function dropWords() { wordsTs = -1 }
     function copySelected() {
         // Object keys iterate in ascending numeric order, so this joins the
         // chosen messages oldest-first regardless of the tap order.

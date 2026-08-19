@@ -298,6 +298,8 @@ private slots:
     void onlyOneMessageKeepsItsPickedWords();
     void theBubbleMenuTakesWhatTheDragPickedOut();
     void clickingTheWordsPicksTheMessageWhileSelecting();
+    void wordsStayDeafUntilTheirMessageIsPicked();
+    void pickedWordsAreLetGoWithTheirMessage();
     void rightClickStillOpensTheBubbleMenu();
     void aTouchTapOpensTheBubbleMenu();
     void aPressOutsideAMenuOnlyDismissesIt();
@@ -751,6 +753,85 @@ void TestChatPage::clickingTheWordsPicksTheMessageWhileSelecting() {
     // And the same click unpicks it.
     QTest::mouseClick(chat.win(), Qt::LeftButton, {}, onWords);
     QTRY_COMPARE(page->property("selectedCount").toInt(), 1);
+}
+
+// Android takes a long press on a live body for its own text selection, so a
+// body live from the start would answer the very press that picks the
+// message. It comes alive once the message is picked, and the press after
+// that is Android's. A synthesised press never reaches Android's detector, so
+// what this pins is the gate rather than the selection behind it.
+void TestChatPage::wordsStayDeafUntilTheirMessageIsPicked() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+    auto *bubble = qobject_cast<QQuickItem *>(menu->parent());
+    QVERIFY(bubble);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    // Stand in for the platform that has a selection of its own.
+    bubble->setProperty("nativeWords", true);
+    QTRY_VERIFY(!body->isEnabled());
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    // Picked, so the words are the next press's to answer.
+    QTRY_VERIFY(body->isEnabled());
+
+    // A tap still reaches past the live body to tick the message off, which
+    // is what watching instead of grabbing keeps.
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+    QTRY_COMPARE(page->property("selectedCount").toInt(), 0);
+    QTRY_VERIFY(!body->isEnabled());
+}
+
+// Letting go of a message lets go of the words picked out of it, and in that
+// order: a body turned deaf with a selection still on it keeps Android's
+// handles behind.
+void TestChatPage::pickedWordsAreLetGoWithTheirMessage() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+    auto *bubble = qobject_cast<QQuickItem *>(menu->parent());
+    QVERIFY(bubble);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    bubble->setProperty("nativeWords", true);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+    QTRY_VERIFY(body->isEnabled());
+
+    // Standing in for the press Android would have answered itself.
+    QVERIFY(QMetaObject::invokeMethod(body, "select", Q_ARG(int, 0), Q_ARG(int, 9)));
+    QVERIFY(!body->property("selectedText").toString().isEmpty());
+
+    QVERIFY(QMetaObject::invokeMethod(page, "clearSelection"));
+    QTRY_COMPARE(body->property("selectedText").toString(), QString());
+    QTRY_VERIFY(!body->isEnabled());
 }
 
 // The body is painted over the bubble's right-button MouseArea and has a

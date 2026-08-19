@@ -67,6 +67,16 @@ Item {
     property bool ownsWords: true
     onOwnsWordsChanged: if (!root.ownsWords) bodyText.deselect()
 
+    // Android answers a long press on a live body with its own text
+    // selection, handles and Copy popup, and takes that press from whatever
+    // handler would have had it. So the body only comes alive there once its
+    // message is picked: the first long press has to reach the row. A mouse
+    // has no long press to lose, so elsewhere the body is live except while
+    // selecting, where a click on it picks the message.
+    //
+    // Settable, since a test has no Android to run on.
+    property bool nativeWords: Qt.platform.os === "android"
+
     // Whether this bubble is the one showing a menu, and whether any of them
     // is. Both come from the page: only it can see across the rows, and a touch
     // on one message has to know what another one is showing.
@@ -934,7 +944,14 @@ Item {
                     // A click is how a message is picked while selecting, and
                     // the TextEdit would take that press for itself. Disabled
                     // rather than selectByMouse: false, which still swallows it.
-                    enabled: root.textSelecting || !root.selectionMode
+                    //
+                    // The last term holds a body live until its words are let
+                    // go: turned deaf with a selection still on it, Android
+                    // leaves the handles behind.
+                    enabled: (root.nativeWords
+                              ? root.selected || root.textSelecting
+                              : root.textSelecting || !root.selectionMode)
+                             || bodyText.selectedText !== ""
                     // Fires for the mouse drag and for the hand-over alike.
                     onSelectedTextChanged: if (bodyText.selectedText !== "")
                         root.wordsTaken()
@@ -948,7 +965,19 @@ Item {
                         id: bodyTap
                         enabled: !root.textSelecting
                         acceptedDevices: PointerDevice.TouchScreen
-                        gesturePolicy: TapHandler.WithinBounds
+                        // The grab on press is what takes the press from
+                        // Android's selection, so this only watches where
+                        // that selection exists; a tap is recognised either
+                        // way. Elsewhere the grab is what keeps the press off
+                        // the TextEdit, which would take the focus and the
+                        // composer's keyboard with it.
+                        gesturePolicy: root.nativeWords ? TapHandler.DragThreshold
+                                                        : TapHandler.WithinBounds
+                        // Under Android's own half second, so a press held
+                        // long enough to pick words out has already stood the
+                        // release down - it would otherwise tick the message
+                        // off from under them.
+                        longPressThreshold: 0.4
                         // Latched on the press, for the reason bubbleTap is.
                         property bool dismissing: false
                         onPressedChanged: if (bodyTap.pressed)
@@ -956,7 +985,11 @@ Item {
                         onTapped: root.tapped(
                             bodyText.mapToItem(root, bodyTap.point.position),
                             bodyTap.dismissing)
-                        onLongPressed: root.pressed(
+                        // Nothing to add where the words answer the press
+                        // themselves - but it still has to fire: a handler
+                        // that has long-pressed will not call the release
+                        // a tap.
+                        onLongPressed: if (!root.nativeWords) root.pressed(
                             bodyText.mapToItem(root, bodyTap.point.position),
                             bodyTap.dismissing)
                     }
