@@ -261,6 +261,7 @@ qt_add_qml_module(quack
         backend/OmemoDevicesModel.cpp backend/OmemoDevicesModel.h
         backend/OmemoChat.cpp backend/OmemoChat.h
         backend/AvatarController.cpp backend/AvatarController.h
+        backend/RegistrationController.cpp backend/RegistrationController.h
         backend/Clipboard.cpp backend/Clipboard.h
         backend/NotificationController.cpp backend/NotificationController.h
         backend/Notifier.h
@@ -382,7 +383,8 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
-          tst_calls tst_audiodevices tst_appsettings tst_notifications)
+          tst_calls tst_audiodevices tst_appsettings tst_notifications
+          tst_registration)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})
