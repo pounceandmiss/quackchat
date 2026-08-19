@@ -548,11 +548,12 @@ Page {
     }
 
     // Return steps through the hits, shifted the other way. Pressed before the
-    // pause has elapsed it searches instead, so the first press after typing is
-    // never swallowed.
+    // pause has elapsed, or with a query nothing has answered, it searches
+    // instead, so a press is never swallowed.
     function stepFromKey(event) {
         event.accepted = true
-        if (searchDebounce.running) {
+        if (searchDebounce.running
+                || (searchInput.text !== "" && !chatSearch.searched)) {
             page.runSearch(page.searchServer)
         } else if (event.modifiers & Qt.ShiftModifier) {
             page.newerHit()

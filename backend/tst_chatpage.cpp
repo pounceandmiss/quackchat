@@ -319,6 +319,7 @@ private slots:
     void senderNamesComeFromAuthorGet();
     void oneSessionServesEveryWindowOnAChat();
     void closingTheSearchBarEmptiesIt();
+    void returnSearchesWhenTheLastAnswerIsGone();
     // Stops the shared backend, so nothing may run after it.
     void theFailedPillCarriesTheBackendsWords();
 };
@@ -1933,6 +1934,36 @@ void TestChatPage::closingTheSearchBarEmptiesIt() {
     auto *counter = chat.win()->findChild<QObject *>("hitCounter");
     QVERIFY(counter);
     QCOMPARE(counter->property("text").toString(), QString());
+}
+
+// The other way into a query with no answer behind it, now that closing does
+// not: a chat switch resets the model under a bar that stays up. Return
+// searched only while the debounce was running, so here it stepped a list that
+// was not there.
+void TestChatPage::returnSearchesWhenTheLastAnswerIsGone() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 2);
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    auto *field = chat.win()->findChild<QObject *>("chatSearchField");
+    QVERIFY(field);
+    SearchModel *search = page->findChild<SearchModel *>();
+    QVERIFY(search);
+
+    QVERIFY(QMetaObject::invokeMethod(page, "openSearch"));
+    field->setProperty("text", "one");
+    QTRY_VERIFY_WITH_TIMEOUT(search->rowCount() == 2, 5000);
+
+    // What the switch leaves: the answer gone, the query still on screen. The
+    // debounce stops with it, so Return has nothing pending to run instead.
+    QVERIFY(QMetaObject::invokeMethod(page, "dropHits"));
+    QVERIFY(!search->searched());
+    QCOMPARE(field->property("text").toString(), QString("one"));
+
+    QTest::keyClick(chat.win(), Qt::Key_Return);
+    QTRY_VERIFY_WITH_TIMEOUT(search->rowCount() == 2, 5000);
 }
 
 // Must stay last: stopping the backend is what fails the `before` page that
