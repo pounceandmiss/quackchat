@@ -57,6 +57,28 @@ static QVariantMap idleTransfer() {
             {QStringLiteral("error"), QString()}};
 }
 
+// What a transfer is keyed by, matching the file module's own choice: the wire
+// url, or the local file when the attachment has no url yet, which is every
+// outgoing one until its upload lands. file <Update> echoes the same choice, so
+// a row finds its update without knowing which source was served.
+static QString sourceKey(const QVariantMap &att) {
+    const QString url = att.value(QStringLiteral("url")).toString();
+    return url.isEmpty() ? att.value(QStringLiteral("path")).toString() : url;
+}
+
+// Whichever of the two an attachment carries, for the file module to choose
+// between: it serves a `path` where it lies and fetches a `url`. Empty when
+// there is nothing to get at all.
+static QVariantMap downloadSource(const QVariantMap &att) {
+    QVariantMap src;
+    for (const QString &k : {QStringLiteral("url"), QStringLiteral("path")}) {
+        const QString v = att.value(k).toString();
+        if (!v.isEmpty())
+            src.insert(k, v);
+    }
+    return src;
+}
+
 // The row carries what the message said; m_xfer and m_upload carry what has
 // happened to it since. Merged here so the view binds to one list.
 //
@@ -77,7 +99,7 @@ QVariantList ChatModel::attachmentsOf(const QVariantMap &m) const {
         const QVariantMap said = v.toMap();
         for (auto it = said.begin(); it != said.end(); ++it)
             a.insert(it.key(), it.value());
-        const QVariantMap x = m_xfer.value(a.value(QStringLiteral("url")).toString());
+        const QVariantMap x = m_xfer.value(sourceKey(a));
         for (auto it = x.begin(); it != x.end(); ++it)
             a.insert(it.key(), it.value());
         for (auto it = up.begin(); it != up.end(); ++it)
@@ -773,11 +795,11 @@ void ChatModel::redrawRow(qlonglong ts) {
     emit dataChanged(mi, mi, {AttachmentsRole});
 }
 
-void ChatModel::redrawRowsUsing(const QString &url) {
+void ChatModel::redrawRowsUsing(const QString &key) {
     for (int i = 0; i < m_msgs.size(); ++i) {
         const QVariantList atts = attachmentsOf(m_msgs.at(i));
         for (const QVariant &v : atts) {
-            if (v.toMap().value(QStringLiteral("url")).toString() != url)
+            if (sourceKey(v.toMap()) != key)
                 continue;
             const QModelIndex mi = index(i);
             emit dataChanged(mi, mi, {AttachmentsRole});
@@ -799,21 +821,22 @@ void ChatModel::fetchThumbs(const QVariantMap &msg) {
         const QVariantMap a = v.toMap();
         if (a.value(QStringLiteral("type")).toString() != QLatin1String("image"))
             continue;
-        const QString url = a.value(QStringLiteral("url")).toString();
-        if (url.isEmpty())
+        const QVariantMap src = downloadSource(a);
+        if (src.isEmpty())
             continue;
         // Fire-and-forget: progress and the thumbnail arrive as file <Update>.
         // Asked for unconditionally: the file module joins an in-flight
-        // download of the same url and serves a finished one from disk, so
+        // download of the same source and serves a finished one from disk, so
         // keeping our own record of what we have asked for would only be a
         // second, staler copy of that.
+        QVariantMap args{{QStringLiteral("acc"), m_account},
+                         {QStringLiteral("auto"), incoming ? 1 : 0},
+                         {QStringLiteral("thumbmax"), m_thumbMax},
+                         {QStringLiteral("from"),
+                          msg.value(QStringLiteral("from_jid"))}};
+        args.insert(src);
         m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
-                          QVariantMap{{QStringLiteral("acc"), m_account},
-                                      {QStringLiteral("url"), url},
-                                      {QStringLiteral("auto"), incoming ? 1 : 0},
-                                      {QStringLiteral("thumbmax"), m_thumbMax},
-                                      {QStringLiteral("from"),
-                                       msg.value(QStringLiteral("from_jid"))}});
+                          args);
     }
 }
 
@@ -835,13 +858,13 @@ static QString copyAttachment(const QString &from, const QUrl &to) {
 // user pointed at.
 void ChatModel::loadAttachment(qlonglong ts, int idx) {
     const QVariantMap a = attachmentAt(ts, idx);
-    const QString url = a.value(QStringLiteral("url")).toString();
-    if (url.isEmpty() || !m_backend || m_account.isEmpty())
+    const QVariantMap src = downloadSource(a);
+    if (src.isEmpty() || !m_backend || m_account.isEmpty())
         return;
-    m_backend->notify(QStringLiteral("file"), QStringLiteral("download"),
-                      QVariantMap{{QStringLiteral("acc"), m_account},
-                                  {QStringLiteral("url"), url},
-                                  {QStringLiteral("thumbmax"), m_thumbMax}});
+    QVariantMap args{{QStringLiteral("acc"), m_account},
+                     {QStringLiteral("thumbmax"), m_thumbMax}};
+    args.insert(src);
+    m_backend->notify(QStringLiteral("file"), QStringLiteral("download"), args);
 }
 
 // Opening, saving and revealing all want the file on disk first, and differ
@@ -863,8 +886,8 @@ void ChatModel::saveAttachment(qlonglong ts, int idx, const QUrl &dest) {
 void ChatModel::resolveAttachment(qlonglong ts, int idx,
                                   const PendingAction &act) {
     const QVariantMap a = attachmentAt(ts, idx);
-    const QString url = a.value(QStringLiteral("url")).toString();
-    if (url.isEmpty())
+    const QVariantMap src = downloadSource(a);
+    if (src.isEmpty())
         return;
     // Already on disk (downloaded, or an outgoing file used in place).
     const QString local = a.value(QStringLiteral("localpath")).toString();
@@ -878,11 +901,11 @@ void ChatModel::resolveAttachment(qlonglong ts, int idx,
     }
     // The file module answers with the local path, or "" if it could not get
     // one - a failure, not an error reply, so there is no error leg to handle.
+    QVariantMap args{{QStringLiteral("acc"), m_account},
+                     {QStringLiteral("thumbmax"), m_thumbMax}};
+    args.insert(src);
     const int tok = m_backend->request(QStringLiteral("file"),
-                                       QStringLiteral("download"),
-                                       QVariantMap{{QStringLiteral("acc"), m_account},
-                                                   {QStringLiteral("url"), url},
-                                                   {QStringLiteral("thumbmax"), m_thumbMax}});
+                                       QStringLiteral("download"), args);
     m_pendingAction.insert(tok, act);
 }
 
@@ -904,7 +927,7 @@ void ChatModel::finishAction(const PendingAction &act, const QString &path) {
     }
 }
 
-// An upload is cancelled by the message it belongs to, a download by the url
+// An upload is cancelled by the message it belongs to, a download by the source
 // every message quoting it waits on.
 void ChatModel::cancelAttachment(qlonglong ts, int idx) {
     const QVariantMap a = attachmentAt(ts, idx);
@@ -914,7 +937,7 @@ void ChatModel::cancelAttachment(qlonglong ts, int idx) {
     if (a.value(QStringLiteral("direction")).toString() == QLatin1String("upload"))
         args.insert(QStringLiteral("id"), ts);
     else
-        args.insert(QStringLiteral("url"), a.value(QStringLiteral("url")));
+        args.insert(downloadSource(a));
     m_backend->notify(QStringLiteral("file"), QStringLiteral("cancel"), args);
 }
 
@@ -923,14 +946,14 @@ void ChatModel::cancelAttachment(qlonglong ts, int idx) {
 // a file that is gone.
 void ChatModel::uncacheAttachment(qlonglong ts, int idx) {
     const QVariantMap a = attachmentAt(ts, idx);
-    const QString url = a.value(QStringLiteral("url")).toString();
-    if (url.isEmpty() || !m_backend || m_account.isEmpty())
+    const QVariantMap src = downloadSource(a);
+    if (src.isEmpty() || !m_backend || m_account.isEmpty())
         return;
-    m_backend->notify(QStringLiteral("file"), QStringLiteral("uncache"),
-                      QVariantMap{{QStringLiteral("acc"), m_account},
-                                  {QStringLiteral("url"), url}});
-    m_xfer.remove(url);
-    redrawRowsUsing(url);
+    QVariantMap args{{QStringLiteral("acc"), m_account}};
+    args.insert(src);
+    m_backend->notify(QStringLiteral("file"), QStringLiteral("uncache"), args);
+    m_xfer.remove(sourceKey(a));
+    redrawRowsUsing(sourceKey(a));
 }
 
 // Ours when the bracket names this chat, or when it's the account-wide one

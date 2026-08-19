@@ -230,7 +230,7 @@ private:
     QVariantList marksOn(const QVariantMap &m) const;
     QVariantMap attachmentAt(qlonglong ts, int idx) const;
     void fetchThumbs(const QVariantMap &msg);
-    void redrawRowsUsing(const QString &url);
+    void redrawRowsUsing(const QString &key);
     void redrawRow(qlonglong ts);
     // Answers straight away when the file is already on disk.
     void resolveAttachment(qlonglong ts, int idx, const PendingAction &act);

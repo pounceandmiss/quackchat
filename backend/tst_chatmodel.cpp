@@ -92,6 +92,7 @@ private slots:
     void fileUpdateFansOutToEveryRowSharingTheUrl();
     void transferStatesReachTheViewIntact();
     void fileEventsFilterByAcc();
+    void anAttachmentWithNoUrlYetKeysOnItsPath();
     void imageRowsAskForTheirThumbnails();
     void thumbnailSizeFollowsTheView();
     void openAttachmentResolvesThroughTheBackend();
@@ -1090,6 +1091,24 @@ void TestChatModel::fileEventsFilterByAcc() {
     QVERIFY(att0(m).value("thumburl").toUrl().isEmpty());
 }
 
+// A file we sent has a local path and no url until the upload lands, and the
+// file module echoes whichever source it was given as the update's `url`. Key
+// on the wrong one and our own picture never shows a thumbnail.
+void TestChatModel::anAttachmentWithNoUrlYetKeysOnItsPath() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(R"([{"timestamp":100,"is_outgoing":true,"from_jid":"me@h",
+        "content":{"type":"media","attachments":[
+            {"url":"","path":"/home/me/c.png","type":"image","name":"c.png"}]}}])"));
+
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
+        "state":"done","url":"/home/me/c.png","localpath":"/home/me/c.png",
+        "thumbpath":"/cache/c_320.png"}])");
+
+    QCOMPARE(att0(m).value("thumburl").toUrl(), QUrl("file:///cache/c_320.png"));
+    QCOMPARE(att0(m).value("localpath").toString(), QString("/home/me/c.png"));
+}
+
 // The fetch is what makes a thumbnail exist, and its arguments are what submit
 // it to the autofetch policy - so the whole of the row's inline image hangs on
 // getting this call right.
@@ -1113,7 +1132,7 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
             {"url":"https://h/doc.pdf","type":"file","name":"doc.pdf"}]}},
         {"timestamp":100,"is_outgoing":true,"from_jid":"me@h",
          "content":{"type":"media","attachments":[
-            {"url":"/home/me/c.png","type":"image","name":"c.png"}]}}
+            {"url":"","path":"/home/me/c.png","type":"image","name":"c.png"}]}}
     ])"));
 
     QVariantList downloads;
@@ -1133,8 +1152,12 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
     // Unbound by any view, so tacky is asked for its own default size.
     QCOMPARE(first.value("thumbmax").toInt(), 320);
     QCOMPARE(downloads.at(1).toMap().value("url").toString(), QString("https://h/a.png"));
-    // Our own send is exempt from the policy.
-    QCOMPARE(downloads.at(2).toMap().value("auto").toInt(), 0);
+    // Our own send is exempt from the policy, and has only a local file to
+    // name until its upload lands.
+    const QVariantMap own = downloads.at(2).toMap();
+    QCOMPARE(own.value("auto").toInt(), 0);
+    QCOMPARE(own.value("path").toString(), QString("/home/me/c.png"));
+    QVERIFY(!own.contains("url"));
 
     // Tapping a held-back image asks again, this time ungated.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
