@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMetaEnum>
 #include <QQmlApplicationEngine>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -656,6 +657,48 @@ private slots:
         field->setProperty("text", "");
         QCOMPARE(filter->query(), QString());
         QVERIFY(!asked(sent, "message", "search"));
+    }
+
+    // The mark on the empty pane is the app icon out of the Qt resource system,
+    // which is wired separately from the module's own QML files - it would
+    // resolve in the app and not here if the resource sat on the executable
+    // instead of on `quack`. Nothing but a loaded image tells the two apart, so
+    // this reads the status rather than the source it was given.
+    void theEmptyPaneDrawsTheAppIcon() {
+        Engine e;
+        e.singletonInstance<AppController *>("Quack", "App");
+
+        QQuickWindow win;
+        win.resize(420, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        // No chatJid, which is what leaves the pane showing its empty half.
+        QQmlComponent comp(&e, "Quack", "ChatPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        QVERIFY(!page->property("hasChat").toBool());
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *mark = findItem(win.contentItem(), "emptyMark");
+        QVERIFY(mark);
+        QVERIFY(mark->isVisible());
+
+        const QMetaObject *mo = mark->metaObject();
+        const QMetaEnum status = mo->enumerator(mo->indexOfEnumerator("Status"));
+        QTRY_COMPARE(mark->property("status").toInt(), status.keyToValue("Ready"));
+        // The implicit size is the decoded image's, so this is the pixels
+        // arriving rather than the box they were asked for.
+        QVERIFY(mark->property("implicitWidth").toReal() > 0);
+        QVERIFY(mark->property("implicitHeight").toReal() > 0);
+
+        e.assertNoErrors();
     }
 
     // Searching inside a chat walks the hits in the feed instead of listing

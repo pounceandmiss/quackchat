@@ -291,19 +291,21 @@ if(TARGET Qt6::DBus)
     target_link_libraries(quack PRIVATE Qt6::DBus)
 endif()
 
+# The app icon, for the window icon and for the chat pane's empty state. It
+# goes into `quack` rather than the executable so a test binary linking it
+# resolves the QML side without the app around it. BASE is what makes the
+# resource path :/icons/quack-48.png rather than :/icons/icons/quack-48.png.
+qt_add_resources(quack "appicon"
+    PREFIX "/icons"
+    BASE icons
+    FILES icons/quack-48.png icons/quack-128.png icons/quack-256.png)
+
 # The QImage half of avatar publishing stays out of `quack`, like the image
 # provider, so the headless tests keep their QtGui-free include path.
 qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp
                             backend/QImageAvatarEncoder.cpp)
 target_link_libraries(quackchat PRIVATE
     quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
-
-# BASE is what makes the resource path :/icons/quack-48.png rather than
-# :/icons/icons/quack-48.png.
-qt_add_resources(quackchat "appicon"
-    PREFIX "/icons"
-    BASE icons
-    FILES icons/quack-48.png icons/quack-128.png icons/quack-256.png)
 
 # Nearly every translatable string is in `quack`, which owns the QML files and
 # most of the C++; quackchat carries the rest. The compiled catalogues go into

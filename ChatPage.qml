@@ -1010,10 +1010,17 @@ Page {
         width: parent.width - 60
         visible: !page.hasChat
         spacing: 10
-        Text {
+        Image {
+            objectName: "emptyMark"
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "🦆"
-            font.pixelSize: 44
+            source: "qrc:/icons/quack-256.png"
+            width: 64
+            height: 64
+            // Decoded at the size it is drawn at and mipmapped, the way an
+            // avatar takes its downscale.
+            sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+            sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+            mipmap: true
             opacity: 0.55
         }
         Text {
