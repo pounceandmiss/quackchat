@@ -20,7 +20,7 @@ SheetDialog {
     property string account: ""
     signal joinRoom(string jid, string nick, string password)
 
-    title: "Join room"
+    title: qsTr("Join room")
     preferredWidth: 420
     height: Math.min(480, parent ? parent.height - 24 : 480)
     standardButtons: Dialog.Cancel | Dialog.Ok
@@ -79,7 +79,7 @@ SheetDialog {
             rowSpacing: 6
 
             Label {
-                text: "Room"
+                text: qsTr("Room")
                 color: Theme.textDim
                 font.pixelSize: 12
             }
@@ -87,12 +87,12 @@ SheetDialog {
                 id: roomField
                 objectName: "joinRoomJid"
                 Layout.fillWidth: true
-                placeholderText: "room@conference.example.com"
+                placeholderText: qsTr("room@conference.example.com")
                 inputMethodHints: Qt.ImhNoAutoUppercase
             }
 
             Label {
-                text: "Nickname"
+                text: qsTr("Nickname")
                 color: Theme.textDim
                 font.pixelSize: 12
             }
@@ -100,11 +100,11 @@ SheetDialog {
                 id: nickField
                 objectName: "joinRoomNick"
                 Layout.fillWidth: true
-                placeholderText: "how the room sees you"
+                placeholderText: qsTr("how the room sees you")
             }
 
             Label {
-                text: "Password"
+                text: qsTr("Password")
                 color: Theme.textDim
                 font.pixelSize: 12
             }
@@ -112,12 +112,12 @@ SheetDialog {
                 id: passwordField
                 objectName: "joinRoomPassword"
                 Layout.fillWidth: true
-                placeholderText: "only if the room asks"
+                placeholderText: qsTr("only if the room asks")
                 echoMode: TextInput.Password
             }
 
             Label {
-                text: "Service"
+                text: qsTr("Service")
                 color: Theme.textDim
                 font.pixelSize: 12
             }
@@ -133,7 +133,7 @@ SheetDialog {
                 }
                 Button {
                     objectName: "discoverButton"
-                    text: rooms.loading ? "…" : "Discover"
+                    text: rooms.loading ? "…" : qsTr("Discover")
                     enabled: !rooms.loading && serviceField.text.trim() !== ""
                     onClicked: rooms.discover(serviceField.text.trim())
                 }
@@ -224,12 +224,12 @@ SheetDialog {
                 font.pixelSize: 12
                 text: {
                     if (rooms.loading)
-                        return "Asking " + serviceField.text.trim() + " …"
+                        return qsTr("Asking %1 …").arg(serviceField.text.trim())
                     if (rooms.error !== "")
-                        return "Couldn't list rooms.\n" + rooms.error
+                        return qsTr("Couldn't list rooms.\n%1").arg(rooms.error)
                     if (rooms.loaded)
-                        return "That service lists no rooms."
-                    return "Type a room address, or Discover what a service hosts."
+                        return qsTr("That service lists no rooms.")
+                    return qsTr("Type a room address, or Discover what a service hosts.")
                 }
             }
         }

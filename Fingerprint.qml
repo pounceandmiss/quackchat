@@ -85,7 +85,7 @@ ColumnLayout {
     RowLayout {
         spacing: 8
         Text {
-            text: "OMEMO fingerprint"
+            text: qsTr("OMEMO fingerprint")
             color: Theme.textDim
             font.pixelSize: 11
             font.bold: true

@@ -18,9 +18,9 @@ Rectangle {
     signal picked(string newTrust)
 
     readonly property var options: [
-        { value: "trusted", label: "Trust" },
-        { value: "undecided", label: "Undecided" },
-        { value: "untrusted", label: "Don't trust" }
+        { value: "trusted", label: qsTr("Trust") },
+        { value: "undecided", label: qsTr("Undecided") },
+        { value: "untrusted", label: qsTr("Don't trust") }
     ]
 
     readonly property real inset: 4

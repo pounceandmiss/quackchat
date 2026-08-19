@@ -42,7 +42,7 @@ Page {
                 spacing: 1
                 Text {
                     Layout.fillWidth: true
-                    text: "Message XML"
+                    text: qsTr("Message XML")
                     color: Theme.textPrimary
                     font.pixelSize: 20
                     font.bold: true
@@ -53,14 +53,14 @@ Page {
                     // tacky records this in the clear even for a message that
                     // went out encrypted, so say so rather than let it pass
                     // for the bytes on the wire.
-                    text: "tacky's stored record, not the wire"
+                    text: qsTr("tacky's stored record, not the wire")
                     color: Theme.textDim
                     font.pixelSize: 11
                     elide: Text.ElideRight
                 }
             }
             Button {
-                text: "Copy"
+                text: qsTr("Copy")
                 enabled: page.hasXml
                 onClicked: Clipboard.setText(page.xml)
             }
@@ -80,7 +80,7 @@ Page {
         TextArea {
             objectName: "xmlText"
             text: page.hasXml ? page.xml
-                              : "No stanza recorded for this message."
+                              : qsTr("No stanza recorded for this message.")
             color: page.hasXml ? Theme.textPrimary : Theme.textDim
             readOnly: true
             // A finger drag over a TextArea that selects by mouse is taken

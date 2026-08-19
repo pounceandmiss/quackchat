@@ -15,7 +15,7 @@ ApplicationWindow {
     minimumWidth: 360
     minimumHeight: 260
     visible: true
-    title: "Message XML"
+    title: qsTr("Message XML")
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }

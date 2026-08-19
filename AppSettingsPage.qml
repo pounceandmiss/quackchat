@@ -123,7 +123,7 @@ Page {
             }
             Text {
                 Layout.fillWidth: true
-                text: "Preferences"
+                text: qsTr("Preferences")
                 color: Theme.textPrimary
                 font.pixelSize: 20
                 font.bold: true
@@ -146,19 +146,19 @@ Page {
             Item { Layout.preferredHeight: 4 }
 
             Card {
-                SectionTitle { text: "Images" }
+                SectionTitle { text: qsTr("Images") }
                 Caption {
                     Layout.fillWidth: true
-                    text: "What may be fetched without asking. Shared by every account."
+                    text: qsTr("What may be fetched without asking. Shared by every account.")
                     wrapMode: Text.WordWrap
                 }
 
-                Caption { Layout.topMargin: 4; text: "Load images" }
+                Caption { Layout.topMargin: 4; text: qsTr("Load images") }
                 Repeater {
                     model: [
-                        { label: "From everyone", value: "everyone" },
-                        { label: "From contacts only", value: "contacts" },
-                        { label: "Never", value: "never" }
+                        { label: qsTr("From everyone"), value: "everyone" },
+                        { label: qsTr("From contacts only"), value: "contacts" },
+                        { label: qsTr("Never"), value: "never" }
                     ]
                     delegate: OptionRow {
                         required property var modelData
@@ -175,13 +175,13 @@ Page {
                     color: Theme.hairline
                 }
 
-                Caption { text: "Max image size" }
+                Caption { text: qsTr("Max image size") }
                 Repeater {
                     model: [
-                        { label: "1 MB", value: 1048576 },
-                        { label: "5 MB", value: 5242880 },
-                        { label: "25 MB", value: 26214400 },
-                        { label: "Unlimited", value: 0 }
+                        { label: qsTr("1 MB"), value: 1048576 },
+                        { label: qsTr("5 MB"), value: 5242880 },
+                        { label: qsTr("25 MB"), value: 26214400 },
+                        { label: qsTr("Unlimited"), value: 0 }
                     ]
                     delegate: OptionRow {
                         required property var modelData
@@ -194,13 +194,13 @@ Page {
 
                 Caption {
                     Layout.fillWidth: true
-                    text: "A picture over the limit waits for a tap instead."
+                    text: qsTr("A picture over the limit waits for a tap instead.")
                     wrapMode: Text.WordWrap
                 }
             }
 
             Card {
-                SectionTitle { text: "Appearance" }
+                SectionTitle { text: qsTr("Appearance") }
 
                 Flow {
                     Layout.fillWidth: true
@@ -218,7 +218,7 @@ Page {
                 // Nothing stores the pick yet.
                 Caption {
                     Layout.fillWidth: true
-                    text: "The app starts on its own theme each time."
+                    text: qsTr("The app starts on its own theme each time.")
                     wrapMode: Text.WordWrap
                 }
             }

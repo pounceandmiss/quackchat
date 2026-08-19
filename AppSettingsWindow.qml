@@ -11,7 +11,7 @@ ApplicationWindow {
     minimumWidth: 360
     minimumHeight: 420
     visible: true
-    title: "Preferences"
+    title: qsTr("Preferences")
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }

@@ -127,14 +127,21 @@ Item {
     function fmtSize(n) {
         if (!n || n <= 0)
             return ""
-        const units = ["B", "KB", "MB", "GB"]
         let v = n
         let i = 0
-        while (v >= 1024 && i < units.length - 1) {
+        while (v >= 1024 && i < 3) {
             v /= 1024
             i++
         }
-        return (i === 0 ? v : v.toFixed(1)) + " " + units[i]
+        // A case each rather than a number joined to a unit from a table: the
+        // space between the two is not a space in every language.
+        const size = i === 0 ? v : v.toFixed(1)
+        switch (i) {
+        case 0:  return qsTr("%1 B").arg(size)
+        case 1:  return qsTr("%1 KB").arg(size)
+        case 2:  return qsTr("%1 MB").arg(size)
+        default: return qsTr("%1 GB").arg(size)
+        }
     }
 
     // Silent until the row has drawn once, or a chat scrolled or reloaded would
@@ -306,41 +313,41 @@ Item {
 
         MenuEntry {
             objectName: "replyEntry"
-            text: "Reply"
+            text: qsTr("Reply")
             onTriggered: root.take(root.replyRequested)
         }
         // The hand-over floats a Copy pill over the words it picks out. A
         // mouse drag has only this.
         MenuEntry {
             objectName: "copySelectionEntry"
-            text: "Copy selection"
+            text: qsTr("Copy selection")
             offered: bodyText.selectedText !== ""
             onTriggered: root.take(root.copyTextRequested, bodyText.selectedText)
         }
         MenuEntry {
             objectName: "copyEntry"
             // Says which of the two it is, but only while both are offered.
-            text: bodyText.selectedText !== "" ? "Copy message" : "Copy"
+            text: bodyText.selectedText !== "" ? qsTr("Copy message") : qsTr("Copy")
             onTriggered: root.take(root.copyRequested)
         }
         // The way in for the mouse, which has no long press. Never on a message
         // the press already selected, where it could only undo itself.
         MenuEntry {
             objectName: "selectEntry"
-            text: "Select"
+            text: qsTr("Select")
             offered: !root.selected
             onTriggered: root.toggleRequested()
         }
         // Only offered on a message that needs them.
         MenuEntry {
             objectName: "retryEntry"
-            text: "Retry"
+            text: qsTr("Retry")
             offered: root.canRetry
             onTriggered: root.take(root.retryRequested)
         }
         MenuEntry {
             objectName: "resendPlainEntry"
-            text: "Send without encryption"
+            text: qsTr("Send without encryption")
             // A downgrade to warn about, not a deletion to fear; the tick has
             // the negative colour already.
             labelColor: Theme.warning
@@ -351,7 +358,7 @@ Item {
         // itself an answer the viewer is there to give.
         MenuEntry {
             objectName: "viewXmlEntry"
-            text: "View XML"
+            text: qsTr("View XML")
             onTriggered: root.take(root.viewXmlRequested)
         }
     }
@@ -374,31 +381,31 @@ Item {
         }
 
         MenuEntry {
-            text: "Open"
+            text: qsTr("Open")
             offered: !attMenu.busy
             onTriggered: root.attachmentOpenRequested(attMenu.idx)
         }
         MenuEntry {
             objectName: "attachmentSaveEntry"
-            text: "Save as…"
+            text: qsTr("Save as…")
             offered: !attMenu.busy
             onTriggered: root.attachmentSaveRequested(attMenu.idx)
         }
         MenuEntry {
             objectName: "attachmentFolderEntry"
-            text: "Show in folder"
+            text: qsTr("Show in folder")
             offered: !attMenu.busy
             onTriggered: root.attachmentFolderRequested(attMenu.idx)
         }
         MenuEntry {
             objectName: "attachmentUncacheEntry"
-            text: "Delete from cache"
+            text: qsTr("Delete from cache")
             offered: !attMenu.busy
             onTriggered: root.attachmentUncacheRequested(attMenu.idx)
         }
         MenuEntry {
             objectName: "attachmentCancelEntry"
-            text: "Cancel"
+            text: qsTr("Cancel")
             offered: attMenu.busy
             onTriggered: root.attachmentCancelRequested(attMenu.idx)
         }
@@ -494,7 +501,7 @@ Item {
                 Text {
                     id: copyLabel
                     anchors.centerIn: parent
-                    text: "Copy"
+                    text: qsTr("Copy")
                     color: Theme.accentDeep
                     font.pixelSize: 14
                     font.bold: true
@@ -511,7 +518,7 @@ Item {
                 Text {
                     id: doneLabel
                     anchors.centerIn: parent
-                    text: "Done"
+                    text: qsTr("Done")
                     color: Theme.textDim
                     font.pixelSize: 14
                 }
@@ -730,13 +737,14 @@ Item {
                         readonly property bool sending: att.modelData.direction === "upload"
                         readonly property string hint: {
                             if (att.busy)
-                                return att.sending ? "Uploading…" : "Downloading…"
+                                return att.sending ? qsTr("Uploading…") : qsTr("Downloading…")
                             if (att.failed)
                                 return att.modelData.error !== ""
                                     ? att.modelData.error
-                                    : (att.sending ? "Upload failed" : "Download failed")
+                                    : (att.sending ? qsTr("Upload failed")
+                                                   : qsTr("Download failed"))
                             if (att.isImage && !att.hasThumb)
-                                return "Tap to load"
+                                return qsTr("Tap to load")
                             // tacky knows an outgoing file's size up front; an
                             // incoming one's only arrives as the transfer's
                             // Content-Length, so either may be the known one.

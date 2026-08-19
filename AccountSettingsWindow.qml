@@ -14,7 +14,7 @@ ApplicationWindow {
     minimumWidth: 380
     minimumHeight: 480
     visible: true
-    title: "Account details — " + account
+    title: qsTr("Account details — %1").arg(account)
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }

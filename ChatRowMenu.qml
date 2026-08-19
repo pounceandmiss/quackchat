@@ -63,12 +63,13 @@ AppMenu {
             return ""
         switch (menu.roomState) {
         case "error":
-            return menu.roomReason !== "" ? "Join failed: " + menu.roomReason
-                                          : "Join failed"
+            return menu.roomReason !== ""
+                 ? qsTr("Join failed: %1").arg(menu.roomReason)
+                 : qsTr("Join failed")
         case "joining":
-            return "Joining…"
+            return qsTr("Joining…")
         case "disconnected":
-            return "Not connected"
+            return qsTr("Not connected")
         default:
             return ""
         }
@@ -110,19 +111,19 @@ AppMenu {
     Rule {}
 
     MenuEntry {
-        text: "Open chat"
+        text: qsTr("Open chat")
         onTriggered: menu.openChat()
     }
     MenuEntry {
         objectName: "popOutEntry"
-        text: "Open in new window"
+        text: qsTr("Open in new window")
         offered: menu.canPopOut
         onTriggered: menu.popOutChat()
     }
     // A room's calls are its occupants', not the room's.
     MenuEntry {
         objectName: "startCallEntry"
-        text: "Start call"
+        text: qsTr("Start call")
         offered: !menu.groupchat
         onTriggered: menu.startCall()
     }
@@ -131,7 +132,8 @@ AppMenu {
     // room and remembers it; unticking leaves and forgets it.
     MenuEntry {
         objectName: "joinEntry"
-        text: "Join"
+        //: Bookmark membership, ticked when the room is joined automatically
+        text: qsTr("Join")
         trailing: menu.autojoin ? "✓" : ""
         offered: menu.groupchat
         onTriggered: menu.autojoin ? menu.leaveRoom() : menu.joinRoom()
@@ -140,7 +142,7 @@ AppMenu {
     // gateway disconnect, say) without touching that membership.
     MenuEntry {
         objectName: "forceJoinEntry"
-        text: "Force join request"
+        text: qsTr("Force join request")
         offered: menu.groupchat
         onTriggered: menu.forceJoin()
     }
@@ -149,7 +151,7 @@ AppMenu {
 
     MenuEntry {
         objectName: "addContactEntry"
-        text: "Add to contacts"
+        text: qsTr("Add to contacts")
         // Only a chat that is in neither the roster nor the bookmarks: the rest
         // are already somewhere this would put them.
         offered: !menu.groupchat && menu.source === "free"
@@ -157,13 +159,13 @@ AppMenu {
     }
     MenuEntry {
         objectName: "renameEntry"
-        text: menu.groupchat ? "Edit name…" : "Rename…"
+        text: menu.groupchat ? qsTr("Edit name…") : qsTr("Rename…")
         offered: menu.groupchat || menu.source === "roster"
         onTriggered: menu.groupchat ? menu.editBookmark() : menu.renameContact()
     }
     MenuEntry {
         objectName: "removeEntry"
-        text: menu.groupchat ? "Remove bookmark…" : "Remove…"
+        text: menu.groupchat ? qsTr("Remove bookmark…") : qsTr("Remove…")
         labelColor: Theme.negative
         offered: menu.groupchat || menu.source === "roster"
         onTriggered: menu.groupchat ? menu.removeBookmark() : menu.removeContact()
@@ -172,12 +174,12 @@ AppMenu {
     Rule {}
 
     MenuEntry {
-        text: "Refresh avatar"
+        text: qsTr("Refresh avatar")
         onTriggered: menu.refreshAvatar()
     }
     MenuEntry {
         objectName: "copyJidEntry"
-        text: "Copy JID"
+        text: qsTr("Copy JID")
         onTriggered: menu.copyJid()
     }
 }

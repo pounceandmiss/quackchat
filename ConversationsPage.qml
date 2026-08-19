@@ -103,7 +103,7 @@ Page {
                     Layout.fillWidth: true
                     spacing: 0
                     Text {
-                        text: "Chats"
+                        text: qsTr("Chats")
                         color: Theme.textPrimary
                         font.pixelSize: 20
                         font.bold: true
@@ -146,7 +146,7 @@ Page {
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.bottomMargin: 8
-                placeholderText: "Search chats and messages"
+                placeholderText: qsTr("Search chats and messages")
                 enabled: page.account !== ""
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 // Room for the button overlaid on the right; the near side is
@@ -188,13 +188,13 @@ Page {
         width: 190
         MenuEntry {
             objectName: "newChatEntry"
-            text: "New chat…"
+            text: qsTr("New chat…")
             enabled: page.account !== ""
             onTriggered: newChatSheet.open()
         }
         MenuEntry {
             objectName: "joinRoomEntry"
-            text: "Join room…"
+            text: qsTr("Join room…")
             enabled: page.account !== ""
             onTriggered: joinRoomSheet.open()
         }
@@ -202,13 +202,13 @@ Page {
         // are the whole of it. Per window and not remembered, as it is there.
         MenuEntry {
             objectName: "sortRecentEntry"
-            text: "Sort by activity"
+            text: qsTr("Sort by activity")
             trailing: visibleChats.sortMode === ChatListFilter.Recent ? "✓" : ""
             onTriggered: visibleChats.sortMode = ChatListFilter.Recent
         }
         MenuEntry {
             objectName: "sortNameEntry"
-            text: "Sort by name"
+            text: qsTr("Sort by name")
             trailing: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
             onTriggered: visibleChats.sortMode = ChatListFilter.Name
         }
@@ -216,17 +216,17 @@ Page {
         // flattened into this one it buried the actions it sat among.
         MenuEntry {
             objectName: "preferencesEntry"
-            text: "Preferences…"
+            text: qsTr("Preferences…")
             onTriggered: page.openPreferences()
         }
         MenuEntry {
-            text: "New window"
+            text: qsTr("New window")
             trailing: "Ctrl+N"
             offered: !Theme.mobile // single-window platforms
             onTriggered: AppWindows.newShell(page.account)
         }
         MenuEntry {
-            text: "Change theme"
+            text: qsTr("Change theme")
             trailing: "Ctrl+T"
             onTriggered: Theme.cycle()
         }
@@ -234,7 +234,7 @@ Page {
         // server and what we hold have drifted apart.
         MenuEntry {
             objectName: "refreshEntry"
-            text: "Refresh"
+            text: qsTr("Refresh")
             enabled: page.account !== ""
             onTriggered: if (page.chatList) page.chatList.reload()
         }
@@ -253,7 +253,7 @@ Page {
         // once the hits are underneath it.
         header: SectionLabel {
             width: listView.width
-            text: "Chats"
+            text: qsTr("Chats")
             shown: searchField.text !== "" && visibleChats.count > 0
         }
 
@@ -384,7 +384,8 @@ Page {
                         anchors.centerIn: parent
                         // tacky counts the true total; three digits of it would
                         // eat the name.
-                        text: row.unread > 99 ? "99+" : row.unread.toString()
+                        //: Unread badge when the true count is over 99
+                        text: row.unread > 99 ? qsTr("99+") : row.unread.toString()
                         color: Theme.textOnAccent
                         font.pixelSize: 12
                         font.bold: true
@@ -421,24 +422,24 @@ Page {
         onCopyJid: Clipboard.setText(jid)
         onRenameContact: {
             renamePrompt.subject = jid
-            renamePrompt.prompt = "New name for " + jid + ":"
+            renamePrompt.prompt = qsTr("New name for %1:").arg(jid)
             renamePrompt.value = chatTitle
             renamePrompt.open()
         }
         onEditBookmark: {
             bookmarkPrompt.subject = jid
-            bookmarkPrompt.prompt = "Bookmark name for " + jid + ":"
+            bookmarkPrompt.prompt = qsTr("Bookmark name for %1:").arg(jid)
             bookmarkPrompt.value = chatTitle
             bookmarkPrompt.open()
         }
         onRemoveContact: {
             removeContactConfirm.subject = jid
-            removeContactConfirm.message = "Remove " + jid + " from your contacts?"
+            removeContactConfirm.message = qsTr("Remove %1 from your contacts?").arg(jid)
             removeContactConfirm.open()
         }
         onRemoveBookmark: {
             removeBookmarkConfirm.subject = jid
-            removeBookmarkConfirm.message = "Remove the bookmark for " + jid + "?"
+            removeBookmarkConfirm.message = qsTr("Remove the bookmark for %1?").arg(jid)
             removeBookmarkConfirm.open()
         }
     }
@@ -481,7 +482,7 @@ Page {
     TextPromptDialog {
         id: renamePrompt
         objectName: "renamePrompt"
-        title: "Rename contact"
+        title: qsTr("Rename contact")
         onSubmitted: (text) => {
             if (page.chatList && text !== "" && text !== value)
                 page.chatList.renameContact(subject, text)
@@ -490,7 +491,7 @@ Page {
     TextPromptDialog {
         id: bookmarkPrompt
         objectName: "bookmarkPrompt"
-        title: "Edit bookmark"
+        title: qsTr("Edit bookmark")
         onSubmitted: (text) => {
             if (page.chatList && text !== "" && text !== value)
                 page.chatList.renameBookmark(subject, text)
@@ -499,13 +500,13 @@ Page {
     ConfirmDialog {
         id: removeContactConfirm
         objectName: "removeContactConfirm"
-        title: "Remove contact"
+        title: qsTr("Remove contact")
         onAccepted: if (page.chatList) page.chatList.removeContact(subject)
     }
     ConfirmDialog {
         id: removeBookmarkConfirm
         objectName: "removeBookmarkConfirm"
-        title: "Remove bookmark"
+        title: qsTr("Remove bookmark")
         onAccepted: if (page.chatList) page.chatList.removeBookmark(subject)
     }
 
@@ -522,26 +523,26 @@ Page {
         font.pixelSize: 14
         text: {
             if (page.account === "")
-                return "No account selected.\nUse the accounts button above to add one."
+                return qsTr("No account selected.\nUse the accounts button above to add one.")
             // A load that failed leaves the list as empty as one that succeeded
             // with nothing in it, so say which happened.
             const failure = page.chatList ? page.chatList.loadError : ""
             if (failure !== "")
-                return "Couldn't load conversations.\n" + failure
+                return qsTr("Couldn't load conversations.\n%1").arg(failure)
             if (!page.accountStatusKnown)
-                return "Checking " + page.account + " …"
+                return qsTr("Checking %1 …").arg(page.account)
             switch (page.connState) {
             case "connected":
-                return "Connected as " + page.account + ".\nNo conversations yet."
+                return qsTr("Connected as %1.\nNo conversations yet.").arg(page.account)
             case "auth-error":
-                return "Authentication failed for " + page.account + ".\nCheck the password."
+                return qsTr("Authentication failed for %1.\nCheck the password.").arg(page.account)
             case "conn-error":
-                return "Can't reach the server for " + page.account + ".\nRetrying…"
+                return qsTr("Can't reach the server for %1.\nRetrying…").arg(page.account)
             case "disconnected":
             case "waiting":
-                return "Reconnecting " + page.account + " …"
+                return qsTr("Reconnecting %1 …").arg(page.account)
             default: // starting, connecting, authenticating, binding
-                return "Connecting " + page.account + " …"
+                return qsTr("Connecting %1 …").arg(page.account)
             }
         }
     }

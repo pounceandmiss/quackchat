@@ -17,7 +17,7 @@ ApplicationWindow {
     minimumWidth: 380
     minimumHeight: 420
     visible: true
-    title: "Contact details — " + (name !== "" ? name : jid)
+    title: qsTr("Contact details — %1").arg(name !== "" ? name : jid)
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }

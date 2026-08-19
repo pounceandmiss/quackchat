@@ -77,14 +77,14 @@ Page {
     readonly property string sharingNote: {
         const sub = page.entry.subscription ?? ""
         if (sub === "both")
-            return "You can each see the other's status."
+            return qsTr("You can each see the other's status.")
         if (sub === "to")
-            return "You see their status. They cannot see yours."
+            return qsTr("You see their status. They cannot see yours.")
         if (sub === "from")
-            return "They see your status. You cannot see theirs."
+            return qsTr("They see your status. You cannot see theirs.")
         if (page.entry.ask === "subscribe")
-            return "Waiting for them to approve your request."
-        return "Neither of you can see the other's status."
+            return qsTr("Waiting for them to approve your request.")
+        return qsTr("Neither of you can see the other's status.")
     }
 
     OmemoDevicesModel {
@@ -124,7 +124,7 @@ Page {
             }
             Text {
                 Layout.fillWidth: true
-                text: "Contact details"
+                text: qsTr("Contact details")
                 color: Theme.textPrimary
                 font.pixelSize: 20
                 font.bold: true
@@ -162,7 +162,7 @@ Page {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Caption { text: "XMPP address" }
+                    Caption { text: qsTr("XMPP address") }
                     Text {
                         objectName: "contactJid"
                         Layout.fillWidth: true
@@ -176,11 +176,11 @@ Page {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Caption { text: "Name" }
+                    Caption { text: qsTr("Name") }
                     Text {
                         objectName: "contactName"
                         Layout.fillWidth: true
-                        text: page.displayName !== "" ? page.displayName : "Not set"
+                        text: page.displayName !== "" ? page.displayName : qsTr("Not set")
                         color: page.displayName !== "" ? Theme.textPrimary
                                                        : Theme.textDim
                         font.pixelSize: 15
@@ -202,8 +202,8 @@ Page {
                     Text {
                         objectName: "contactStanding"
                         Layout.fillWidth: true
-                        text: page.rostered ? "In your contacts"
-                                            : "Not in your contacts"
+                        text: page.rostered ? qsTr("In your contacts")
+                                            : qsTr("Not in your contacts")
                         color: Theme.textPrimary
                         font.pixelSize: 15
                         elide: Text.ElideRight
@@ -213,7 +213,7 @@ Page {
                         Layout.fillWidth: true
                         text: page.rostered
                               ? page.sharingNote
-                              : "You have a conversation with them but have never added them."
+                              : qsTr("You have a conversation with them but have never added them.")
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -221,14 +221,14 @@ Page {
 
             Card {
                 Text {
-                    text: "Their devices"
+                    text: qsTr("Their devices")
                     color: Theme.textPrimary
                     font.pixelSize: 18
                     font.bold: true
                 }
                 Caption {
                     Layout.fillWidth: true
-                    text: "Compare a key with them over another channel before trusting it."
+                    text: qsTr("Compare a key with them over another channel before trusting it.")
                     wrapMode: Text.WordWrap
                 }
 
@@ -238,7 +238,7 @@ Page {
                     Layout.fillWidth: true
                     objectName: "noKeysNotice"
                     visible: theirKeys.count === 0
-                    text: "No keys for this contact yet. They appear once their devices announce themselves."
+                    text: qsTr("No keys for this contact yet. They appear once their devices announce themselves.")
                     wrapMode: Text.WordWrap
                 }
 
@@ -252,7 +252,7 @@ Page {
             // to you belongs on the same screen.
             Card {
                 Text {
-                    text: "This device"
+                    text: qsTr("This device")
                     color: Theme.textPrimary
                     font.pixelSize: 18
                     font.bold: true
@@ -262,13 +262,13 @@ Page {
                     objectName: "ownFingerprint"
                     visible: ownKey.ownFingerprint !== ""
                     hex: ownKey.ownFingerprint
-                    note: "yours"
+                    note: qsTr("yours")
                     onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                 }
                 Caption {
                     Layout.fillWidth: true
                     visible: ownKey.ownFingerprint === ""
-                    text: "This device gets its key once the account has connected."
+                    text: qsTr("This device gets its key once the account has connected.")
                     wrapMode: Text.WordWrap
                 }
             }
@@ -280,6 +280,6 @@ Page {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 24
-        text: "Fingerprint copied"
+        text: qsTr("Fingerprint copied")
     }
 }

@@ -40,7 +40,7 @@ Page {
         // header nobody can see would read as a room that had emptied.
         filter: page.filterMode ? filterInput.text : ""
         onActionFailed: (action, message) => {
-            actionError.message = action + " failed: " + message
+            actionError.message = qsTr("%1 failed: %2").arg(action).arg(message)
             actionError.open()
         }
     }
@@ -49,35 +49,35 @@ Page {
     // model speaks XMPP's terms, and this is the only place they are read aloud.
     function groupLabel(group) {
         switch (group) {
-        case "moderator":   return "Moderators"
-        case "participant": return "Participants"
-        case "visitor":     return "Visitors"
-        default:            return "Others"
+        case "moderator":   return qsTr("Moderators")
+        case "participant": return qsTr("Participants")
+        case "visitor":     return qsTr("Visitors")
+        default:            return qsTr("Others")
         }
     }
     function roleLabel(role) {
         switch (role) {
-        case "moderator":   return "Moderator"
-        case "participant": return "Participant"
-        case "visitor":     return "Visitor"
-        default:            return "No role"
+        case "moderator":   return qsTr("Moderator")
+        case "participant": return qsTr("Participant")
+        case "visitor":     return qsTr("Visitor")
+        default:            return qsTr("No role")
         }
     }
     function affiliationLabel(affiliation) {
         switch (affiliation) {
-        case "owner":   return "Owner"
-        case "admin":   return "Admin"
-        case "member":  return "Member"
-        case "outcast": return "Banned"
+        case "owner":   return qsTr("Owner")
+        case "admin":   return qsTr("Admin")
+        case "member":  return qsTr("Member")
+        case "outcast": return qsTr("Banned")
         default:        return ""
         }
     }
     function showLabel(show) {
         switch (show) {
-        case "away": return "Away"
-        case "xa":   return "Away for a while"
-        case "dnd":  return "Do not disturb"
-        default:     return "Available"
+        case "away": return qsTr("Away")
+        case "xa":   return qsTr("Away for a while")
+        case "dnd":  return qsTr("Do not disturb")
+        default:     return qsTr("Available")
         }
     }
     function showColor(show) {
@@ -209,7 +209,7 @@ Page {
                 spacing: 1
                 Text {
                     Layout.fillWidth: true
-                    text: "Room details"
+                    text: qsTr("Room details")
                     color: Theme.textPrimary
                     font.pixelSize: 20
                     font.bold: true
@@ -258,13 +258,14 @@ Page {
                 id: filterInput
                 objectName: "occupantFilter"
                 Layout.fillWidth: true
-                placeholderText: "Find someone in this room"
+                placeholderText: qsTr("Find someone in this room")
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 Keys.onEscapePressed: page.closeFilter()
             }
             Text {
                 objectName: "filterCount"
-                text: room.count + " of " + room.total
+                //: How many of the room's people the filter left showing
+                text: qsTr("%1 of %2").arg(room.count).arg(room.total)
                 color: Theme.textDim
                 font.pixelSize: 12
             }
@@ -281,38 +282,40 @@ Page {
 
         MenuEntry {
             objectName: "inviteEntry"
-            text: "Invite someone…"
-            onTriggered: page.ask("invite", "Invite to " + page.roomTitle,
-                                  "Their address:")
+            text: qsTr("Invite someone…")
+            onTriggered: page.ask("invite", qsTr("Invite to %1").arg(page.roomTitle),
+                                  qsTr("Their address:"))
         }
         MenuEntry {
             objectName: "subjectEntry"
-            text: "Change subject…"
-            onTriggered: page.ask("subject", "Room subject",
-                                  "What this room is about. Most rooms only let "
-                                  + "their moderators set it.", room.subject)
+            text: qsTr("Change subject…")
+            onTriggered: page.ask("subject", qsTr("Room subject"),
+                                  qsTr("What this room is about. Most rooms only "
+                                       + "let their moderators set it."),
+                                  room.subject)
         }
         MenuEntry {
             objectName: "nickEntry"
-            text: "Change my nickname…"
-            onTriggered: page.ask("nick", "Your nickname",
-                                  "How this room sees you. Kept in the bookmark, "
-                                  + "so the next join uses it too.", room.myNick)
+            text: qsTr("Change my nickname…")
+            onTriggered: page.ask("nick", qsTr("Your nickname"),
+                                  qsTr("How this room sees you. Kept in the "
+                                       + "bookmark, so the next join uses it too."),
+                                  room.myNick)
         }
         MenuEntry {
             objectName: "requestVoiceEntry"
-            text: "Request voice"
+            text: qsTr("Request voice")
             offered: room.myRole === "visitor"
             onTriggered: room.requestVoice()
         }
         MenuEntry {
             objectName: "destroyEntry"
-            text: "Destroy room…"
+            text: qsTr("Destroy room…")
             labelColor: Theme.negative
             offered: room.myAffiliation === "owner"
             onTriggered: {
                 destroyConfirm.message =
-                    "Destroy " + room.roomJid + " for everyone, permanently?"
+                    qsTr("Destroy %1 for everyone, permanently?").arg(room.roomJid)
                 destroyConfirm.open()
             }
         }
@@ -364,7 +367,7 @@ Page {
     ConfirmDialog {
         id: destroyConfirm
         objectName: "destroyConfirm"
-        title: "Destroy room"
+        title: qsTr("Destroy room")
         onAccepted: room.destroyRoom()
     }
 
@@ -407,57 +410,58 @@ Page {
 
         MenuEntry {
             objectName: "kickEntry"
-            text: "Kick…"
+            text: qsTr("Kick…")
             offered: occupantMenu.can("kick")
-            onTriggered: page.ask("kick", "Kick " + occupantMenu.nick,
-                                  "Reason (optional). A kick only lasts until "
-                                  + "they walk back in.", "", occupantMenu.nick)
+            onTriggered: page.ask("kick", qsTr("Kick %1").arg(occupantMenu.nick),
+                                  qsTr("Reason (optional). A kick only lasts "
+                                       + "until they walk back in."),
+                                  "", occupantMenu.nick)
         }
         MenuEntry {
             objectName: "banEntry"
-            text: "Ban…"
+            text: qsTr("Ban…")
             labelColor: Theme.negative
             offered: occupantMenu.can("ban")
             // Against the real JID: an affiliation outlives the nick it was set
             // on, which is what makes a ban a ban and a kick only a kick.
-            onTriggered: page.ask("ban", "Ban " + occupantMenu.nick,
-                                  "Reason (optional). A ban keeps them out "
-                                  + "until it is lifted.", "",
-                                  occupantMenu.realJid)
+            onTriggered: page.ask("ban", qsTr("Ban %1").arg(occupantMenu.nick),
+                                  qsTr("Reason (optional). A ban keeps them out "
+                                       + "until it is lifted."),
+                                  "", occupantMenu.realJid)
         }
         MenuEntry {
             objectName: "makeModeratorEntry"
-            text: "Make moderator"
+            text: qsTr("Make moderator")
             offered: occupantMenu.can("make_moderator")
             onTriggered: room.setRole(occupantMenu.nick, "moderator")
         }
         MenuEntry {
             objectName: "grantVoiceEntry"
-            text: "Grant voice"
+            text: qsTr("Grant voice")
             offered: occupantMenu.can("grant_voice")
             onTriggered: room.setRole(occupantMenu.nick, "participant")
         }
         MenuEntry {
             objectName: "revokeVoiceEntry"
-            text: "Revoke voice"
+            text: qsTr("Revoke voice")
             offered: occupantMenu.can("revoke_voice")
             onTriggered: room.setRole(occupantMenu.nick, "visitor")
         }
         MenuEntry {
             objectName: "grantMembershipEntry"
-            text: "Grant membership"
+            text: qsTr("Grant membership")
             offered: occupantMenu.can("grant_membership")
             onTriggered: room.setAffiliation(occupantMenu.realJid, "member")
         }
         MenuEntry {
             objectName: "revokeMembershipEntry"
-            text: "Revoke membership"
+            text: qsTr("Revoke membership")
             offered: occupantMenu.can("revoke_membership")
             onTriggered: room.setAffiliation(occupantMenu.realJid, "none")
         }
         MenuEntry {
             objectName: "copyOccupantJidEntry"
-            text: "Copy address"
+            text: qsTr("Copy address")
             offered: occupantMenu.realJid !== ""
             onTriggered: page.copyText(occupantMenu.realJid)
         }
@@ -566,14 +570,13 @@ Page {
                                 spacing: 6
                                 Chip {
                                     objectName: "occupantCountChip"
-                                    text: room.total === 1 ? "1 person"
-                                                           : room.total + " people"
+                                    text: qsTr("%n person(s)", "", room.total)
                                     tone: Theme.accentDeep
                                 }
                                 Chip {
                                     objectName: "notJoinedChip"
                                     visible: !room.joined
-                                    text: "Not joined"
+                                    text: qsTr("Not joined")
                                     tone: Theme.warning
                                 }
                             }
@@ -603,8 +606,8 @@ Page {
                         Layout.fillWidth: true
                         visible: room.subject === ""
                         text: room.joined
-                              ? "No subject set."
-                              : "Nothing is known about this room until you are in it."
+                              ? qsTr("No subject set.")
+                              : qsTr("Nothing is known about this room until you are in it.")
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -616,7 +619,7 @@ Page {
                     visible: room.myNick !== ""
 
                     Text {
-                        text: "You in this room"
+                        text: qsTr("You in this room")
                         color: Theme.textPrimary
                         font.pixelSize: 16
                         font.bold: true
@@ -661,7 +664,7 @@ Page {
                     Caption {
                         Layout.fillWidth: true
                         visible: room.myRole === "visitor"
-                        text: "Visitors cannot speak here. Ask for voice from the room menu."
+                        text: qsTr("Visitors cannot speak here. Ask for voice from the room menu.")
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -669,8 +672,9 @@ Page {
                 SectionLabel {
                     Layout.fillWidth: true
                     Layout.topMargin: 2
-                    text: room.filter === "" ? "People"
-                                             : "People matching “" + room.filter + "”"
+                    text: room.filter === ""
+                        ? qsTr("People")
+                        : qsTr("People matching “%1”").arg(room.filter)
                     shown: room.total > 0
                 }
             }
@@ -711,7 +715,7 @@ Page {
                 if (occupantRow.realJid !== "")
                     return occupantRow.realJid
                 return occupantRow.status !== ""
-                    ? "“" + occupantRow.status + "”" : ""
+                    ? qsTr("“%1”").arg(occupantRow.status) : ""
             }
 
             background: Rectangle {
@@ -769,7 +773,7 @@ Page {
                         Chip {
                             objectName: "selfChip"
                             visible: occupantRow.self
-                            text: "You"
+                            text: qsTr("You")
                             tone: Theme.accent
                         }
                     }
@@ -819,10 +823,10 @@ Page {
                     wrapMode: Text.WordWrap
                     text: {
                         if (!room.joined)
-                            return "You are not in this room, so nobody is listed. Join it from the chat list to see who is here."
+                            return qsTr("You are not in this room, so nobody is listed. Join it from the chat list to see who is here.")
                         if (room.total === 0)
-                            return "Nobody is here yet."
-                        return "Nobody in this room matches that."
+                            return qsTr("Nobody is here yet.")
+                        return qsTr("Nobody in this room matches that.")
                     }
                 }
 
@@ -839,7 +843,7 @@ Page {
                         spacing: 8
                         Text {
                             Layout.fillWidth: true
-                            text: "What do these mean?"
+                            text: qsTr("What do these mean?")
                             color: Theme.textPrimary
                             font.pixelSize: 14
                             font.bold: true
@@ -862,50 +866,50 @@ Page {
                         visible: legendCard.open
                         spacing: 4
 
-                        LegendHeading { text: "Roles, granted for this visit" }
+                        LegendHeading { text: qsTr("Roles, granted for this visit") }
                         LegendRow {
-                            term: "Moderator"
-                            meaning: "Can kick, mute and manage the room"
+                            term: qsTr("Moderator")
+                            meaning: qsTr("Can kick, mute and manage the room")
                         }
                         LegendRow {
-                            term: "Participant"
-                            meaning: "Can speak"
+                            term: qsTr("Participant")
+                            meaning: qsTr("Can speak")
                         }
                         LegendRow {
-                            term: "Visitor"
-                            meaning: "Can read, but not speak in a moderated room"
-                        }
-
-                        LegendHeading { text: "Affiliations, kept between visits" }
-                        LegendRow {
-                            term: "Owner"
-                            meaning: "Full control, down to destroying the room"
-                        }
-                        LegendRow {
-                            term: "Admin"
-                            meaning: "Can ban people and grant membership"
-                        }
-                        LegendRow {
-                            term: "Member"
-                            meaning: "Recognised by the room, and let into a members-only one"
+                            term: qsTr("Visitor")
+                            meaning: qsTr("Can read, but not speak in a moderated room")
                         }
 
-                        LegendHeading { text: "The dot on a picture" }
+                        LegendHeading { text: qsTr("Affiliations, kept between visits") }
                         LegendRow {
-                            term: "Filled green"
-                            meaning: "Available"
+                            term: qsTr("Owner")
+                            meaning: qsTr("Full control, down to destroying the room")
                         }
                         LegendRow {
-                            term: "Filled amber"
-                            meaning: "Away"
+                            term: qsTr("Admin")
+                            meaning: qsTr("Can ban people and grant membership")
                         }
                         LegendRow {
-                            term: "Hollow amber"
-                            meaning: "Away for a while"
+                            term: qsTr("Member")
+                            meaning: qsTr("Recognised by the room, and let into a members-only one")
+                        }
+
+                        LegendHeading { text: qsTr("The dot on a picture") }
+                        LegendRow {
+                            term: qsTr("Filled green")
+                            meaning: qsTr("Available")
                         }
                         LegendRow {
-                            term: "Filled red"
-                            meaning: "Does not want to be disturbed"
+                            term: qsTr("Filled amber")
+                            meaning: qsTr("Away")
+                        }
+                        LegendRow {
+                            term: qsTr("Hollow amber")
+                            meaning: qsTr("Away for a while")
+                        }
+                        LegendRow {
+                            term: qsTr("Filled red")
+                            meaning: qsTr("Does not want to be disturbed")
                         }
                     }
                 }
@@ -919,6 +923,6 @@ Page {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 24
-        text: "Address copied"
+        text: qsTr("Address copied")
     }
 }

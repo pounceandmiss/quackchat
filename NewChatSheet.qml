@@ -15,7 +15,7 @@ SheetDialog {
     // appears afterwards carries it back.
     signal startChat(string jid, string name, bool addToContacts)
 
-    title: "New chat"
+    title: qsTr("New chat")
     standardButtons: Dialog.Cancel | Dialog.Ok
 
     // Bare, so the chat we open and the row that answers agree on the key.
@@ -38,7 +38,7 @@ SheetDialog {
         spacing: 12
 
         Label {
-            text: "Jabber ID"
+            text: qsTr("Jabber ID")
             color: Theme.textDim
             font.pixelSize: 12
         }
@@ -46,13 +46,13 @@ SheetDialog {
             id: jidField
             objectName: "newChatJid"
             Layout.fillWidth: true
-            placeholderText: "someone@example.com"
+            placeholderText: qsTr("someone@example.com")
             inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
             onAccepted: nameField.forceActiveFocus()
         }
 
         Label {
-            text: "Name (optional)"
+            text: qsTr("Name (optional)")
             color: Theme.textDim
             font.pixelSize: 12
         }
@@ -60,7 +60,7 @@ SheetDialog {
             id: nameField
             objectName: "newChatName"
             Layout.fillWidth: true
-            placeholderText: "what to call them"
+            placeholderText: qsTr("what to call them")
             onAccepted: if (sheet.jidValid) sheet.accept()
         }
 
@@ -68,7 +68,7 @@ SheetDialog {
             id: addBox
             objectName: "newChatAddContact"
             checked: true
-            text: "Add to my contacts"
+            text: qsTr("Add to my contacts")
             contentItem: Text {
                 text: addBox.text
                 color: Theme.textPrimary

@@ -12,7 +12,7 @@ import Quack
 // RegisterAccountSheet, which is where a server is asked to make one.
 SheetDialog {
     id: sheet
-    title: "Add account"
+    title: qsTr("Add account")
     standardButtons: Dialog.Cancel | Dialog.Ok
 
     // Handled by whoever hosts this sheet: the sign-up is a sheet of its own.
@@ -35,27 +35,27 @@ SheetDialog {
         spacing: 12
 
         Label {
-            text: "Jabber ID"
+            text: qsTr("Jabber ID")
             color: Theme.textDim
             font.pixelSize: 12
         }
         TextField {
             id: jidField
             Layout.fillWidth: true
-            placeholderText: "you@example.com"
+            placeholderText: qsTr("you@example.com")
             inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
             onAccepted: passwordField.forceActiveFocus()
         }
 
         Label {
-            text: "Password"
+            text: qsTr("Password")
             color: Theme.textDim
             font.pixelSize: 12
         }
         TextField {
             id: passwordField
             Layout.fillWidth: true
-            placeholderText: "password"
+            placeholderText: qsTr("password")
             echoMode: TextInput.Password
             onAccepted: if (sheet.jidValid) sheet.accept()
         }

@@ -18,7 +18,7 @@ ApplicationWindow {
     minimumWidth: 360
     minimumHeight: 420
     visible: true
-    title: "Room details — " + (name !== "" ? name : jid)
+    title: qsTr("Room details — %1").arg(name !== "" ? name : jid)
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }

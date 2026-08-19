@@ -88,11 +88,12 @@ Page {
     FileDialog {
         id: avatarDialog
         objectName: "avatarDialog"
-        title: "Choose a picture"
+        title: qsTr("Choose a picture")
         // Android's picker filters by MIME type, which FileDialog does not
         // expose, so it lists everything there; the decode is what turns a
         // non-image away.
-        nameFilters: ["Images (*.png *.jpg *.jpeg *.gif *.webp)", "All files (*)"]
+        nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.gif *.webp)"),
+                      qsTr("All files (*)")]
         onAccepted: if (page.settings) page.settings.setAvatar(avatarDialog.selectedFile)
     }
 
@@ -130,7 +131,7 @@ Page {
             }
             Text {
                 Layout.fillWidth: true
-                text: "Account details"
+                text: qsTr("Account details")
                 color: Theme.textPrimary
                 font.pixelSize: 20
                 font.bold: true
@@ -262,7 +263,7 @@ Page {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Caption { text: "XMPP address" }
+                    Caption { text: qsTr("XMPP address") }
                     Text {
                         Layout.fillWidth: true
                         text: page.account
@@ -275,7 +276,7 @@ Page {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Caption { text: "Password" }
+                    Caption { text: qsTr("Password") }
                     TextField {
                         id: passwordField
                         objectName: "passwordField"
@@ -292,7 +293,7 @@ Page {
                     Layout.fillWidth: true
                     visible: page.settings !== null
                              && passwordField.text !== page.settings.password
-                    text: "Takes effect the next time this account connects."
+                    text: qsTr("Takes effect the next time this account connects.")
                     wrapMode: Text.WordWrap
                 }
             }
@@ -310,7 +311,7 @@ Page {
                         Text {
                             Layout.fillWidth: true
                             visible: !page.editingNick
-                            text: nickField.text !== "" ? nickField.text : "Not set"
+                            text: nickField.text !== "" ? nickField.text : qsTr("Not set")
                             color: nickField.text !== "" ? Theme.textPrimary : Theme.textDim
                             font.pixelSize: 16
                             elide: Text.ElideRight
@@ -320,14 +321,14 @@ Page {
                             objectName: "nickField"
                             Layout.fillWidth: true
                             visible: page.editingNick
-                            placeholderText: "Your name"
+                            placeholderText: qsTr("Your name")
                             onAccepted: {
                                 page.editingNick = false
                                 if (page.dirty)
                                     page.save()
                             }
                         }
-                        Caption { text: "Your name" }
+                        Caption { text: qsTr("Your name") }
                     }
 
                     IconButton {
@@ -352,7 +353,7 @@ Page {
                     Layout.fillWidth: true
                     visible: page.devices !== null && page.devices.ownFingerprint !== ""
                     hex: page.devices ? page.devices.ownFingerprint : ""
-                    note: "this device"
+                    note: qsTr("this device")
                     onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                 }
 
@@ -361,14 +362,14 @@ Page {
                 Caption {
                     Layout.fillWidth: true
                     visible: page.devices !== null && page.devices.ownFingerprint === ""
-                    text: "This device gets its key once the account has connected."
+                    text: qsTr("This device gets its key once the account has connected.")
                     wrapMode: Text.WordWrap
                 }
             }
 
             // Every other device this account has.
             Card {
-                SectionTitle { text: "Other devices" }
+                SectionTitle { text: qsTr("Other devices") }
 
                 CheckBox {
                     id: blindTrustBox
@@ -377,7 +378,7 @@ Page {
                     padding: 0
                     // The style centres its indicator when the control has no
                     // text of its own, so set it even though contentItem draws it.
-                    text: "Trust new devices automatically"
+                    text: qsTr("Trust new devices automatically")
                     checked: page.devices ? page.devices.blindTrust : false
                     onToggled: if (page.devices) page.devices.blindTrust = checked
                     contentItem: Text {
@@ -390,7 +391,7 @@ Page {
                 }
                 Caption {
                     Layout.fillWidth: true
-                    text: "Applies to this account. New keys are trusted until you decide otherwise."
+                    text: qsTr("Applies to this account. New keys are trusted until you decide otherwise.")
                     wrapMode: Text.WordWrap
                 }
 
@@ -402,7 +403,7 @@ Page {
                 Caption {
                     Layout.fillWidth: true
                     visible: page.devices !== null && page.devices.count === 0
-                    text: "No other devices yet."
+                    text: qsTr("No other devices yet.")
                 }
             }
 
@@ -436,7 +437,7 @@ Page {
 
             Button {
                 id: cancelBtn
-                text: "Cancel"
+                text: qsTr("Cancel")
                 flat: true
                 onClicked: page.done()
                 contentItem: Text {
@@ -450,7 +451,7 @@ Page {
 
             Button {
                 id: saveBtn
-                text: page.settings && page.settings.saving ? "Saving" : "Save"
+                text: page.settings && page.settings.saving ? qsTr("Saving") : qsTr("Save")
                 enabled: page.dirty && !(page.settings && page.settings.saving)
                 onClicked: page.save()
                 contentItem: Text {
@@ -505,7 +506,7 @@ Page {
         Text {
             id: noticeText
             anchors.centerIn: parent
-            text: "Fingerprint copied"
+            text: qsTr("Fingerprint copied")
             color: Theme.surface
             font.pixelSize: 12
         }

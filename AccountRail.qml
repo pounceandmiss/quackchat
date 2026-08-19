@@ -41,17 +41,22 @@ Rectangle {
         // The backend answers the account list before it answers what those
         // accounts are doing, and "offline" would be a guess in between.
         if (!known)
-            return "checking…"
+            return qsTr("checking…")
         if (!enabled)
-            return "disabled"
+            return qsTr("disabled")
         switch (state) {
-        case "connected": return "connected"
-        case "auth-error": return "sign-in failed"
-        case "conn-error": return "connection failed"
-        case "waiting": return "reconnecting…"
+        case "connected": return qsTr("connected")
+        case "auth-error": return qsTr("sign-in failed")
+        case "conn-error": return qsTr("connection failed")
+        case "waiting": return qsTr("reconnecting…")
         case "disconnected":
-        case "": return "offline"
-        default: return state // connecting / authenticating / binding
+        case "": return qsTr("offline")
+        // Spelled out rather than left to the fallback below, which would put
+        // an untranslated protocol word on screen.
+        case "connecting": return qsTr("connecting…")
+        case "authenticating": return qsTr("authenticating…")
+        case "binding": return qsTr("binding…")
+        default: return state
         }
     }
 
@@ -178,16 +183,16 @@ Rectangle {
                     id: ctx
                     width: 200
                     MenuEntry {
-                        text: "Account details…"
+                        text: qsTr("Account details…")
                         onTriggered: rail.openSettings(cell.jid)
                     }
                     MenuEntry {
-                        text: cell.acctEnabled ? "Disable" : "Enable"
+                        text: cell.acctEnabled ? qsTr("Disable") : qsTr("Enable")
                         onTriggered: cell.acctEnabled ? App.accounts.disable(cell.jid)
                                                       : App.accounts.enable(cell.jid)
                     }
                     MenuEntry {
-                        text: "Remove…"
+                        text: qsTr("Remove…")
                         labelColor: Theme.negative
                         onTriggered: removeConfirm.open()
                     }
@@ -198,11 +203,11 @@ Rectangle {
                     id: removeConfirm
                     anchors.centerIn: Overlay.overlay
                     modal: true
-                    title: "Remove account"
+                    title: qsTr("Remove account")
                     standardButtons: Dialog.Cancel | Dialog.Yes
                     onAccepted: App.accounts.remove(cell.jid)
                     Text {
-                        text: "Remove " + cell.jid + "?\nThis deletes its local cache."
+                        text: qsTr("Remove %1?\nThis deletes its local cache.").arg(cell.jid)
                         color: Theme.textPrimary
                         wrapMode: Text.WordWrap
                     }
@@ -246,7 +251,7 @@ Rectangle {
                     anchors.left: plus.right
                     anchors.leftMargin: 12
                     anchors.verticalCenter: plus.verticalCenter
-                    text: "Add account"
+                    text: qsTr("Add account")
                     color: Theme.textPrimary
                     font.pixelSize: 14
                 }

@@ -15,8 +15,9 @@ ApplicationWindow {
     minimumWidth: 360
     minimumHeight: 480
     visible: true
-    title: shell.currentAccount !== "" ? "Quack — " + shell.currentAccount
-                                       : "Quack Chat"
+    title: shell.currentAccount !== ""
+           ? qsTr("Quack — %1").arg(shell.currentAccount)
+           : qsTr("Quack Chat")
     color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }

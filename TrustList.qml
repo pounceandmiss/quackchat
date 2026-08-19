@@ -33,7 +33,7 @@ ColumnLayout {
         spacing: 4
         Caption {
             Layout.alignment: Qt.AlignHCenter
-            text: "Set all"
+            text: qsTr("Set all")
             font.bold: true
         }
         TrustPicker {
@@ -62,7 +62,7 @@ ColumnLayout {
             Fingerprint {
                 Layout.fillWidth: true
                 hex: deviceRow.fingerprint
-                note: deviceRow.active ? "" : "(inactive)"
+                note: deviceRow.active ? "" : qsTr("(inactive)")
                 onCopyRequested: (spaced) => list.copyRequested(spaced)
             }
 
@@ -71,7 +71,7 @@ ColumnLayout {
             Text {
                 Layout.fillWidth: true
                 visible: !deviceRow.settable
-                text: "Compromised - key changed"
+                text: qsTr("Compromised - key changed")
                 color: Theme.negative
                 font.pixelSize: 12
                 font.bold: true

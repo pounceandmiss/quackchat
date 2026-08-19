@@ -382,7 +382,7 @@ Page {
         function onAttachmentSaved(dest, error) {
             if (error === "")
                 return
-            saveFailed.message = "Save failed: " + error
+            saveFailed.message = qsTr("Save failed: %1").arg(error)
             saveFailed.open()
         }
     }
@@ -405,7 +405,7 @@ Page {
     FileDialog {
         id: attachDialog
         objectName: "attachDialog"
-        title: "Attach a file"
+        title: qsTr("Attach a file")
         onAccepted: if (page.chatModel)
             page.chatModel.sendFile(attachDialog.selectedFile)
     }
@@ -413,7 +413,7 @@ Page {
     FileDialog {
         id: saveDialog
         objectName: "attachmentSaveDialog"
-        title: "Save attachment"
+        title: qsTr("Save attachment")
         fileMode: FileDialog.SaveFile
         onAccepted: if (page.chatModel)
             page.chatModel.saveAttachment(page.savingTs, page.savingIdx,
@@ -609,13 +609,13 @@ Page {
         return known !== undefined && known !== "" ? known : jid
     }
     function selfOrAuthorName(jid) {
-        return jid === "" || jid === page.account ? "You" : authorName(jid)
+        return jid === "" || jid === page.account ? qsTr("You") : authorName(jid)
     }
 
     function fmtTime(ts) {
         if (!ts) return ""
         const d = new Date(ts / 1000) // tacky timestamps are microseconds
-        return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)
+        return d.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
     }
     // Two independent hops: server_status covers the one to our own server,
     // remote_status what the far end then did. A message still on its way to
@@ -832,7 +832,7 @@ Page {
             }
             Text {
                 Layout.fillWidth: true
-                text: page.selectedCount + " selected"
+                text: qsTr("%n selected", "", page.selectedCount)
                 color: Theme.textPrimary
                 font.pixelSize: 17
                 font.bold: true
@@ -907,7 +907,7 @@ Page {
                 id: searchInput
                 objectName: "chatSearchField"
                 Layout.fillWidth: true
-                placeholderText: "Search this chat"
+                placeholderText: qsTr("Search this chat")
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
                 onTextChanged: {
                     if (searchInput.text === "")
@@ -940,7 +940,8 @@ Page {
                         page.runSearch(page.searchServer)
                 }
                 contentItem: Text {
-                    text: "Server"
+                    //: Widens a chat search from the local store to the archive
+                    text: qsTr("Server")
                     color: page.searchServer ? Theme.textOnAccent : Theme.textDim
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
@@ -969,11 +970,15 @@ Page {
                     if (!chatSearch.searched)
                         return ""
                     if (chatSearch.count === 0)
-                        return "none"
+                        //: Chat search found nothing, in the counter beside the box
+                        return qsTr("none")
                     // A trailing + where there are pages left: the total is only
                     // what has been fetched so far, not what the archive holds.
-                    return (page.hitIndex + 1) + "/" + chatSearch.count
-                           + (chatSearch.complete ? "" : "+")
+                    const total = chatSearch.complete
+                                ? chatSearch.count
+                                : qsTr("%1+").arg(chatSearch.count)
+                    //: Which chat search hit is showing, of how many, e.g. "3/12"
+                    return qsTr("%1/%2").arg(page.hitIndex + 1).arg(total)
                 }
             }
             // Chevrons now that these are drawn: as text they had to be
@@ -1017,7 +1022,7 @@ Page {
             wrapMode: Text.WordWrap
             color: Theme.textDim
             font.pixelSize: 14
-            text: "Pick a conversation to start chatting."
+            text: qsTr("Pick a conversation to start chatting.")
         }
     }
 
@@ -1409,8 +1414,8 @@ Page {
                         width: Math.min(implicitWidth, feed.width - 96)
                         elide: Text.ElideRight
                         text: olderPill.failed ? page.loadError
-                            : olderPill.waiting ? "Offline"
-                            : "Loading"
+                            : olderPill.waiting ? qsTr("Offline")
+                            : qsTr("Loading")
                         color: Theme.textDim
                         font.pixelSize: 11
                     }
@@ -1420,7 +1425,7 @@ Page {
                         objectName: "olderPillRetry"
                         anchors.verticalCenter: parent.verticalCenter
                         visible: olderPill.failed
-                        text: "Retry"
+                        text: qsTr("Retry")
                         color: Theme.accent
                         font.pixelSize: 11
                     }
@@ -1459,8 +1464,10 @@ Page {
                     Layout.fillWidth: true
                     spacing: 1
                     Text {
-                        text: page.replyOutgoing ? "Reply to You"
-                            : "Reply to " + (page.chatName !== "" ? page.chatName : page.chatJid)
+                        text: page.replyOutgoing
+                            ? qsTr("Reply to You")
+                            : qsTr("Reply to %1").arg(page.chatName !== ""
+                                                      ? page.chatName : page.chatJid)
                         color: Theme.accent
                         font.pixelSize: 12
                         font.bold: true
@@ -1541,7 +1548,7 @@ Page {
                         width: 170
                         MenuEntry {
                             objectName: "keysEntry"
-                            text: "OMEMO keys…"
+                            text: qsTr("OMEMO keys…")
                             onTriggered: page.openContact()
                         }
                     }

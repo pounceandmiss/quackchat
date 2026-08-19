@@ -88,7 +88,7 @@ Column {
         if (jid === "")
             return ""
         if (jid === section.account)
-            return "You"
+            return qsTr("You")
         const names = section.authorsByChat[chat]
         const known = names ? names.names[jid] : undefined
         return known !== undefined && known !== "" ? known : jid
@@ -107,16 +107,18 @@ Column {
     function fmtWhen(ts) {
         if (!ts) return ""
         const d = new Date(ts / 1000) // tacky timestamps are microseconds
-        const hm = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)
+        const hm = d.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
         const today = new Date()
         if (d.toDateString() === today.toDateString())
             return hm
-        return d.toLocaleDateString(Qt.locale(), Locale.ShortFormat) + " " + hm
+        //: Date then time on an older search hit, e.g. "12/03/25 14:20"
+        return qsTr("%1 %2").arg(d.toLocaleDateString(Qt.locale(), Locale.ShortFormat))
+                            .arg(hm)
     }
 
     SectionLabel {
         width: section.width
-        text: "Messages"
+        text: qsTr("Messages")
         shown: results.count > 0
     }
 
@@ -204,13 +206,13 @@ Column {
             font.pixelSize: 13
             text: {
                 if (results.searching)
-                    return "Searching messages…"
+                    return qsTr("Searching messages…")
                 if (results.failed)
-                    return "The message search failed."
+                    return qsTr("The message search failed.")
                 if (results.searched)
                     return section.chatMatches > 0
-                         ? "No messages match."
-                         : "Nothing matches “" + section.query + "”."
+                         ? qsTr("No messages match.")
+                         : qsTr("Nothing matches “%1”.").arg(section.query)
                 return ""
             }
         }
@@ -226,7 +228,7 @@ Column {
         Button {
             objectName: "loadMore"
             anchors.centerIn: parent
-            text: results.searching ? "Searching…" : "Load more"
+            text: results.searching ? qsTr("Searching…") : qsTr("Load more")
             enabled: !results.searching
             onClicked: results.loadMore()
         }
