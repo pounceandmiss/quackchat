@@ -223,6 +223,42 @@ Page {
                 }
             }
 
+            Card {
+                SectionTitle { text: qsTr("Diagnostics") }
+
+                CheckBox {
+                    id: logBox
+                    objectName: "logToFileBox"
+                    Layout.fillWidth: true
+                    padding: 0
+                    // The style centres its indicator when the control has no
+                    // text of its own, so set it even though contentItem draws it.
+                    text: qsTr("Write a log file")
+                    checked: App.settings.logToFile
+                    onToggled: App.settings.setLogToFile(checked)
+                    contentItem: Text {
+                        text: logBox.text
+                        color: Theme.textPrimary
+                        font.pixelSize: 14
+                        leftPadding: logBox.indicator.width + 8
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("Turn this on, do the thing that goes wrong, then send the log with your report.")
+                    wrapMode: Text.WordWrap
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    // Not a footnote: it is the whole of the informed part of
+                    // consenting to hand the file over.
+                    color: Theme.textPrimary
+                    text: qsTr("The log holds who you talk to, and can hold what you said. Only send it to someone you trust.")
+                    wrapMode: Text.WordWrap
+                }
+            }
+
             Item { Layout.preferredHeight: 4 }
         }
     }
