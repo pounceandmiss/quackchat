@@ -2,6 +2,7 @@
 
 #include "Notifier.h"
 
+#include <QFileInfo>
 #include <utility>
 
 #ifdef Q_OS_ANDROID
@@ -31,6 +32,7 @@ AppController::AppController(QObject *parent) : QObject(parent) {
             &AppController::applyLogToFile);
     connect(&m_backend, &TackyBackend::connected, this,
             &AppController::applyLogToFile);
+    connect(&m_backend, &TackyBackend::result, this, &AppController::onResult);
 }
 
 void AppController::setDebugArgs(const QString &level, const QString &file) {
@@ -39,11 +41,44 @@ void AppController::setDebugArgs(const QString &level, const QString &file) {
 }
 
 void AppController::applyLogToFile() {
-    if (!m_debugFile.isEmpty())
+    if (m_debugFile.isEmpty())
+        m_backend.notify(
+            QStringLiteral("log"), QStringLiteral("setenabled"),
+            QVariantMap{{QStringLiteral("enabled"), m_settings.logToFile()}});
+    // Asked rather than assumed, and asked either way: the backend chooses the
+    // path, and with --debug-file it is already writing somewhere of its own.
+    m_logPathToken =
+        m_backend.request(QStringLiteral("log"), QStringLiteral("getfile"));
+}
+
+void AppController::onResult(int token, const QVariant &data) {
+    if (token != m_logPathToken)
         return;
-    m_backend.notify(
-        QStringLiteral("log"), QStringLiteral("setenabled"),
-        QVariantMap{{QStringLiteral("enabled"), m_settings.logToFile()}});
+    m_logPathToken = -1;
+    const QString path = data.toString();
+    if (m_logPath == path)
+        return;
+    m_logPath = path;
+    emit logPathChanged();
+}
+
+QUrl AppController::logFolder() const {
+    if (m_logPath.isEmpty())
+        return {};
+    return QUrl::fromLocalFile(QFileInfo(m_logPath).absolutePath());
+}
+
+void AppController::shareLog() {
+    if (m_logPath.isEmpty())
+        return;
+#ifdef Q_OS_ANDROID
+    QJniObject::callStaticMethod<void>(
+        "org/qtproject/example/quackchat/LogExport", "share",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+        QNativeInterface::QAndroidApplication::context().object(),
+        QJniObject::fromString(m_logPath).object<jstring>(),
+        QJniObject::fromString(tr("Quack log")).object<jstring>());
+#endif
 }
 
 void AppController::forget(const QString &acc) {

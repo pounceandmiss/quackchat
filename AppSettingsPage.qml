@@ -257,6 +257,39 @@ Page {
                     text: qsTr("The log holds who you talk to, and can hold what you said. Only send it to someone you trust.")
                     wrapMode: Text.WordWrap
                 }
+
+                // Only once there is a file, which is also the moment the path
+                // below stops being empty.
+                Button {
+                    id: exportBtn
+                    objectName: "exportLogButton"
+                    visible: App.logPath !== ""
+                    flat: true
+                    padding: 0
+                    // Android keeps the file where no file manager can reach
+                    // it, so there the only way out is the share chooser.
+                    readonly property bool sharing: Qt.platform.os === "android"
+                    text: exportBtn.sharing ? qsTr("Send the log…")
+                                            : qsTr("Open the folder")
+                    onClicked: {
+                        if (exportBtn.sharing)
+                            App.shareLog()
+                        else
+                            Qt.openUrlExternally(App.logFolder())
+                    }
+                    contentItem: Text {
+                        text: exportBtn.text
+                        color: Theme.accent
+                        font.pixelSize: 14
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    visible: App.logPath !== "" && !exportBtn.sharing
+                    text: App.logPath
+                    wrapMode: Text.WrapAnywhere
+                }
             }
 
             Item { Layout.preferredHeight: 4 }

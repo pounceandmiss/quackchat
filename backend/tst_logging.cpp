@@ -18,6 +18,7 @@ private slots:
     void theToggleReachesTheBackend();
     void anExplicitDebugFileOwnsTheSink();
     void loggingToAFileRoundTripsThroughTheBackend();
+    void theToggleAnswersWithSomewhereToSendFrom();
 };
 
 // Everything else bound to the backend reseeds on the same connect, so the log
@@ -147,6 +148,31 @@ void TestLogging::loggingToAFileRoundTripsThroughTheBackend() {
     QVERIFY(text.contains(QLatin1String("frontend.quack.test")));
 
     backend.stop();
+}
+
+// The path is what the export offers, and it is the backend's to choose, so it
+// is read back rather than guessed at. Empty until there is a file, which is
+// what the button in the settings page watches.
+void TestLogging::theToggleAnswersWithSomewhereToSendFrom() {
+    AppController app;
+    QVERIFY(app.backend()->start({QStringLiteral("-transient"),
+                                  QStringLiteral("1")}));
+    QTRY_VERIFY_WITH_TIMEOUT(app.backend()->isRunning(), 5000);
+    QVERIFY(app.logPath().isEmpty());
+
+    QSignalSpy changed(&app, &AppController::logPathChanged);
+    app.settings()->handleEvent(
+        QStringLiteral("setting"), QStringLiteral("Changed"),
+        QVariantMap{{QStringLiteral("key"), QStringLiteral("log_to_file")},
+                    {QStringLiteral("value"), QStringLiteral("1")}});
+
+    QTRY_VERIFY_WITH_TIMEOUT(!app.logPath().isEmpty(), 5000);
+    QCOMPARE(changed.count(), 1);
+    QVERIFY(app.logPath().endsWith(QLatin1String("tacky.log")));
+    QCOMPARE(app.logFolder(),
+             QUrl::fromLocalFile(QFileInfo(app.logPath()).absolutePath()));
+
+    app.backend()->stop();
 }
 
 QTEST_MAIN(TestLogging)

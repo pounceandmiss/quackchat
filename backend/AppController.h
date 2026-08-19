@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QtQml/qqmlregistration.h>
 
 #include "AccountSettings.h"
@@ -37,6 +38,9 @@ class AppController : public QObject {
     // The preferences that are the app's rather than an account's; tacky keeps
     // them in one store with no acc on it.
     Q_PROPERTY(AppSettings *settings READ settings CONSTANT)
+    // Where the backend is writing its log, empty when it is writing to stderr
+    // - which is also what says whether there is anything to hand over.
+    Q_PROPERTY(QString logPath READ logPath NOTIFY logPathChanged)
     // App-wide for the same reason as calls: an alert names a chat, and which
     // window ends up showing it is decided when the user picks it.
     Q_PROPERTY(NotificationController *notifications READ notifications CONSTANT)
@@ -50,6 +54,7 @@ public:
     CallsModel *calls() { return &m_calls; }
     AudioDevices *audio() { return &m_audio; }
     AppSettings *settings() { return &m_settings; }
+    QString logPath() const { return m_logPath; }
     NotificationController *notifications() { return &m_notifications; }
 
     // Set by the GUI host, which owns the QImage side. Not owned here, and
@@ -77,6 +82,14 @@ public:
     // the session this drops.
     Q_INVOKABLE void forgetChat(const QString &acc, const QString &jid);
 
+    // The directory holding the log, for a desktop file manager. Qt has no
+    // "reveal this file", so the folder is as close as it gets.
+    Q_INVOKABLE QUrl logFolder() const;
+
+    // Offer the log to the share chooser. Android only, where the file is in
+    // storage nothing else can reach; elsewhere logFolder() is the way to it.
+    Q_INVOKABLE void shareLog();
+
     // What the command line asked of the logger, applied when the backend
     // starts. An explicit file owns the sink for the whole run, and the stored
     // toggle is left alone - the same rule the Tk client follows.
@@ -86,12 +99,16 @@ public:
     // No-op once started.
     Q_INVOKABLE void startFromEnvironment();
 
+signals:
+    void logPathChanged();
+
 private:
     // Drop what was cached for an account that has been removed.
     void forget(const QString &acc);
     // Point the backend's logger at a file, or back at stderr. Re-sent on every
     // connect: the setting is stored, but the sink it drives is per process.
     void applyLogToFile();
+    void onResult(int token, const QVariant &data);
 
     TackyBackend m_backend;
     AccountsModel m_accounts;
@@ -103,6 +120,8 @@ private:
     const AvatarEncoder *m_encoder = nullptr;
     QString m_debugLevel;
     QString m_debugFile;
+    QString m_logPath;
+    int m_logPathToken = -1;
     QHash<QString, ChatListModel *> m_chatLists;
     QHash<QString, AccountSettings *> m_accountSettings;
     // acc -> jid -> session, so dropping an account drops its chats with it.
