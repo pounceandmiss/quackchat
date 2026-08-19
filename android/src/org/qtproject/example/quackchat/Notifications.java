@@ -84,7 +84,7 @@ final class Notifications {
                 NotificationManager.IMPORTANCE_HIGH));
     }
 
-    /** notify &lt;Notify&gt; {acc, jid, timestamp, nick, unread, mention}. */
+    /** notify &lt;Notify&gt; {acc, jid, timestamp, nick, body, unread, mention}. */
     void onNotify(byte[] frame) {
         final JSONObject a = args(frame);
         if (a == null) {
@@ -95,20 +95,34 @@ final class Notifications {
         if (acc.isEmpty() || jid.isEmpty()) {
             return;
         }
-        final String nick = a.optString("nick", jid);
+        // Present but empty for a contact with no name of any kind, where the
+        // backend has nothing better to answer than the address itself.
+        String nick = a.optString("nick");
+        if (nick.isEmpty()) {
+            nick = jid;
+        }
+        // The whole message; trimming it for display is ours to do, and the
+        // expanded view is where it gets to be long.
+        final String body = a.optString("body");
         final int unread = a.optInt("unread", 1);
         final long ts = a.optLong("timestamp");
 
         final String title = unread > 1 ? nick + " (" + unread + ")" : nick;
-        final Notification n = new Notification.Builder(ctx, CHANNEL)
+        final Notification.Builder b = new Notification.Builder(ctx, CHANNEL)
                 .setContentTitle(title)
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
                 .setWhen(ts / 1000)
                 .setAutoCancel(true)
                 .setContentIntent(openChat(acc, jid))
                 .addAction(replyAction(acc, jid))
-                .addAction(markReadAction(acc, jid, ts))
-                .build();
+                .addAction(markReadAction(acc, jid, ts));
+        // Empty for an attachment that arrived without a caption. A blank line
+        // says less than no line at all.
+        if (!body.isEmpty()) {
+            b.setContentText(body)
+             .setStyle(new Notification.BigTextStyle().bigText(body));
+        }
+        final Notification n = b.build();
         try {
             nm.notify(tag(acc, jid), MESSAGE_ID, n);
         } catch (SecurityException e) {
