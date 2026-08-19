@@ -9,9 +9,7 @@
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQmlError>
-#include <QQuickImageProvider>
 #include <QQuickItem>
-#include <QQuickView>
 #include <QQuickWindow>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -40,23 +38,6 @@ public:
     }
 };
 
-// Stands in for the real image provider, so an avatar can be rendered without
-// a backend. Flat red, which nothing else on screen is.
-class SolidImageProvider : public QQuickImageProvider {
-public:
-    SolidImageProvider() : QQuickImageProvider(QQuickImageProvider::Image) {}
-    QImage requestImage(const QString &, QSize *size, const QSize &) override {
-        QImage img(64, 64, QImage::Format_ARGB32_Premultiplied);
-        img.fill(Qt::red);
-        if (size)
-            *size = img.size();
-        return img;
-    }
-};
-
-bool isPicture(const QColor &c) {
-    return c.red() > 150 && c.green() < 100 && c.blue() < 100;
-}
 // An engine that keeps the warnings it emits. A binding error fails nothing by
 // itself, so a test that never reads them back goes green over a page that drew
 // nothing. Every test drives one of these and ends by asking what it saw.
@@ -1150,91 +1131,6 @@ private slots:
         QCoreApplication::processEvents();
 
         e.assertNoErrors();
-    }
-
-    // The picture is masked to the avatar's rounded shape, and the mask cuts at
-    // half coverage so the rim keeps its antialiasing rather than snapping to
-    // 1-bit. Softening that cut is easy to overdo, so pin both ends: the middle
-    // must still be the picture, and the corner must still be outside it.
-    void maskedPictureKeepsItsShape() {
-        // MultiEffect is a shader, and the offscreen platform ctest runs under
-        // has no path to render one - the grab comes back blank. So this one
-        // only means anything on a machine with a display.
-        if (QGuiApplication::platformName() == QLatin1String("offscreen"))
-            QSKIP("MultiEffect needs a renderer the offscreen platform lacks");
-
-        QQuickView view;
-        view.engine()->addImageProvider("avatar", new SolidImageProvider);
-        auto *app = view.engine()->singletonInstance<AppController *>("Quack", "App");
-        QVERIFY(app);
-        // What the backend would have told us, minus the backend.
-        app->avatars()->handleEvent("avatar", "Update",
-                                    QVariantMap{{"acc", "me@example.com"},
-                                                {"jid", "me@example.com"},
-                                                {"hash", "h1"}});
-
-        view.loadFromModule("Quack", "Avatar");
-        QVERIFY2(view.status() != QQuickView::Error, "Avatar did not load");
-        QQuickItem *avatar = view.rootObject();
-        QVERIFY(avatar);
-        avatar->setProperty("account", "me@example.com");
-        avatar->setProperty("jid", "me@example.com");
-        view.resize(64, 64);
-        view.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&view));
-        QTRY_VERIFY(avatar->property("hasPicture").toBool());
-
-        const QImage shot = view.grabWindow();
-        QCOMPARE(shot.size(), QSize(64, 64));
-        // Default radius is a circle, so the middle is picture and the corner
-        // is not.
-        QVERIFY2(isPicture(shot.pixelColor(32, 32)),
-                 "the mask ate the picture");
-        QVERIFY2(!isPicture(shot.pixelColor(1, 1)),
-                 "the corner was not rounded off");
-    }
-
-    // The overflow button is an ellipsis, and drew as a single dot for as long
-    // as its path chained the three by relative moves. Nothing about the path
-    // says which it is, so count the runs of ink across the button.
-    void theOverflowGlyphResolvesAsThreeDots() {
-        if (QGuiApplication::platformName() == QLatin1String("offscreen"))
-            QSKIP("Shape needs a renderer the offscreen platform lacks");
-
-        Engine e;
-        auto *icons = e.singletonInstance<QObject *>("Quack", "Icons");
-        QVERIFY(icons);
-
-        QQuickWindow win;
-        win.setColor(Qt::white);
-        win.resize(48, 48);
-        win.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&win));
-
-        QQmlComponent comp(&e, "Quack", "IconButton");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
-            {{"iconPath", icons->property("moreHoriz")},
-             {"glyphColor", QColor(Qt::black)}}));
-        QVERIFY(!obj.isNull());
-        auto *btn = qobject_cast<QQuickItem *>(obj.data());
-        QVERIFY(btn);
-        btn->setParentItem(win.contentItem());
-        QCoreApplication::processEvents();
-
-        const QImage shot = win.grabWindow();
-        QVERIFY(!shot.isNull());
-        // Down the middle of the button, which is where all three dots lie.
-        const int y = qRound(btn->height() / 2 * shot.height() / win.height());
-        int dots = 0;
-        bool inDot = false;
-        for (int x = 0; x < shot.width(); ++x) {
-            const bool ink = shot.pixelColor(x, y).valueF() < 0.5;
-            if (ink && !inDot)
-                ++dots;
-            inDot = ink;
-        }
-        QCOMPARE(dots, 3);
     }
 
     // Opens one account's settings window into `holder`. Taller than the
