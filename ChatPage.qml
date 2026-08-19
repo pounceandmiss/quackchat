@@ -677,6 +677,15 @@ Page {
                                 + attachments[idx].name
         saveDialog.open()
     }
+    // Enter sends, so the newline is on Shift+Enter, left to the field's own
+    // handling. A phone has no Shift, and there the wrapping fills the lines.
+    function typedReturn(event) {
+        if (event.modifiers & Qt.ShiftModifier) {
+            event.accepted = false
+            return
+        }
+        page.sendCurrent()
+    }
     function sendCurrent() {
         if (!page.session)
             return
@@ -1496,8 +1505,14 @@ Page {
         }
 
         Rectangle {
+            id: composer
+            objectName: "composerBar"
+            // The row inside keeps its height as the bar grows, so the space
+            // gained is all above the buttons rather than under them.
+            readonly property real fieldHeight:
+                Math.min(input.implicitHeight, input.maxHeight)
             Layout.fillWidth: true
-            Layout.preferredHeight: 60
+            Layout.preferredHeight: composer.fieldHeight + 20
             color: Theme.surface
             Rectangle {
                 anchors.top: parent.top
@@ -1505,8 +1520,11 @@ Page {
                 color: Theme.hairline
             }
             RowLayout {
-                anchors.fill: parent
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
                 anchors.margins: 10
+                height: 40
                 spacing: 10
                 // Beside the box you type in, because it says how what you are
                 // typing will go out. Not an IconButton: that is a ToolButton,
@@ -1566,29 +1584,48 @@ Page {
                     onClicked: attachDialog.open()
                 }
                 Rectangle {
+                    objectName: "composerField"
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: composer.fieldHeight
+                    // Held to the bottom, so the field grows into the space above
+                    // rather than moving the buttons beside it.
+                    Layout.alignment: Qt.AlignBottom
                     radius: 20
                     color: Theme.field
-                    TextField {
-                        id: input
-                        objectName: "messageInput"
+                    ScrollView {
                         anchors.fill: parent
-                        // The pill is drawn by the Rectangle, so the inset is
-                        // the field's own padding. A margin on top of it would
-                        // stack with whatever the style pads by - 16 under
-                        // Material, and the text starts a third of an inch in.
-                        leftPadding: 16
-                        rightPadding: 16
-                        verticalAlignment: TextInput.AlignVCenter
-                        color: Theme.textPrimary
-                        font.pixelSize: 15
-                        background: null
-                        // Label the virtual keyboard's enter key "Send" (its
-                        // press still lands here as accepted).
-                        EnterKey.type: Qt.EnterKeySend
-                        onAccepted: page.sendCurrent()
-                        onTextChanged: if (page.session) page.session.draft = text
+                        clip: true
+                        ScrollBar.vertical: ThinScrollBar {}
+                        TextArea {
+                            id: input
+                            objectName: "messageInput"
+                            // The pill is drawn by the Rectangle, so the inset is
+                            // the field's own padding. A margin on top of it would
+                            // stack with whatever the style pads by - 16 under
+                            // Material, and the text starts a third of an inch in.
+                            leftPadding: 16
+                            rightPadding: 16
+                            topPadding: 10
+                            bottomPadding: 10
+                            // Wrapping is what grows it, with no newline typed.
+                            wrapMode: TextArea.Wrap
+                            // Measured off the text: how far apart lines sit is
+                            // the style's business, not the font's pixel size.
+                            readonly property real lineHeight:
+                                input.contentHeight / input.lineCount
+                            // Six lines, then it scrolls: past that the composer
+                            // starts taking the feed's half of the window.
+                            readonly property real maxHeight:
+                                input.topPadding + input.bottomPadding + 6 * input.lineHeight
+                            color: Theme.textPrimary
+                            font.pixelSize: 15
+                            background: null
+                            // Label the virtual keyboard's enter key "Send".
+                            EnterKey.type: Qt.EnterKeySend
+                            Keys.onReturnPressed: (event) => page.typedReturn(event)
+                            Keys.onEnterPressed: (event) => page.typedReturn(event)
+                            onTextChanged: if (page.session) page.session.draft = text
+                        }
                     }
                 }
                 Rectangle {

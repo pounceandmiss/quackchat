@@ -310,6 +310,8 @@ private slots:
     void tappingAnotherMessageAddsItToTheSelection();
     void tappingAReactionChipDoesNotAlsoOpenTheMenu();
     void theBubbleMenuLeavesTheComposerFocused();
+    void theComposerGrowsWithTheTextUpToACeiling();
+    void enterSendsAndShiftEnterOpensALine();
     void replyingFromTheComposerThreadsTheTarget();
     void tappingAQuoteJumpsToItsTarget();
     void aShortJumpSlidesAndALongOneCuts();
@@ -1212,6 +1214,93 @@ void TestChatPage::theBubbleMenuLeavesTheComposerFocused() {
     QTRY_VERIFY(menu->property("opened").toBool());
 
     QVERIFY(input->hasActiveFocus());
+}
+
+// The composer was one line tall however much was written into it. It follows
+// the text now, up to a ceiling it scrolls past rather than grows through.
+void TestChatPage::theComposerGrowsWithTheTextUpToACeiling() {
+    const Chat chat = open("composer@example.com");
+    QVERIFY(chat.win());
+
+    auto *bar = chat.win()->findChild<QQuickItem *>("composerBar");
+    auto *field = chat.win()->findChild<QQuickItem *>("composerField");
+    auto *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    QVERIFY(bar);
+    QVERIFY(field);
+    QVERIFY(input);
+    QTRY_VERIFY(field->width() > 0);
+
+    // One line at rest, and the bar is the field plus its margins.
+    const qreal restField = field->height();
+    const qreal restBar = bar->height();
+    QVERIFY(restField > 0);
+    QCOMPARE(input->property("lineCount").toInt(), 1);
+    QCOMPARE(restBar, restField + 20);
+
+    // A long sentence wraps, and the field is taller for it - no newline
+    // typed, which is how a message grows it in practice.
+    input->setProperty("text", QStringLiteral("wrap me ").repeated(6).trimmed());
+    QTRY_VERIFY(input->property("lineCount").toInt() > 1);
+    QTRY_VERIFY(field->height() > restField);
+    QCOMPARE(bar->height(), field->height() + 20);
+
+    // Line by line it keeps up, as far as the ceiling.
+    QStringList lines{QStringLiteral("line 1")};
+    qreal last = 0;
+    for (int n = 2; n <= 6; ++n) {
+        lines << QStringLiteral("line %1").arg(n);
+        input->setProperty("text", lines.join(QLatin1Char('\n')));
+        QTRY_COMPARE(input->property("lineCount").toInt(), lines.size());
+        QTRY_VERIFY2(field->height() > last,
+                     qPrintable(QStringLiteral("stuck at %1 on %2 lines")
+                                        .arg(field->height())
+                                        .arg(lines.size())));
+        last = field->height();
+    }
+
+    // Past the ceiling the field holds still and the text scrolls inside it.
+    for (int n = 0; n < 30; ++n)
+        lines << QStringLiteral("and more");
+    input->setProperty("text", lines.join(QLatin1Char('\n')));
+    QTRY_COMPARE(input->property("lineCount").toInt(), lines.size());
+    settle();
+    QCOMPARE(field->height(), last);
+    QVERIFY(input->property("contentHeight").toReal() > field->height());
+
+    // Emptying it puts the bar back where it started.
+    input->setProperty("text", QString());
+    QTRY_COMPARE(field->height(), restField);
+    QCOMPARE(bar->height(), restBar);
+}
+
+// Enter still sends, as it did before the field could hold more than a line.
+// Shift+Enter is what makes the second one.
+void TestChatPage::enterSendsAndShiftEnterOpensALine() {
+    const Chat chat = open("newlines@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_VERIFY(chat.model() != nullptr);
+
+    auto *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    QVERIFY(input);
+    input->forceActiveFocus();
+    QTRY_VERIFY(input->hasActiveFocus());
+
+    for (const QChar c : QStringLiteral("first"))
+        QTest::keyClick(chat.win(), c.toLatin1());
+    QTest::keyClick(chat.win(), Qt::Key_Return, Qt::ShiftModifier);
+    for (const QChar c : QStringLiteral("second"))
+        QTest::keyClick(chat.win(), c.toLatin1());
+    QCOMPARE(input->property("text").toString(), QStringLiteral("first\nsecond"));
+    QCOMPARE(input->property("lineCount").toInt(), 2);
+    QCOMPARE(chat.count(), 0);
+
+    QTest::keyClick(chat.win(), Qt::Key_Return);
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    QCOMPARE(model->data(model->index(0), ChatModel::BodyRole).toString(),
+             QStringLiteral("first\nsecond"));
+    QCOMPARE(input->property("text").toString(), QString());
 }
 
 // The composer used to hold the quoted body and nothing else, so replying sent
