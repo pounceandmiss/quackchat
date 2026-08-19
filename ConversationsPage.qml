@@ -180,8 +180,9 @@ Page {
             AppWindows.preferences()
     }
 
-    // Window-level actions, previously a global toolbar. The keyboard shortcuts
-    // (Ctrl+N / Ctrl+T) live on the window; this menu is their mouse path.
+    // Window-level actions, previously a global toolbar. Ctrl+N lives on the
+    // window; this menu is its mouse path. The theme is not here: it belongs
+    // with the rest of Appearance, a page down in Preferences.
     AppMenu {
         id: overflow
         objectName: "overflowMenu"
@@ -224,11 +225,6 @@ Page {
             trailing: "Ctrl+N"
             offered: !Theme.mobile // single-window platforms
             onTriggered: AppWindows.newShell(page.account)
-        }
-        MenuEntry {
-            text: qsTr("Change theme")
-            trailing: "Ctrl+T"
-            onTriggered: Theme.cycle()
         }
         // The Tk list's Refresh: not a repaint but a re-ask, for when the
         // server and what we hold have drifted apart.
