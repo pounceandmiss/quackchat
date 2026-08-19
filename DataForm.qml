@@ -61,7 +61,9 @@ ColumnLayout {
             Label {
                 Layout.fillWidth: true
                 visible: field.control !== "prose" && field.control !== "tick"
-                text: field.required ? field.label + " *" : field.label
+                //: A form field the server insists on. %1 is its own label,
+                //: which is the server's and not translated here.
+                text: field.required ? qsTr("%1 *").arg(field.label) : field.label
                 color: Theme.textDim
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
@@ -174,7 +176,7 @@ ColumnLayout {
             Caption {
                 Layout.fillWidth: true
                 visible: field.hasMedia && field.mediaSource === ""
-                text: "The picture for this question didn't arrive."
+                text: qsTr("The picture for this question didn't arrive.")
                 wrapMode: Text.WordWrap
             }
         }

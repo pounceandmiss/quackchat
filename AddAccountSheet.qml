@@ -65,7 +65,7 @@ SheetDialog {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 4
             flat: true
-            text: "Create a new account"
+            text: qsTr("Create a new account")
             onClicked: sheet.createAccount()
         }
     }

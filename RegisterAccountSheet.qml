@@ -19,7 +19,7 @@ SheetDialog {
     id: sheet
     objectName: "registerAccountSheet"
 
-    title: "Create account"
+    title: qsTr("Create account")
     preferredWidth: 420
     height: Math.min(520, parent ? parent.height - 24 : 520)
     standardButtons: Dialog.Cancel
@@ -63,7 +63,8 @@ SheetDialog {
         // worth keeping on screen, and changing it asks the new one afresh.
         Label {
             Layout.fillWidth: true
-            text: "Server"
+            //: The server a sign-up is being made with
+            text: qsTr("Server")
             color: Theme.textDim
             font.pixelSize: 12
         }
@@ -75,13 +76,13 @@ SheetDialog {
                 objectName: "registerServer"
                 Layout.fillWidth: true
                 enabled: !sheet.busy
-                placeholderText: "example.com"
+                placeholderText: qsTr("example.com")
                 inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
                 onAccepted: if (text.trim() !== "") reg.start(text.trim())
             }
             Button {
                 objectName: "registerContinue"
-                text: "Continue"
+                text: qsTr("Continue")
                 enabled: !sheet.busy && serverField.text.trim() !== ""
                 onClicked: reg.start(serverField.text.trim())
             }
@@ -130,12 +131,13 @@ SheetDialog {
             font.pixelSize: 12
             text: {
                 if (reg.state === RegistrationController.Connecting)
-                    return "Asking " + reg.host + " what it needs…"
+                    return qsTr("Asking %1 what it needs…").arg(reg.host)
                 if (reg.state === RegistrationController.Registered)
-                    return "The account was created, but the server never asked "
-                         + "for a username, so it could not be added here."
-                return "Name a server to sign up with. Not every server hands "
-                     + "out accounts."
+                    return qsTr("The account was created, but the server never "
+                              + "asked for a username, so it could not be added "
+                              + "here.")
+                return qsTr("Name a server to sign up with. Not every server "
+                          + "hands out accounts.")
             }
         }
 
@@ -158,7 +160,7 @@ SheetDialog {
             // button. It keeps the answers already typed.
             Button {
                 objectName: "registerRetry"
-                text: "Refresh form"
+                text: qsTr("Refresh form")
                 enabled: !sheet.busy
                 onClicked: reg.retry()
             }
@@ -166,7 +168,7 @@ SheetDialog {
             Button {
                 objectName: "registerSubmit"
                 text: reg.state === RegistrationController.Submitting
-                      ? "Creating…" : "Create account"
+                      ? qsTr("Creating…") : qsTr("Create account")
                 enabled: reg.complete && !sheet.busy
                 onClicked: reg.submitForm()
             }

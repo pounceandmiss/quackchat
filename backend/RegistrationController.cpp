@@ -45,7 +45,7 @@ void RegistrationController::sendCancel() {
 bool RegistrationController::backendReady() {
     if (m_backend && m_backend->isRunning())
         return true;
-    setError(QStringLiteral("Not connected to the backend."));
+    setError(tr("Not connected to the backend."));
     setState(Failed);
     return false;
 }
@@ -201,7 +201,7 @@ void RegistrationController::onRunningChanged() {
     m_mediaPending.clear();
     if (m_state == Connecting || m_state == Ready || m_state == Submitting) {
         // The connection tacky held for us went with it, so nothing is coming.
-        setError(QStringLiteral("The backend stopped."));
+        setError(tr("The backend stopped."));
         setState(Failed);
     }
 }
