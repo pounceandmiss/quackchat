@@ -651,13 +651,12 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
     // TackyBackend::connected is this process attaching to the backend; these
     // are the account reaching its server, which is what a request needs.
     if (module == QLatin1String("conn")) {
-        if (name == QLatin1String("Ready")) {
-            setOnline(true);
+        if (name == QLatin1String("State")) {
+            const bool up = sessionUp(module, name, args);
+            setOnline(up);
             // Not reload(): that empties the window the user is reading.
-            retry();
-        } else if (name == QLatin1String("State")) {
-            setOnline(a.value(QStringLiteral("state")).toString() ==
-                      QLatin1String("connected"));
+            if (up)
+                retry();
         } else if (name == QLatin1String("Disconnected") ||
                    name == QLatin1String("ConnError") ||
                    name == QLatin1String("AuthError")) {

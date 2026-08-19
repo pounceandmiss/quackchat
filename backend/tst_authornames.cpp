@@ -37,10 +37,10 @@ void TestAuthorNames::refetchesOnReady() {
     QCOMPARE(a.names().value("room@h/ann").toString(), QString("Ann"));
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
-    feedEvent(a, R"(["event","conn","Ready",{"acc":"other@h"}])");
+    feedEvent(a, R"(["event","conn","State",{"acc":"other@h","state":"connected"}])");
     QCOMPARE(sent.count(), 0); // not our account
 
-    feedEvent(a, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    feedEvent(a, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])");
     QCOMPARE(sent.count(), 1); // token 2
     a.handleResult(2, map(R"({"room@h/ann":"Annabel"})"));
     QCOMPARE(a.names().value("room@h/ann").toString(), QString("Annabel"));

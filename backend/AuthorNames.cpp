@@ -69,9 +69,8 @@ void AuthorNames::handleEvent(const QString &module, const QString &name,
                               const QVariant &args) {
     // Occupants are rebuilt when the session comes up, so whatever we resolved
     // against the old one is stale and <Changed> won't replay it.
-    if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
-        if (args.toMap().value(QStringLiteral("acc")).toString() == m_account)
-            refresh();
+    if (sessionUp(module, name, args, m_account)) {
+        refresh();
         return;
     }
     if (module != QLatin1String("author") || name != QLatin1String("Changed"))

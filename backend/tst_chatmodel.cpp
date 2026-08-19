@@ -382,7 +382,7 @@ void TestChatModel::comingBackOnlineRetriesOnlyWhatFailed() {
     m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
 
     QSignalSpy quiet(&backend, &TackyBackend::sent);
-    feedEvent(m, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    feedEvent(m, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])");
     QCOMPARE(historyCalls(quiet), 0); // nothing failed, nothing to redo
 
     m.loadOlder(); // token 2
@@ -390,7 +390,7 @@ void TestChatModel::comingBackOnlineRetriesOnlyWhatFailed() {
     QCOMPARE(m.rowCount(), 2);
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
-    feedEvent(m, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    feedEvent(m, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])");
     QCOMPARE(historyCalls(sent), 1);
     QCOMPARE(m.rowCount(), 2); // the window it was reading is still there
     QVERIFY(m.loadError().isEmpty());
@@ -414,7 +414,7 @@ void TestChatModel::connStateDrivesTheOnlineFlag() {
     QVERIFY(!m.online());
 
     // Another account's stream says nothing about this one.
-    feedEvent(m, R"(["event","conn","Ready",{"acc":"other@h"}])");
+    feedEvent(m, R"(["event","conn","State",{"acc":"other@h","state":"connected"}])");
     QVERIFY(!m.online());
 }
 

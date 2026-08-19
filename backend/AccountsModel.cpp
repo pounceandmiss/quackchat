@@ -148,8 +148,6 @@ void AccountsModel::handleEvent(const QString &module, const QString &name,
     } else if (module == QLatin1String("conn")) {
         if (name == QLatin1String("State"))
             setConnState(acc, a.value(QStringLiteral("state")).toString());
-        else if (name == QLatin1String("Ready"))
-            setConnState(acc, QStringLiteral("connected"));
         else if (name == QLatin1String("AuthError"))
             setConnState(acc, QStringLiteral("auth-error"));
         else if (name == QLatin1String("ConnError"))

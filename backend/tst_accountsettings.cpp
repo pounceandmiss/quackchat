@@ -54,10 +54,12 @@ void TestAccountSettings::refetchesNickOnReady() {
     s.setAccount("me@h");
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
-    s.handleEvent("conn", "Ready", QVariantMap{{"acc", "other@h"}});
+    s.handleEvent("conn", "State",
+                  QVariantMap{{"acc", "other@h"}, {"state", "connected"}});
     QCOMPARE(sent.count(), 0); // not our account
 
-    s.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
+    s.handleEvent("conn", "State",
+                  QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
     QCOMPARE(sent.count(), 1);
     QCOMPARE(sent.first().at(0).toString(), QString("nick"));
 }

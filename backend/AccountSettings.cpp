@@ -146,9 +146,8 @@ void AccountSettings::handleEvent(const QString &module, const QString &name,
     }
     // The nick is server state, so a fresh session may carry a different one
     // than the reply we got against the old one.
-    if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
-        if (args.toMap().value(QStringLiteral("acc")).toString() == m_account)
-            requestNick();
+    if (sessionUp(module, name, args, m_account)) {
+        requestNick();
         return;
     }
     if (module != QLatin1String("nick") || name != QLatin1String("Changed"))

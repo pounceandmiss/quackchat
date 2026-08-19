@@ -43,7 +43,6 @@ private slots:
     void perCallDeviceOverrideNamesBothEndpoints();
     // Re-seeding from `calls list`:
     void listsOnConnectedAndNoOtherState();
-    void readyDoesNotAskASecondTime();
     void connEventsDoNotSwallowCallsEvents();
     void snapshotSeedsRowsAfterAReattach();
     void snapshotMapsTackysStateWords();
@@ -427,21 +426,6 @@ void TestCalls::listsOnConnectedAndNoOtherState() {
     QCOMPARE(sent.first().at(1).toString(), QString("list"));
     QCOMPARE(sent.first().at(2).toMap().value("acc").toString(),
              QString("me@host"));
-}
-
-// The backend sets conn state to connected and emits <Ready> from the same
-// three lines, so listening to both would ask twice and throw one answer away.
-// <Ready> is also not pullable, so it never arrives on the reattach this is for.
-void TestCalls::readyDoesNotAskASecondTime() {
-    TackyBackend backend;
-    CallsModel m;
-    m.setBackend(&backend);
-    QSignalSpy sent(&backend, &TackyBackend::sent);
-
-    feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
-    feed(m, R"(["event","conn","Ready",{"acc":"me@host","resumed":false}])");
-
-    QCOMPARE(sent.count(), 1);
 }
 
 // The conn branch sits ahead of the module guard, so it has to let everything

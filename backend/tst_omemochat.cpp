@@ -181,9 +181,9 @@ void TestOmemoChat::readyReReadsTheSetting() {
         {"acc":"me@h","jid":"a@h","value":false}])");
     QVERIFY(!o.enabled());
 
-    feedEvent(o, R"(["event","conn","Ready",{"acc":"other@h"}])");
+    feedEvent(o, R"(["event","conn","State",{"acc":"other@h","state":"connected"}])");
     QVERIFY(o.known());
-    feedEvent(o, R"(["event","conn","Ready",{"acc":"me@h"}])");
+    feedEvent(o, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])");
     QVERIFY(!o.known());
 }
 

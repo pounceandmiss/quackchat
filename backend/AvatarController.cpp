@@ -1,6 +1,7 @@
 #include "AvatarController.h"
 
 #include "AvatarSink.h"
+#include "BackendBinding.h"
 #include "TackyBackend.h"
 
 AvatarController::AvatarController(QObject *parent) : QObject(parent) {}
@@ -160,7 +161,7 @@ void AvatarController::onError(int token, const QString &message) {
 void AvatarController::handleEvent(const QString &module, const QString &name,
                                    const QVariant &args) {
     // Event names arrive bare on the JSON wire (the backend strips the Tcl <>).
-    if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
+    if (sessionUp(module, name, args)) {
         resubscribe(args.toMap().value(QStringLiteral("acc")).toString());
         return;
     }

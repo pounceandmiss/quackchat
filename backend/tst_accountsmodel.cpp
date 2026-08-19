@@ -173,7 +173,7 @@ void TestAccountsModel::connStateEvents() {
     m.applyList(QVariantList{"amy@h"});
     m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", "connecting"}});
     QCOMPARE(connAt(m, 0), QString("connecting"));
-    m.handleEvent("conn", "Ready", QVariantMap{{"acc", "amy@h"}});
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", "connected"}});
     QCOMPARE(connAt(m, 0), QString("connected"));
     m.handleEvent("conn", "AuthError", QVariantMap{{"acc", "amy@h"}});
     QCOMPARE(connAt(m, 0), QString("auth-error"));

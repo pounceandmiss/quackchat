@@ -177,10 +177,9 @@ void OmemoDevicesModel::handleEvent(const QString &module, const QString &name,
         } else if (name == QLatin1String("BlindTrust")) {
             applyBlindTrust(a.value(QStringLiteral("value")).toBool());
         }
-    } else if (module == QLatin1String("conn") &&
-               name == QLatin1String("Ready")) {
-        // The OMEMO store is built on <Ready>, so anything asked for before
-        // then came back empty. Ask again.
+    } else if (sessionUp(module, name, args)) {
+        // The OMEMO store is built with the session, so anything asked for
+        // before then came back empty. Ask again.
         refresh();
     }
 }

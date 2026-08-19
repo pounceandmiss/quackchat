@@ -156,7 +156,8 @@ private slots:
         QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{});
 
         sent.clear();
-        c.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
+        c.handleEvent("conn", "State",
+                      QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
         QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
         QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{"bob@h"});
     }
@@ -171,7 +172,8 @@ private slots:
         c.hashFor("other@h", "eve@h");
 
         QSignalSpy sent(&backend, &TackyBackend::sent);
-        c.handleEvent("conn", "Ready", QVariantMap{{"acc", "me@h"}});
+        c.handleEvent("conn", "State",
+                      QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
         QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
         QCOMPARE(jidsAsked(sent, "visible", "other@h"), QStringList{});
     }

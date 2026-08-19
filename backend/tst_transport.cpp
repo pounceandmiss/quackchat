@@ -113,7 +113,7 @@ private slots:
         QVERIFY(accept());
         QTRY_VERIFY(t.isConnected());
 
-        const QByteArray split = frame(R"(["event","conn","Ready",{}])");
+        const QByteArray split = frame(R"(["event","conn","State",{}])");
         for (int i = 0; i < split.size(); ++i) {
             m_peer->write(split.mid(i, 1));
             m_peer->flush();
@@ -178,10 +178,10 @@ private slots:
         QTRY_VERIFY(b.isRunning());
         QCOMPARE(up.count(), 1);
 
-        m_peer->write(frame(R"(["event","conn","Ready",{"acc":"me@h"}])"));
+        m_peer->write(frame(R"(["event","conn","State",{"acc":"me@h","state":"connected"}])"));
         QTRY_COMPARE(ev.count(), 1);
         QCOMPARE(ev.first().at(0).toString(), QString("conn"));
-        QCOMPARE(ev.first().at(1).toString(), QString("Ready"));
+        QCOMPARE(ev.first().at(1).toString(), QString("State"));
 
         QCOMPARE(b.request("account", "list"), 1); // token space is unchanged
         QTRY_VERIFY(peerBytes().contains(R"(["account","list",{},1])"));

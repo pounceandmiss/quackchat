@@ -123,9 +123,10 @@ void OmemoChat::handleEvent(const QString &module, const QString &name,
         setKnown(true);
         if (on)
             prepare();
-    } else if (module == QLatin1String("conn") && name == QLatin1String("Ready")) {
-        // The per-account store the setting lives in is opened on <Ready>, so
-        // anything asked for before then answered from nothing. Ask again.
+    } else if (sessionUp(module, name, args)) {
+        // The per-account store the setting lives in is opened with the
+        // session, so anything asked for before then answered from nothing.
+        // Ask again.
         refresh();
     }
 }
