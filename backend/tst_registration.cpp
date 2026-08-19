@@ -414,6 +414,13 @@ void TestRegistration::aStoppedBackendEndsTheWait() {
     f.backend.stop();
     QCOMPARE(f.reg.state(), RegistrationController::Failed);
     QVERIFY(!f.reg.error().isEmpty());
+
+    // And a submit into the gone backend is refused rather than sent nowhere:
+    // the verdict is an event, so waiting for one would be waiting for good.
+    f.reg.setValue(1, QStringLiteral("alice"));
+    f.reg.submitForm();
+    QVERIFY(f.wire->callsTo("submit").isEmpty());
+    QCOMPARE(f.reg.state(), RegistrationController::Failed);
 }
 
 QTEST_MAIN(TestRegistration)

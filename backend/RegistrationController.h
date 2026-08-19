@@ -33,10 +33,9 @@ class RegistrationController : public MapListModel {
     // What went wrong, from tacky. Set with state Failed and cleared by the
     // next start()/retry(), so the two are read together.
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
-    Q_PROPERTY(QString title READ title NOTIFY formChanged)
     // There are fields to answer, i.e. the sign-up is past naming a server.
     Q_PROPERTY(bool hasForm READ hasForm NOTIFY formChanged)
-    Q_PROPERTY(QString instructions READ instructions NOTIFY instructionsChanged)
+    Q_PROPERTY(QString instructions READ instructions NOTIFY formChanged)
     // Every required field has an answer, i.e. there is a point in submitting.
     Q_PROPERTY(bool complete READ isComplete NOTIFY completeChanged)
     // The account that now exists on the server, "" until it does - and also
@@ -76,7 +75,6 @@ public:
     State state() const { return m_state; }
     QString host() const { return m_host; }
     QString error() const { return m_error; }
-    QString title() const { return m_title; }
     bool hasForm() const { return rowCount() > 0; }
     QString instructions() const { return m_instructions; }
     bool isComplete() const;
@@ -118,14 +116,18 @@ signals:
     void stateChanged();
     void hostChanged();
     void errorChanged();
+    // The form itself was replaced: its fields, and the instructions with them.
     void formChanged();
-    void instructionsChanged();
     void completeChanged();
 
 private:
     void onRunningChanged();
     void setState(State state);
     void setError(const QString &message);
+    // False, with the failure already reported, when there is no backend to
+    // ask: a notify into a dead one is dropped where it stands.
+    bool backendReady();
+    void sendCancel();
     void connectSession();
     void requestForm();
     void requestMedia(const QString &var);
@@ -139,7 +141,6 @@ private:
     QString m_token;
     QString m_host;
     QString m_error;
-    QString m_title;
     QString m_instructions;
     State m_state = Idle;
     int m_port = 0;

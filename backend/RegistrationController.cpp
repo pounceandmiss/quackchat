@@ -28,13 +28,26 @@ RegistrationController::RegistrationController(QObject *parent)
       m_token(nextToken()) {}
 
 RegistrationController::~RegistrationController() {
-    // Not cancel(): the model must not reset itself on the way out. tacky is
-    // holding a live connection for us either way, and only this tells it to
-    // let go - an abandoned sign-up is otherwise a socket kept open for the
-    // life of the backend.
+    // sendCancel() and not cancel(): the model must not reset itself on the
+    // way out. Either way tacky is holding a connection open for this session
+    // and nothing but a cancel closes it.
+    sendCancel();
+}
+
+// tacky has no session to end before one is started, and none left after a
+// cancel, so the state is what decides whether to send.
+void RegistrationController::sendCancel() {
     if (m_backend && m_backend->isRunning() && m_state != Idle)
         m_backend->notify(kRegister, QStringLiteral("cancel"),
                           QVariantMap{{kToken, m_token}});
+}
+
+bool RegistrationController::backendReady() {
+    if (m_backend && m_backend->isRunning())
+        return true;
+    setError(QStringLiteral("Not connected to the backend."));
+    setState(Failed);
+    return false;
 }
 
 void RegistrationController::setBackend(TackyBackend *backend) {
@@ -56,12 +69,12 @@ void RegistrationController::setBackend(TackyBackend *backend) {
 void RegistrationController::start(const QString &host, int port) {
     if (host.isEmpty())
         return;
-    if (m_state != Idle)
-        cancel(); // a session left on tacky's side would outlive this one
+    // Whatever this instance was doing, session and answers alike: another
+    // server asks its own questions.
+    cancel();
     m_host = host;
     m_port = port;
     emit hostChanged();
-    m_entered.clear(); // another server asks its own questions
     connectSession();
 }
 
@@ -76,11 +89,8 @@ void RegistrationController::retry() {
 // cancel first.
 void RegistrationController::connectSession() {
     setError({});
-    if (!m_backend || !m_backend->isRunning()) {
-        setError(QStringLiteral("Not connected to the backend."));
-        setState(Failed);
+    if (!backendReady())
         return;
-    }
     m_formToken = 0;
     m_mediaPending.clear();
     QVariantMap args{{kToken, m_token}, {QStringLiteral("host"), m_host}};
@@ -109,9 +119,13 @@ void RegistrationController::requestMedia(const QString &var) {
 }
 
 void RegistrationController::submitForm() {
-    if (!m_backend || m_state == Submitting || m_items.isEmpty())
+    if (m_state == Submitting || m_items.isEmpty())
         return;
     setError({});
+    // The verdict is an event, so a submit that never went out would leave the
+    // form waiting on one for good.
+    if (!backendReady())
+        return;
     m_backend->notify(kRegister, QStringLiteral("submit"),
                       QVariantMap{{kToken, m_token},
                                   {QStringLiteral("values"), answers()}});
@@ -119,9 +133,7 @@ void RegistrationController::submitForm() {
 }
 
 void RegistrationController::cancel() {
-    if (m_backend && m_backend->isRunning() && m_state != Idle)
-        m_backend->notify(kRegister, QStringLiteral("cancel"),
-                          QVariantMap{{kToken, m_token}});
+    sendCancel();
     m_formToken = 0;
     m_mediaPending.clear();
     m_entered.clear();
@@ -131,10 +143,8 @@ void RegistrationController::cancel() {
         endResetModel();
         emit completeChanged();
     }
-    m_title.clear();
     m_instructions.clear();
     emit formChanged(); // hasForm with it: the rows went above
-    emit instructionsChanged();
     setError({});
     setState(Idle);
 }
@@ -248,14 +258,8 @@ void RegistrationController::applyForm(const QVariantMap &form) {
     }
     endResetModel();
 
-    m_title = form.value(QStringLiteral("title")).toString();
+    m_instructions = form.value(QStringLiteral("instructions")).toString();
     emit formChanged();
-    const QString instructions =
-        form.value(QStringLiteral("instructions")).toString();
-    if (instructions != m_instructions) {
-        m_instructions = instructions;
-        emit instructionsChanged();
-    }
     emit completeChanged();
 }
 
