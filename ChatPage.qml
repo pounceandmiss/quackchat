@@ -232,6 +232,10 @@ Page {
     property real armedTs: 0
     // The one message that has been handed over to text selection.
     property real textSelectTs: 0
+    // The one whose words are picked out, by that hand-over or by a mouse
+    // drag. A row keeps its highlight until told otherwise, so this is what
+    // tells the row before it to drop one.
+    property real wordsTs: 0
     // The one showing a menu. Here rather than in the row because a touch on any
     // other row has to know about it: that touch closes this menu and does
     // nothing else, which is the whole of what a press outside means.
@@ -1251,6 +1255,8 @@ Page {
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     textSelecting: page.textSelectTs === wrap.timestamp
+                    ownsWords: page.wordsTs === 0 || page.wordsTs === wrap.timestamp
+                    onWordsTaken: page.wordsTs = wrap.timestamp
                     reactions: wrap.reactions
                     onToggleRequested: page.toggle(wrap.timestamp, wrap.row)
                     onSelectRequested: page.armSelection(wrap.timestamp, wrap.row)

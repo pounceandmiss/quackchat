@@ -62,6 +62,10 @@ Item {
     // ever happens to one of them at a time. While it is on, the row's own
     // gestures stand down so the drag reaches the body's TextEdit.
     property bool textSelecting: false
+    // Whether the words picked out in this chat are this message's. The page
+    // decides; going false drops the highlight this row was left holding.
+    property bool ownsWords: true
+    onOwnsWordsChanged: if (!root.ownsWords) bodyText.deselect()
 
     // Whether this bubble is the one showing a menu, and whether any of them
     // is. Both come from the page: only it can see across the rows, and a touch
@@ -92,6 +96,8 @@ Item {
     // Long-pressed again while selecting: hand the words over.
     signal textSelectRequested()
     signal textSelectEnded()
+    // The body has words picked out in it, by mouse or by hand-over.
+    signal wordsTaken()
     signal copyTextRequested(string text)
     signal copyRequested()
     signal replyRequested()
@@ -293,9 +299,18 @@ Item {
             text: "Reply"
             onTriggered: root.take(root.replyRequested)
         }
+        // The hand-over floats a Copy pill over the words it picks out. A
+        // mouse drag has only this.
+        MenuEntry {
+            objectName: "copySelectionEntry"
+            text: "Copy selection"
+            offered: bodyText.selectedText !== ""
+            onTriggered: root.take(root.copyTextRequested, bodyText.selectedText)
+        }
         MenuEntry {
             objectName: "copyEntry"
-            text: "Copy"
+            // Says which of the two it is, but only while both are offered.
+            text: bodyText.selectedText !== "" ? "Copy message" : "Copy"
             onTriggered: root.take(root.copyRequested)
         }
         // The way in for the mouse, which has no long press. Never on a message
@@ -904,6 +919,10 @@ Item {
                     // a gap in the bubble.
                     visible: text !== ""
                     color: Theme.textPrimary
+                    // Left to the style, the highlight is a colour the theme
+                    // never picked.
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.textOnAccent
                     font.pixelSize: 15
                     wrapMode: TextEdit.Wrap
                     readOnly: true
@@ -912,6 +931,13 @@ Item {
                     // moving to the composer.
                     selectByMouse: true
                     persistentSelection: true
+                    // A click is how a message is picked while selecting, and
+                    // the TextEdit would take that press for itself. Disabled
+                    // rather than selectByMouse: false, which still swallows it.
+                    enabled: root.textSelecting || !root.selectionMode
+                    // Fires for the mouse drag and for the hand-over alike.
+                    onSelectedTextChanged: if (bodyText.selectedText !== "")
+                        root.wordsTaken()
                     Layout.maximumWidth: root.maxBubbleWidth
 
                     // The TextEdit takes the press for itself, so a touch on the

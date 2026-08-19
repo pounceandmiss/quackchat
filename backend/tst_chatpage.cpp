@@ -56,6 +56,18 @@ QVariant call(TackyBackend &b, const QString &module, const QString &method,
     }
     return {};
 }
+
+// How the mouse picks words out of a message. The first line only: across a
+// wrap the release point would sit above the press point.
+QString dragThroughWords(QQuickWindow *win, QQuickItem *body) {
+    const QPointF left = body->mapToScene(QPointF(2, body->height() / 4));
+    const QPointF right = body->mapToScene(QPointF(body->width() - 2, body->height() / 4));
+    QTest::mousePress(win, Qt::LeftButton, {}, left.toPoint());
+    QTest::mouseMove(win, QPointF((left.x() + right.x()) / 2, left.y()).toPoint());
+    QTest::mouseMove(win, right.toPoint());
+    QTest::mouseRelease(win, Qt::LeftButton, {}, right.toPoint());
+    return body->property("selectedText").toString();
+}
 } // namespace
 
 class TestChatPage : public QObject {
@@ -283,6 +295,9 @@ private slots:
     void bubbleRendersMarkupAsRichText();
     void bubbleGoesBackToPlainWhenAMarkLeaves();
     void mouseDragSelectsBodyText();
+    void onlyOneMessageKeepsItsPickedWords();
+    void theBubbleMenuTakesWhatTheDragPickedOut();
+    void clickingTheWordsPicksTheMessageWhileSelecting();
     void rightClickStillOpensTheBubbleMenu();
     void aTouchTapOpensTheBubbleMenu();
     void aPressOutsideAMenuOnlyDismissesIt();
@@ -639,23 +654,103 @@ void TestChatPage::mouseDragSelectsBodyText() {
     QVERIFY(body);
     QVERIFY(body->width() > 0 && body->height() > 0);
 
-    // Window coordinates, on the first line only - across a wrap the release
-    // point would sit above the press point.
-    const QPointF left = body->mapToScene(QPointF(2, body->height() / 4));
-    const QPointF right = body->mapToScene(QPointF(body->width() - 2, body->height() / 4));
-
     const qreal parked = chat.prop("contentY");
-    QTest::mousePress(chat.win(), Qt::LeftButton, {}, left.toPoint());
-    QTest::mouseMove(chat.win(), QPointF((left.x() + right.x()) / 2, left.y()).toPoint());
-    QTest::mouseMove(chat.win(), right.toPoint());
-    QTest::mouseRelease(chat.win(), Qt::LeftButton, {}, right.toPoint());
-
-    const QString picked = body->property("selectedText").toString();
+    const QString picked = dragThroughWords(chat.win(), body);
     QVERIFY2(picked.size() > 3, qPrintable(QString("selected only %1").arg(picked)));
     QVERIFY2(kSelectable.contains(picked), qPrintable(picked));
 
     // A horizontal drag must not have flicked the feed out from under it.
     QCOMPARE(chat.prop("contentY"), parked);
+}
+
+// The highlight is persistent so it survives the focus going to the composer,
+// which also means nothing clears the one left on the message before it.
+void TestChatPage::onlyOneMessageKeepsItsPickedWords() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 2);
+
+    QQuickItem *newest = findItem(chat.row(0), "bubbleText");
+    QQuickItem *older = findItem(chat.row(1), "bubbleText");
+    QVERIFY(newest);
+    QVERIFY(older);
+
+    QVERIFY(!dragThroughWords(chat.win(), older).isEmpty());
+    QVERIFY(!dragThroughWords(chat.win(), newest).isEmpty());
+    QTRY_COMPARE(older->property("selectedText").toString(), QString());
+}
+
+// The menu over a message answers for the whole of it, which leaves the words
+// a drag picked out with no way off the screen but Ctrl+C.
+void TestChatPage::theBubbleMenuTakesWhatTheDragPickedOut() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+    auto *words = menu->findChild<QQuickItem *>("copySelectionEntry");
+    auto *whole = menu->findChild<QQuickItem *>("copyEntry");
+    QVERIFY(words);
+    QVERIFY(whole);
+
+    // Nothing picked out: only the message can be copied, under its plain name.
+    QVERIFY(!words->property("offered").toBool());
+    QCOMPARE(whole->property("text").toString(), QString("Copy"));
+
+    const QString picked = dragThroughWords(chat.win(), body);
+    QVERIFY(picked.size() > 3);
+
+    // The right button opens the menu without disturbing the selection.
+    QTest::mouseClick(chat.win(), Qt::RightButton, {},
+                      body->mapToScene(QPointF(body->width() / 2, body->height() / 2))
+                          .toPoint());
+    QTRY_VERIFY(menu->property("opened").toBool());
+    QCOMPARE(body->property("selectedText").toString(), picked);
+    QVERIFY(words->property("offered").toBool());
+    QCOMPARE(whole->property("text").toString(), QString("Copy message"));
+
+    // The words as the drag left them, not the body they came from.
+    QSignalSpy took(menu->parent(), SIGNAL(copyTextRequested(QString)));
+    QVERIFY(QMetaObject::invokeMethod(words, "triggered"));
+    QCOMPARE(took.count(), 1);
+    QCOMPARE(took.at(0).at(0).toString(), picked);
+}
+
+// A message is picked by clicking it, and its words are most of what there is
+// to click - but the body takes a mouse press for itself.
+void TestChatPage::clickingTheWordsPicksTheMessageWhileSelecting() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 2);
+
+    QQuickItem *newest = findItem(chat.row(0), "bubbleText");
+    QQuickItem *older = findItem(chat.row(1), "bubbleText");
+    QVERIFY(newest);
+    QVERIFY(older);
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint held =
+        newest->mapToScene(QPointF(newest->width() / 2, newest->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, held);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, held);
+
+    const QPoint onWords =
+        older->mapToScene(QPointF(older->width() / 2, older->height() / 2)).toPoint();
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, onWords);
+    QTRY_COMPARE(page->property("selectedCount").toInt(), 2);
+
+    // And the same click unpicks it.
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, onWords);
+    QTRY_COMPARE(page->property("selectedCount").toInt(), 1);
 }
 
 // The body is painted over the bubble's right-button MouseArea and has a
