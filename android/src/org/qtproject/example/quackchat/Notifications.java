@@ -95,20 +95,20 @@ final class Notifications {
         if (acc.isEmpty() || jid.isEmpty()) {
             return;
         }
-        // Present but empty for a contact with no name of any kind, where the
-        // backend has nothing better to answer than the address itself.
+        // The event always carries a nick - the backend answers with the bare
+        // address when it knows no name - and optString's default only covers
+        // a key that is missing, so an empty one is caught here instead.
         String nick = a.optString("nick");
         if (nick.isEmpty()) {
             nick = jid;
         }
-        // The whole message; trimming it for display is ours to do, and the
-        // expanded view is where it gets to be long.
+        // The whole message: tacky leaves the trimming to whoever displays it.
         final String body = a.optString("body");
         final int unread = a.optInt("unread", 1);
         final long ts = a.optLong("timestamp");
 
         final String title = unread > 1 ? nick + " (" + unread + ")" : nick;
-        final Notification.Builder b = new Notification.Builder(ctx, CHANNEL)
+        final Notification.Builder builder = new Notification.Builder(ctx, CHANNEL)
                 .setContentTitle(title)
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
                 .setWhen(ts / 1000)
@@ -116,13 +116,14 @@ final class Notifications {
                 .setContentIntent(openChat(acc, jid))
                 .addAction(replyAction(acc, jid))
                 .addAction(markReadAction(acc, jid, ts));
-        // Empty for an attachment that arrived without a caption. A blank line
-        // says less than no line at all.
+        // Empty for an attachment that came without a caption; leave the line
+        // out rather than showing a blank one. BigTextStyle is what lets a long
+        // message be read without opening the app.
         if (!body.isEmpty()) {
-            b.setContentText(body)
-             .setStyle(new Notification.BigTextStyle().bigText(body));
+            builder.setContentText(body)
+                    .setStyle(new Notification.BigTextStyle().bigText(body));
         }
-        final Notification n = b.build();
+        final Notification n = builder.build();
         try {
             nm.notify(tag(acc, jid), MESSAGE_ID, n);
         } catch (SecurityException e) {
