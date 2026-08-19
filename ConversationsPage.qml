@@ -146,20 +146,13 @@ Page {
                 Layout.leftMargin: 12
                 Layout.rightMargin: 12
                 Layout.bottomMargin: 8
-                Layout.preferredHeight: 34
                 placeholderText: "Search chats and messages"
                 enabled: page.account !== ""
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-                font.pixelSize: 13
-                leftPadding: 10
-                rightPadding: clearSearch.visible ? clearSearch.width + 6 : 10
-                background: Rectangle {
-                    radius: 8
-                    color: Theme.field
-                    border.width: 1
-                    border.color: searchField.activeFocus ? Theme.accent
-                                                          : Theme.hairline
-                }
+                // Room for the button overlaid on the right; the near side is
+                // whatever the style pads by, so the far side matches it.
+                rightPadding: clearSearch.visible ? clearSearch.width + 6
+                                                  : leftPadding
                 IconButton {
                     id: clearSearch
                     objectName: "clearSearchButton"

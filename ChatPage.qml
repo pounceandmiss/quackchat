@@ -1561,7 +1561,7 @@ Page {
                         verticalAlignment: TextInput.AlignVCenter
                         color: Theme.textPrimary
                         font.pixelSize: 15
-                        background: Item {}
+                        background: null
                         // Label the virtual keyboard's enter key "Send" (its
                         // press still lands here as accepted).
                         EnterKey.type: Qt.EnterKeySend
