@@ -26,6 +26,7 @@
 #include "AppController.h"
 #include "AuthorNames.h"
 #include "ChatModel.h"
+#include "SearchModel.h"
 #include "TackyBackend.h"
 
 namespace {
@@ -317,6 +318,7 @@ private slots:
     void chipsTheRowWasBuiltWithDoNotPop();
     void senderNamesComeFromAuthorGet();
     void oneSessionServesEveryWindowOnAChat();
+    void closingTheSearchBarEmptiesIt();
     // Stops the shared backend, so nothing may run after it.
     void theFailedPillCarriesTheBackendsWords();
 };
@@ -1900,6 +1902,37 @@ void TestChatPage::oneSessionServesEveryWindowOnAChat() {
     // Which is still there for the chat it was written in.
     first.window->setProperty("chatJid", jid);
     QTRY_COMPARE(input->property("text").toString(), QString("half a thought"));
+}
+
+// The bar comes back blank. It used to keep the last query with nothing behind
+// it: the text never changed, so nothing re-ran it, and the counter and both
+// chevrons read as a search that never happened.
+void TestChatPage::closingTheSearchBarEmptiesIt() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 2);
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+    auto *field = chat.win()->findChild<QObject *>("chatSearchField");
+    QVERIFY(field);
+    SearchModel *search = page->findChild<SearchModel *>();
+    QVERIFY(search);
+
+    QVERIFY(QMetaObject::invokeMethod(page, "openSearch"));
+    field->setProperty("text", "older");
+    QTRY_VERIFY_WITH_TIMEOUT(search->rowCount() == 1, 5000);
+
+    QVERIFY(QMetaObject::invokeMethod(page, "closeSearch"));
+    QVERIFY(field->property("text").toString().isEmpty());
+    QVERIFY(!search->searched());
+
+    // Still empty on the way back in, with nothing claiming a count.
+    QVERIFY(QMetaObject::invokeMethod(page, "openSearch"));
+    QVERIFY(field->property("text").toString().isEmpty());
+    auto *counter = chat.win()->findChild<QObject *>("hitCounter");
+    QVERIFY(counter);
+    QCOMPARE(counter->property("text").toString(), QString());
 }
 
 // Must stay last: stopping the backend is what fails the `before` page that

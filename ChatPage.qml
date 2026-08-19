@@ -495,6 +495,8 @@ Page {
         if (!page.searchMode)
             return false
         page.searchMode = false
+        // A query left in the bar would name results that went with it.
+        searchInput.clear()
         page.dropHits()
         return true
     }
