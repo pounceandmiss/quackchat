@@ -456,11 +456,16 @@ target_link_libraries(tst_avatarencoder PRIVATE quack Qt6::Test Qt6::Gui)
 add_test(NAME tst_avatarencoder COMMAND tst_avatarencoder)
 set_tests_properties(tst_avatarencoder PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
-qt_add_executable(tst_qmlload backend/tst_qmlload.cpp)
-target_link_libraries(tst_qmlload PRIVATE
-    quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
-add_test(NAME tst_qmlload COMMAND tst_qmlload)
-set_tests_properties(tst_qmlload PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# One suite per area of the app, over backend/QmlTestSupport.h.
+foreach(t tst_qmlload_shell tst_qmlload_search tst_qmlload_transfers
+          tst_qmlload_settings tst_qmlload_muc tst_qmlload_chatlist
+          tst_qmlload_components)
+    qt_add_executable(${t} backend/${t}.cpp)
+    target_link_libraries(${t} PRIVATE
+        quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+    add_test(NAME ${t} COMMAND ${t})
+    set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endforeach()
 
 # real window + real backend: the feed has to lay out before it can page
 qt_add_executable(tst_chatpage backend/tst_chatpage.cpp)
