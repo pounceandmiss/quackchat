@@ -28,11 +28,9 @@ void bindBackend(T *self, TackyBackend *backend, void (T::*reseed)()) {
     QObject::connect(backend, &TackyBackend::connected, self, reseed);
 }
 
-// The account's session reaching its server, which tacky reports as conn
-// <State> arriving at "connected" - it used to say so a second time as a
-// <Ready> event, which is gone. Whatever a model asked for before this point
-// was answered by a backend with no server behind it, so it is the cue to ask
-// again. Omit `account` for a model that follows every account.
+// The account's session reaching its server. Whatever a model asked for before
+// that was answered by a backend with no server behind it, so this is the cue
+// to ask again. Omit `account` for a model that follows every account.
 inline bool sessionUp(const QString &module, const QString &name,
                       const QVariant &args, const QString &account = {}) {
     if (module != QLatin1String("conn") || name != QLatin1String("State"))

@@ -171,8 +171,6 @@ void SearchModel::issue(bool append) {
              remoteLeg ? QStringLiteral("both") : QStringLiteral("local"));
     if (append) {
         a.insert(QStringLiteral("before"), m_cursorTs);
-        // Account-wide the timestamp alone does not place the row: two chats
-        // can share one, and the store needs both to resume where it stopped.
         if (m_chat.isEmpty() && !m_cursorChat.isEmpty())
             a.insert(QStringLiteral("before_chat_jid"), m_cursorChat);
     }

@@ -126,7 +126,6 @@ void OmemoChat::handleEvent(const QString &module, const QString &name,
     } else if (sessionUp(module, name, args)) {
         // The per-account store the setting lives in is opened with the
         // session, so anything asked for before then answered from nothing.
-        // Ask again.
         refresh();
     }
 }

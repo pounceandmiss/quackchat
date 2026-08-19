@@ -57,18 +57,16 @@ static QVariantMap idleTransfer() {
             {QStringLiteral("error"), QString()}};
 }
 
-// What a transfer is keyed by, matching the file module's own choice: the wire
-// url, or the local file when the attachment has no url yet, which is every
-// outgoing one until its upload lands. file <Update> echoes the same choice, so
-// a row finds its update without knowing which source was served.
+// What a transfer is keyed by: the wire url, or the local file for an outgoing
+// attachment that has no url until its upload lands. The file module keys its
+// own transfers this way and echoes the choice as the update's `url`.
 static QString sourceKey(const QVariantMap &att) {
     const QString url = att.value(QStringLiteral("url")).toString();
     return url.isEmpty() ? att.value(QStringLiteral("path")).toString() : url;
 }
 
 // Whichever of the two an attachment carries, for the file module to choose
-// between: it serves a `path` where it lies and fetches a `url`. Empty when
-// there is nothing to get at all.
+// between: it serves a `path` where it lies and fetches a `url`.
 static QVariantMap downloadSource(const QVariantMap &att) {
     QVariantMap src;
     for (const QString &k : {QStringLiteral("url"), QStringLiteral("path")}) {
@@ -674,7 +672,8 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
     // are the account reaching its server, which is what a request needs.
     if (module == QLatin1String("conn")) {
         if (name == QLatin1String("State")) {
-            const bool up = sessionUp(module, name, args);
+            const bool up = a.value(QStringLiteral("state")).toString() ==
+                            QLatin1String("connected");
             setOnline(up);
             // Not reload(): that empties the window the user is reading.
             if (up)
@@ -952,8 +951,9 @@ void ChatModel::uncacheAttachment(qlonglong ts, int idx) {
     QVariantMap args{{QStringLiteral("acc"), m_account}};
     args.insert(src);
     m_backend->notify(QStringLiteral("file"), QStringLiteral("uncache"), args);
-    m_xfer.remove(sourceKey(a));
-    redrawRowsUsing(sourceKey(a));
+    const QString key = sourceKey(a);
+    m_xfer.remove(key);
+    redrawRowsUsing(key);
 }
 
 // Ours when the bracket names this chat, or when it's the account-wide one

@@ -195,8 +195,7 @@ void TestSearchModel::theStoreCursorPagesTheNextRequest() {
     QSignalSpy sent(&backend, &TackyBackend::sent);
     m.loadMore();
     const QVariantMap a = lastSearch(sent);
-    // A timestamp, and one big enough that rounding through a double would
-    // move it.
+    // Microseconds, so it needs the full width on the way back out.
     QCOMPARE(a.value("before").toLongLong(), 1700000000123456LL);
     QCOMPARE(a.value("query").toString(), QString("pizza"));
     QCOMPARE(a.value("chat").toString(), QString("a@h"));

@@ -1091,9 +1091,9 @@ void TestChatModel::fileEventsFilterByAcc() {
     QVERIFY(att0(m).value("thumburl").toUrl().isEmpty());
 }
 
-// A file we sent has a local path and no url until the upload lands, and the
-// file module echoes whichever source it was given as the update's `url`. Key
-// on the wrong one and our own picture never shows a thumbnail.
+// A file we sent has a local path and no url until its upload lands, and the
+// update comes back under the source it was asked with. Key on the other one
+// and our own picture never shows a thumbnail.
 void TestChatModel::anAttachmentWithNoUrlYetKeysOnItsPath() {
     ChatModel m;
     m.setAccount("me@h");
