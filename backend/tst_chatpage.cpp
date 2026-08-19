@@ -1449,12 +1449,6 @@ void TestChatPage::exposedMessagesFollowTheChatsLock() {
     QQuickItem *wash = findItem(chat.row(0), "bubbleWash");
     QVERIFY(wash);
     QVERIFY(!wash->property("visible").toBool());
-    // The tail is painted separately, so it has its own way of being left
-    // behind on the old colour.
-    QQuickItem *tail = findItem(chat.row(0), "bubbleTail");
-    QVERIFY(tail);
-    QCOMPARE(tail->property("fill"), body->property("color"));
-
     // Turning the chat's padlock off makes it ordinary again, and the colour
     // travels rather than jumping.
     auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
@@ -1466,7 +1460,6 @@ void TestChatPage::exposedMessagesFollowTheChatsLock() {
     QTRY_COMPARE(body->property("sweep").toReal(), 1.0);
     QCOMPARE(body->property("color"), body->property("base"));
     QVERIFY(!wash->property("visible").toBool());
-    QCOMPARE(tail->property("fill"), body->property("color"));
 }
 
 // A room's messages go out in the clear whatever the switch says, so it has

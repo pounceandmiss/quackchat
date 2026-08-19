@@ -605,8 +605,6 @@ Item {
             radius: 14
             anchors.right: root.outgoing ? parent.right : undefined
             anchors.left:  root.outgoing ? undefined : parent.left
-            anchors.rightMargin: root.outgoing ? 10 : 0
-            anchors.leftMargin:  root.outgoing ? 0 : 10
 
             width: content.width + 24
             height: content.height + 16
@@ -639,41 +637,6 @@ Item {
                     GradientStop { position: bubble.sweep; color: bubble.toColor }
                     GradientStop { position: Math.min(1, bubble.sweep + 0.18); color: wash.faded }
                     GradientStop { position: 1; color: wash.faded }
-                }
-            }
-
-            // Little tail on the bottom corner
-            Canvas {
-                id: tail
-                objectName: "bubbleTail"
-                width: 12; height: 14
-                anchors.bottom: parent.bottom
-                anchors.right: root.outgoing ? parent.right : undefined
-                anchors.left:  root.outgoing ? undefined : parent.left
-                anchors.rightMargin: root.outgoing ? -5 : 0
-                anchors.leftMargin:  root.outgoing ? 0 : -5
-                // Crossfaded over the same span as the wash rather than taking
-                // the bubble's settled colour, which would snap at the end
-                // while the fill beside it was still moving.
-                property color fill: bubble.toColor
-                Behavior on fill { ColorAnimation { duration: 420 } }
-                onFillChanged: requestPaint()
-                onPaint: {
-                    var ctx = getContext("2d");
-                    ctx.reset();
-                    ctx.fillStyle = fill;
-                    ctx.beginPath();
-                    if (root.outgoing) {
-                        ctx.moveTo(0, 0);
-                        ctx.quadraticCurveTo(12, 4, 12, 14);
-                        ctx.quadraticCurveTo(4, 10, 0, 8);
-                    } else {
-                        ctx.moveTo(12, 0);
-                        ctx.quadraticCurveTo(0, 4, 0, 14);
-                        ctx.quadraticCurveTo(8, 10, 12, 8);
-                    }
-                    ctx.closePath();
-                    ctx.fill();
                 }
             }
 
