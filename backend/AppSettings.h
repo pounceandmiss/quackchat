@@ -30,8 +30,9 @@ class AppSettings : public QObject {
     Q_PROPERTY(bool logToFile READ logToFile NOTIFY logToFileChanged)
     // How much of it: verbose, debug, info, warning, error or none.
     Q_PROPERTY(QString logLevel READ logLevel NOTIFY logLevelChanged)
-    // The native loggers inside libdatachannel and rtc-ma, which have their own
-    // levels and say a great deal - so a switch rather than a level.
+    // The native loggers inside libdatachannel and rtc-ma. They filter their
+    // own output and are voluminous with it, so this is a switch rather than a
+    // level of its own.
     Q_PROPERTY(bool logNative READ logNative NOTIFY logNativeChanged)
 
 public:

@@ -4,7 +4,6 @@
 #include "Notifier.h"
 
 #include <QFileInfo>
-#include <QPair>
 #include <utility>
 
 #ifdef Q_OS_ANDROID
@@ -60,7 +59,7 @@ void AppController::applyLogToFile() {
 }
 
 void AppController::applyLogLevel() {
-    if (!m_debug.level.isEmpty() || m_settings.logLevel().isEmpty())
+    if (!m_debug.level.isEmpty())
         return;
     m_backend.notify(
         QStringLiteral("log"), QStringLiteral("setlevel"),
@@ -210,15 +209,15 @@ void AppController::startFromEnvironment() {
     QStringList tacoArgs{QStringLiteral("-transient"), QStringLiteral("0")};
     // Here rather than through the log module once it is up: these have to be
     // in force before the backend writes its first line.
-    const QList<QPair<QLatin1String, QString>> flags{
-        {QLatin1String("-debug-level"), m_debug.level},
-        {QLatin1String("-debug-file"), m_debug.file},
-        {QLatin1String("-libdatachannel-debug-level"),
-         m_debug.libdatachannelLevel},
-        {QLatin1String("-rtcma-debug-level"), m_debug.rtcmaLevel}};
-    for (const auto &[flag, value] : flags)
-        if (!value.isEmpty())
-            tacoArgs << flag << value;
+    if (!m_debug.level.isEmpty())
+        tacoArgs << QStringLiteral("-debug-level") << m_debug.level;
+    if (!m_debug.file.isEmpty())
+        tacoArgs << QStringLiteral("-debug-file") << m_debug.file;
+    if (!m_debug.libdatachannelLevel.isEmpty())
+        tacoArgs << QStringLiteral("-libdatachannel-debug-level")
+                 << m_debug.libdatachannelLevel;
+    if (!m_debug.rtcmaLevel.isEmpty())
+        tacoArgs << QStringLiteral("-rtcma-debug-level") << m_debug.rtcmaLevel;
     m_backend.start(tacoArgs);
 #endif
 

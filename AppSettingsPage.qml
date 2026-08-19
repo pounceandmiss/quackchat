@@ -279,7 +279,7 @@ Page {
                 }
                 Caption {
                     Layout.fillWidth: true
-                    text: qsTr("Below Debug the log says what went wrong, not what was said.")
+                    text: qsTr("Debug and Verbose add every stanza the connection carries, message text included.")
                     wrapMode: Text.WordWrap
                 }
 
