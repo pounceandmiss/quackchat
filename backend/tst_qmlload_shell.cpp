@@ -42,6 +42,14 @@ private:
 class TestShell : public QObject {
     Q_OBJECT
 
+    // The app's own window, loaded the way main() loads it.
+    static QQuickWindow *loadMain(AppEngine &e) {
+        e.loadFromModule("Quack", "Main");
+        if (e.rootObjects().isEmpty())
+            return nullptr;
+        return qobject_cast<QQuickWindow *>(e.rootObjects().first());
+    }
+
     // Both enabled: a disabled account says so instead of saying what its
     // connection is doing, which is not what the rail tests are about.
     static void seedTwoAccounts(AppController *app) {
@@ -86,8 +94,7 @@ private slots:
     void closingTheWindowsItHoldsSurvivesShutdown() {
         AppEngine e;
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
+        QVERIFY(loadMain(e));
 
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
@@ -114,9 +121,7 @@ private slots:
         QVERIFY(app);
         auto *fake = new FakeTransport;
         app->backend()->setTransport(fake);
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
-        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QQuickWindow *win = loadMain(e);
         QVERIFY(win);
         auto *notice = win->findChild<QQuickItem *>("backendNotice");
         QVERIFY(notice);
@@ -138,9 +143,7 @@ private slots:
     void backendNoticeStaysOffWithNoTransport() {
         AppEngine e;
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
-        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QQuickWindow *win = loadMain(e);
         QVERIFY(win);
         auto *notice = win->findChild<QQuickItem *>("backendNotice");
         QVERIFY(notice);
@@ -157,9 +160,7 @@ private slots:
         auto *fake = new FakeTransport;
         app->backend()->setTransport(fake);
         fake->start({});
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
-        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QQuickWindow *win = loadMain(e);
         QVERIFY(win);
         auto *notice = win->findChild<QQuickItem *>("backendNotice");
         QVERIFY(notice);
@@ -177,9 +178,7 @@ private slots:
         AppEngine e;
         // create the App singleton up front; backend stays unstarted
         e.singletonInstance<AppController *>("Quack", "App");
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
-        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QQuickWindow *win = loadMain(e);
         QVERIFY(win);
         win->grabWindow(); // force a render so lazy bindings evaluate
         QCoreApplication::processEvents();
@@ -220,8 +219,7 @@ private slots:
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        e.loadFromModule("Quack", "Main"); // ShellWindow arms AppWindows
-        QVERIFY(!e.rootObjects().isEmpty());
+        QVERIFY(loadMain(e)); // ShellWindow arms AppWindows
 
         const int before = visibleWindows().size();
         app->calls()->handleEvent(
@@ -261,8 +259,7 @@ private slots:
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
+        QVERIFY(loadMain(e));
 
         const int before = visibleWindows().size();
         CallsModel *calls = app->calls();
@@ -289,8 +286,7 @@ private slots:
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
+        QVERIFY(loadMain(e));
 
         CallsModel *calls = app->calls();
         calls->handleEvent("calls", "Active",
@@ -325,8 +321,7 @@ private slots:
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
-        e.loadFromModule("Quack", "Main");
-        QVERIFY(!e.rootObjects().isEmpty());
+        QVERIFY(loadMain(e));
 
         const int before = visibleWindows().size();
         CallsModel *calls = app->calls();
