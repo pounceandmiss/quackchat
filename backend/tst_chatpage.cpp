@@ -176,6 +176,13 @@ class TestChatPage : public QObject {
                                                  {"body", QString("msg %1").arg(i)}});
     }
 
+    // QTest::keyClicks is QWidget-only, and these presses have to reach a
+    // QWindow.
+    static void type(QQuickWindow *win, const char *text) {
+        for (const char *at = text; *at; ++at)
+            QTest::keyClick(win, *at);
+    }
+
     // Long enough for a page to land, so paging that should not happen has had
     // its chance to.
     static void settle() { QTest::qWait(400); }
@@ -1286,11 +1293,9 @@ void TestChatPage::enterSendsAndShiftEnterOpensALine() {
     input->forceActiveFocus();
     QTRY_VERIFY(input->hasActiveFocus());
 
-    for (const QChar c : QStringLiteral("first"))
-        QTest::keyClick(chat.win(), c.toLatin1());
+    type(chat.win(), "first");
     QTest::keyClick(chat.win(), Qt::Key_Return, Qt::ShiftModifier);
-    for (const QChar c : QStringLiteral("second"))
-        QTest::keyClick(chat.win(), c.toLatin1());
+    type(chat.win(), "second");
     QCOMPARE(input->property("text").toString(), QStringLiteral("first\nsecond"));
     QCOMPARE(input->property("lineCount").toInt(), 2);
     QCOMPARE(chat.count(), 0);
