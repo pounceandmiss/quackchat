@@ -467,6 +467,15 @@ target_link_libraries(tst_chatpage PRIVATE
     quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
 add_test(NAME tst_chatpage COMMAND tst_chatpage)
 set_tests_properties(tst_chatpage PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# The Flatpak manifest names the tacky commit a second time, since
+# flatpak-builder cannot read a submodule. A pin left behind there is invisible
+# until the Flatpak ships an archive nothing was tested against, so it is a test
+# here. With no submodule checked out there is nothing to compare.
+if(CMAKE_HOST_UNIX AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tacky/.git)
+    add_test(NAME check-pin
+             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/flatpak/check-pin.sh)
+endif()
 endif()
 
 # Packaging. Neither half of it is an option to set: whether Qt is static comes

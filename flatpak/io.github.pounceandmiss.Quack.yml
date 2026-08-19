@@ -40,10 +40,10 @@ modules:
       - install -Dm644 embed/tacky.h /app/lib/tacky/embed/tacky.h
     sources:
       # Pinned rather than tracking main, so the release is built from the
-      # archive it was tested against. Keep it equal to what third_party/tacky
-      # is checked out at; flatpak-builder cannot read the submodule, so this
-      # is the one place the commit is repeated. flatpak/check-pin.sh compares
-      # the two.
+      # archive it was tested against. flatpak-builder cannot read the
+      # submodule, so this is the one place the commit is repeated: ctest
+      # checks it against third_party/tacky, and check-pin.sh --sync writes
+      # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
         commit: 22e42c35b58b014ab96565f108a05f22737561f8

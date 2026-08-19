@@ -106,26 +106,19 @@ it, so a Release configure emits an unsigned, non-debuggable apk. Pass
         build-dir io.github.pounceandmiss.Quack.yml
 
 flatpak-builder cannot read a submodule, so it builds tacky from the commit
-pinned in the manifest instead. The two have to agree:
-
-    ./flatpak/check-pin.sh
-
-tacky and its dependencies are fetched from pinned sources and built with no
-network of their own.
+pinned in the manifest instead. tacky and its dependencies are fetched from
+pinned sources and built with no network of their own.
 
 ## Moving the tacky pin
 
     git -C third_party/tacky fetch origin
     git -C third_party/tacky checkout <commit>
     git add third_party/tacky
+    ./flatpak/check-pin.sh --sync
 
-Then set the manifest's `commit:` to the same value. If tacky's own dependency
-pins moved, regenerate the manifest's source list wholesale rather than editing
-it, in a tacky checkout:
-
-    make -f zippy/zippy.mk flatpak-sources FLATPAK_DEPS_DIR=build/deps
-
-and finish with `./flatpak/check-pin.sh`.
+The last line carries the commit into the manifest, which names it a second
+time; `ctest` fails while the two disagree. If tacky's own dependency pins
+moved, the manifest says how to regenerate its source list.
 
 ## Translations
 
