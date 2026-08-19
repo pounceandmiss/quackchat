@@ -26,6 +26,15 @@
   </developer>
 
   <releases>
+    <release version="0.1.0" date="2026-08-19">
+      <description>
+        <p>
+          First release. Sign in to an existing account or sign up for a new
+          one, with one-to-one and group chats, OMEMO encryption, file sharing
+          and voice calls.
+        </p>
+      </description>
+    </release>
     <release version="0.0.0" date="2026-08-15">
       <description>
         <p>Pre-alpha. Initial Flatpak packaging.</p>

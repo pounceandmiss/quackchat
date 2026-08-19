@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 # C is only for the Android JNI shim; without it CMake drops the .c source from
 # the target silently rather than failing.
-project(quack_qml VERSION 1.0 LANGUAGES C CXX)
+project(quack_qml VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -186,6 +186,8 @@ set_source_files_properties(Jid.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(AppWindows.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(quack
     URI Quack
+    # What `import Quack` resolves to, not the app's version: it moves only when
+    # the QML types break compatibility, which they have not.
     VERSION 1.0
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Quack"
     QML_FILES
@@ -343,6 +345,17 @@ endif()
 if(ANDROID)
     # libtacky-android.a is built against API 30 bionic
     set_target_properties(quackchat PROPERTIES QT_ANDROID_MIN_SDK_VERSION 30)
+
+    # Left unset, the manifest ships with androiddeployqt's own placeholders
+    # still in it. The name is what Android shows; the code is what it orders
+    # releases by and must be an integer that only ever grows, so it is packed
+    # out of the same three numbers rather than tracked by hand.
+    math(EXPR _android_version_code "${PROJECT_VERSION_MAJOR} * 10000
+                                    + ${PROJECT_VERSION_MINOR} * 100
+                                    + ${PROJECT_VERSION_PATCH}")
+    set_target_properties(quackchat PROPERTIES
+        QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
+        QT_ANDROID_VERSION_CODE "${_android_version_code}")
 
     # The interpreter, loaded by the Java service in the :backend process. This
     # is the only thing that links libtacky on Android, and it is why the NDK
