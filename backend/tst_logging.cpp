@@ -1,6 +1,6 @@
-// What a bug report is made of: Qt's messages going into the backend's log,
-// and the toggle that gives that log a file to land in. The round trip at the
-// end is the only thing that proves the argument names match the Tcl.
+// What a bug report is made of: Qt's messages going into the backend's log, and
+// the toggle that gives that log a file to land in. The two round trips against
+// a real backend are the only thing proving the argument names match the Tcl.
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -18,7 +18,7 @@ private slots:
     void theToggleReachesTheBackend();
     void anExplicitDebugFileOwnsTheSink();
     void loggingToAFileRoundTripsThroughTheBackend();
-    void theToggleAnswersWithSomewhereToSendFrom();
+    void theBackendAnswersWithThePathItChose();
     void nothingIsForwardedWhileTheSinkIsStderr();
 };
 
@@ -154,7 +154,7 @@ void TestLogging::loggingToAFileRoundTripsThroughTheBackend() {
 // The path is what the export offers, and it is the backend's to choose, so it
 // is read back rather than guessed at. Empty until there is a file, which is
 // what the button in the settings page watches.
-void TestLogging::theToggleAnswersWithSomewhereToSendFrom() {
+void TestLogging::theBackendAnswersWithThePathItChose() {
     AppController app;
     QVERIFY(app.backend()->start({QStringLiteral("-transient"),
                                   QStringLiteral("1")}));

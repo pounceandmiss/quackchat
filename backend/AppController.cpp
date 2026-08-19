@@ -46,8 +46,8 @@ void AppController::applyLogToFile() {
         m_backend.notify(
             QStringLiteral("log"), QStringLiteral("setenabled"),
             QVariantMap{{QStringLiteral("enabled"), m_settings.logToFile()}});
-    // Asked rather than assumed, and asked either way: the backend chooses the
-    // path, and with --debug-file it is already writing somewhere of its own.
+    // Read back rather than worked out here: the backend picks the path, and
+    // with --debug-file it is already writing to one of its own.
     m_logPathToken =
         m_backend.request(QStringLiteral("log"), QStringLiteral("getfile"));
 }
@@ -181,8 +181,8 @@ void AppController::startFromEnvironment() {
     // env vars. No -config-dir override, so we share tacky's own store
     // (~/.config/tacky) rather than keeping a separate quackchat one.
     QStringList tacoArgs{QStringLiteral("-transient"), QStringLiteral("0")};
-    // Before the first line the backend writes, which is why these go here and
-    // not through the log module once it is up.
+    // Here rather than through the log module once it is up: these have to be
+    // in force before the backend writes its first line.
     if (!m_debugLevel.isEmpty())
         tacoArgs << QStringLiteral("-debug-level") << m_debugLevel;
     if (!m_debugFile.isEmpty())

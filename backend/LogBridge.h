@@ -1,6 +1,6 @@
 // Qt's own messages, forwarded into tacky's log so one file holds both halves
-// of a session: a warning from a QML binding sits next to the stanza that
-// provoked it, with timestamps that can be compared.
+// of a session: a warning from a QML binding next to the stanza that provoked
+// it.
 //
 // The handler already installed stays in the chain, so a terminal goes on
 // seeing everything. What the file gets is whatever QLoggingCategory let
@@ -13,7 +13,6 @@
 #include <QtGlobal>
 
 class QMessageLogContext;
-class QString;
 class TackyBackend;
 
 // The `log write` arguments for one Qt message. Empty for a message that must
@@ -22,9 +21,10 @@ class TackyBackend;
 QVariantMap logWriteArgs(QtMsgType type, const QMessageLogContext &ctx,
                          const QString &msg);
 
-// Install the handler. Call once, from main(), before anything else logs;
-// `backend` has to outlive the application. Messages logged before the backend
-// is up are not held for it - they reach the previous handler and no further.
+// Install the handler, from main() and before anything else logs; `backend` has
+// to outlive the application. Exactly once: a second call would chain the
+// handler to itself. Messages logged before the backend is up are not held for
+// it - they reach the previous handler and no further.
 void installLogBridge(TackyBackend *backend);
 
 // Whether to forward at all. Off until the backend has a log file: with the

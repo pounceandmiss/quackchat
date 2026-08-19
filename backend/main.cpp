@@ -79,8 +79,8 @@ int main(int argc, char *argv[]) {
     const QCommandLineOption fileOption(
         QStringLiteral("debug-file"),
         QGuiApplication::translate(
-            "main", "Write the log here, instead of wherever the stored "
-                    "Diagnostics setting points."),
+            "main", "Write the log here instead of where the Diagnostics "
+                    "setting says."),
         QGuiApplication::translate("main", "path"));
     parser.addOption(levelOption);
     parser.addOption(fileOption);
@@ -101,8 +101,8 @@ int main(int argc, char *argv[]) {
         controller->setAvatarEncoder(&avatarEncoder);
         controller->setDebugArgs(parser.value(levelOption),
                                  parser.value(fileOption));
-        // Before the backend starts, so the first thing it says about itself
-        // is in the same file as the first thing we say about it.
+        // Early, so the handler is in place before anything logs; it stays
+        // inert until the backend answers with a file to forward to.
         installLogBridge(controller->backend());
         controller->startFromEnvironment();
     }

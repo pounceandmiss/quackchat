@@ -38,8 +38,8 @@ class AppController : public QObject {
     // The preferences that are the app's rather than an account's; tacky keeps
     // them in one store with no acc on it.
     Q_PROPERTY(AppSettings *settings READ settings CONSTANT)
-    // Where the backend is writing its log, empty when it is writing to stderr
-    // - which is also what says whether there is anything to hand over.
+    // Where the backend is writing its log, empty while it is writing to
+    // stderr - so also whether there is anything to hand over.
     Q_PROPERTY(QString logPath READ logPath NOTIFY logPathChanged)
     // App-wide for the same reason as calls: an alert names a chat, and which
     // window ends up showing it is decided when the user picks it.

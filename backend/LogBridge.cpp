@@ -37,8 +37,8 @@ QString levelFor(QtMsgType type) {
 
 void handler(QtMsgType type, const QMessageLogContext &ctx,
              const QString &msg) {
-    // Whatever was installed before us, first: a fatal message never comes back
-    // from it, and the queued write below would not have run anyway.
+    // Whatever was installed before us, first: it does not return from a fatal
+    // message, and the queued write below would not have run anyway.
     if (g_previous)
         g_previous(type, ctx, msg);
     if (!g_backend || !g_active.load(std::memory_order_relaxed))
