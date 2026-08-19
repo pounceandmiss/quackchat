@@ -7,4 +7,5 @@ Exec=quackchat
 Icon=io.github.pounceandmiss.Quack
 Terminal=false
 Categories=Network;InstantMessaging;Qt;
+Keywords=XMPP;Jabber;chat;messaging;OMEMO;
 StartupWMClass=io.github.pounceandmiss.Quack

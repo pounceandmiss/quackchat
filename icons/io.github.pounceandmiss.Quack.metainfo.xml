@@ -16,6 +16,17 @@
 
   <launchable type="desktop-id">io.github.pounceandmiss.Quack.desktop</launchable>
 
+  <url type="homepage">https://github.com/pounceandmiss/quack_qml</url>
+  <url type="bugtracker">https://github.com/pounceandmiss/quack_qml/issues</url>
+
+  <keywords>
+    <keyword>XMPP</keyword>
+    <keyword>Jabber</keyword>
+    <keyword>chat</keyword>
+    <keyword>messaging</keyword>
+    <keyword>OMEMO</keyword>
+  </keywords>
+
   <content_rating type="oars-1.1">
     <content_attribute id="social-chat">intense</content_attribute>
     <content_attribute id="social-audio">intense</content_attribute>
