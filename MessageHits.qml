@@ -104,18 +104,6 @@ Column {
         return name !== undefined && name !== "" ? name : jid
     }
 
-    function fmtWhen(ts) {
-        if (!ts) return ""
-        const d = new Date(ts / 1000) // tacky timestamps are microseconds
-        const hm = d.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
-        const today = new Date()
-        if (d.toDateString() === today.toDateString())
-            return hm
-        //: Date then time on an older search hit, e.g. "12/03/25 14:20"
-        return qsTr("%1 %2").arg(d.toLocaleDateString(Qt.locale(), Locale.ShortFormat))
-                            .arg(hm)
-    }
-
     SectionLabel {
         width: section.width
         text: qsTr("Messages")
@@ -170,7 +158,7 @@ Column {
                         elide: Text.ElideRight
                     }
                     Text {
-                        text: section.fmtWhen(hit.timestamp)
+                        text: Stamp.when(hit.timestamp)
                         color: Theme.textDim
                         font.pixelSize: 11
                     }

@@ -4,7 +4,7 @@
 <context>
     <name>ChatPage</name>
     <message numerus="yes">
-        <location filename="../ChatPage.qml" line="835"/>
+        <location filename="../ChatPage.qml" line="830"/>
         <source>%n selected</source>
         <translation>
             <numerusform>%n selected</numerusform>

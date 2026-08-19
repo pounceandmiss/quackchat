@@ -612,11 +612,6 @@ Page {
         return jid === "" || jid === page.account ? qsTr("You") : authorName(jid)
     }
 
-    function fmtTime(ts) {
-        if (!ts) return ""
-        const d = new Date(ts / 1000) // tacky timestamps are microseconds
-        return d.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
-    }
     // Two independent hops: server_status covers the one to our own server,
     // remote_status what the far end then did. A message still on its way to
     // the server has nothing to say about the peer, so that comes first.
@@ -1261,7 +1256,7 @@ Page {
                     highlighted: page.highlightTs === wrap.timestamp
                     onQuoteTapped: page.chatModel.gotoReplyTarget(wrap.timestamp)
                     outgoing: wrap.outgoing
-                    time: page.fmtTime(wrap.timestamp)
+                    time: Stamp.when(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)
                     encrypted: wrap.encryption === "omemo"
                     // A room never encrypts, so nothing in one is remarkable.

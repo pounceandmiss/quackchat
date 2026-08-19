@@ -3284,6 +3284,49 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A stamp from today is a time and nothing else; an older one says which
+    // day it was, and one from a year that is not this one says the year too.
+    void aStampSaysTheDayOnceItIsNotToday() {
+        Engine e;
+        QQmlComponent comp(&e);
+        comp.setData(R"(import QtQuick
+import Quack
+QtObject { function when(us) { return Stamp.when(us) } })",
+                     QUrl(QStringLiteral("qrc:/tst_stamp.qml")));
+        QScopedPointer<QObject> probe(comp.create());
+        QVERIFY2(probe, qPrintable(comp.errorString()));
+
+        const auto when = [&probe](const QDateTime &t) {
+            QVariant out;
+            const qint64 us = t.toMSecsSinceEpoch() * 1000;
+            QMetaObject::invokeMethod(probe.get(), "when", Q_RETURN_ARG(QVariant, out),
+                                      Q_ARG(QVariant, QVariant(us)));
+            return out.toString();
+        };
+
+        const QLocale loc;
+        const QDate today = QDate::currentDate();
+        const QTime at(14, 20);
+        const QString hm = loc.toString(at, QLocale::ShortFormat);
+        QCOMPARE(when(QDateTime(today, at)), hm);
+
+        // Mid-year, so what stands for "this year" is never a day either side
+        // of a New Year the test happens to run over.
+        QDate other(today.year(), 6, 15);
+        if (other == today)
+            other = other.addDays(1);
+        QCOMPARE(when(QDateTime(other, at)),
+                 loc.toString(other, QStringLiteral("MMM d")) + " " + hm);
+        QCOMPARE(when(QDateTime(other.addYears(-1), at)),
+                 loc.toString(other.addYears(-1), QStringLiteral("MMM d yyyy")) + " " + hm);
+
+        // A row is keyed by its stamp so one is always there, but blank beats
+        // 1970 for whatever gets asked before it has one.
+        QCOMPARE(when(QDateTime::fromMSecsSinceEpoch(0)), QString());
+
+        e.assertNoErrors();
+    }
+
     // The per-account models are cached on the App singleton, so nothing else
     // would ever let go of one for an account that has been removed.
     void removingAnAccountDropsWhatWasCachedForIt() {
