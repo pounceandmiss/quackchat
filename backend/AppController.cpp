@@ -27,6 +27,23 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     // no longer: an account that has been removed has a roster nobody can reach
     // and a backend connection still listening for its events.
     connect(&m_accounts, &AccountsModel::removed, this, &AppController::forget);
+    connect(&m_settings, &AppSettings::logToFileChanged, this,
+            &AppController::applyLogToFile);
+    connect(&m_backend, &TackyBackend::connected, this,
+            &AppController::applyLogToFile);
+}
+
+void AppController::setDebugArgs(const QString &level, const QString &file) {
+    m_debugLevel = level;
+    m_debugFile = file;
+}
+
+void AppController::applyLogToFile() {
+    if (!m_debugFile.isEmpty())
+        return;
+    m_backend.notify(
+        QStringLiteral("log"), QStringLiteral("setenabled"),
+        QVariantMap{{QStringLiteral("enabled"), m_settings.logToFile()}});
 }
 
 void AppController::forget(const QString &acc) {
@@ -124,7 +141,14 @@ void AppController::startFromEnvironment() {
     // Persist to disk so an enabled account reconnects next launch without the
     // env vars. No -config-dir override, so we share tacky's own store
     // (~/.config/tacky) rather than keeping a separate quackchat one.
-    m_backend.start({QStringLiteral("-transient"), QStringLiteral("0")});
+    QStringList tacoArgs{QStringLiteral("-transient"), QStringLiteral("0")};
+    // Before the first line the backend writes, which is why these go here and
+    // not through the log module once it is up.
+    if (!m_debugLevel.isEmpty())
+        tacoArgs << QStringLiteral("-debug-level") << m_debugLevel;
+    if (!m_debugFile.isEmpty())
+        tacoArgs << QStringLiteral("-debug-file") << m_debugFile;
+    m_backend.start(tacoArgs);
 #endif
 
     const QString acc = qEnvironmentVariable("TACKY_ACC");

@@ -25,12 +25,16 @@ class AppSettings : public QObject {
     // And how big one may be, in bytes; 0 is no cap.
     Q_PROPERTY(qlonglong attachmentAutofetchMax READ attachmentAutofetchMax
                    NOTIFY attachmentAutofetchMaxChanged)
+    // Whether the backend writes its log to a file. The same key the Tk
+    // client's File menu toggles, so the two agree about one session's store.
+    Q_PROPERTY(bool logToFile READ logToFile NOTIFY logToFileChanged)
 
 public:
     explicit AppSettings(QObject *parent = nullptr);
 
     QString attachmentAutofetch() const { return m_autofetch; }
     qlonglong attachmentAutofetchMax() const { return m_autofetchMax; }
+    bool logToFile() const { return m_logToFile; }
 
     void setBackend(TackyBackend *backend);
 
@@ -39,6 +43,7 @@ public:
 
     Q_INVOKABLE void setAttachmentAutofetch(const QString &policy);
     Q_INVOKABLE void setAttachmentAutofetchMax(qlonglong bytes);
+    Q_INVOKABLE void setLogToFile(bool on);
 
     // Public so tests can drive them with canned events and replies.
     void handleEvent(const QString &module, const QString &name,
@@ -49,6 +54,7 @@ public:
 signals:
     void attachmentAutofetchChanged();
     void attachmentAutofetchMaxChanged();
+    void logToFileChanged();
 
 private:
     void applyValue(const QString &key, const QString &value);
@@ -58,9 +64,11 @@ private:
     // tacky's own defaults, in force until a stored value replaces them.
     QString m_autofetch = QStringLiteral("everyone");
     qlonglong m_autofetchMax = 5242880;
+    bool m_logToFile = false;
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;
+    int m_logToFileToken = -1;
 };
 
 #endif // APPSETTINGS_H

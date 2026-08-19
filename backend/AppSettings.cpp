@@ -7,6 +7,7 @@
 namespace {
 const QLatin1String kAutofetch("attachment_autofetch");
 const QLatin1String kAutofetchMax("attachment_autofetch_max");
+const QLatin1String kLogToFile("log_to_file");
 } // namespace
 
 AppSettings::AppSettings(QObject *parent) : QObject(parent) {}
@@ -30,6 +31,9 @@ void AppSettings::refresh() {
     m_autofetchMaxToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kAutofetchMax}});
+    m_logToFileToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kLogToFile}});
 }
 
 void AppSettings::handleResult(int token, const QVariant &data) {
@@ -37,6 +41,8 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kAutofetch, data.toString());
     else if (token == m_autofetchMaxToken)
         applyValue(kAutofetchMax, data.toString());
+    else if (token == m_logToFileToken)
+        applyValue(kLogToFile, data.toString());
 }
 
 // The stored value never came, so the compiled-in default stands. Dropping the
@@ -47,6 +53,8 @@ void AppSettings::handleError(int token, const QString &message) {
         m_autofetchToken = -1;
     else if (token == m_autofetchMaxToken)
         m_autofetchMaxToken = -1;
+    else if (token == m_logToFileToken)
+        m_logToFileToken = -1;
 }
 
 void AppSettings::handleEvent(const QString &module, const QString &name,
@@ -76,6 +84,12 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_autofetchMax = bytes;
         emit attachmentAutofetchMaxChanged();
+    } else if (key == kLogToFile) {
+        const bool on = value != QLatin1String("0");
+        if (m_logToFile == on)
+            return;
+        m_logToFile = on;
+        emit logToFileChanged();
     }
 }
 
@@ -94,4 +108,8 @@ void AppSettings::setAttachmentAutofetch(const QString &policy) {
 
 void AppSettings::setAttachmentAutofetchMax(qlonglong bytes) {
     write(kAutofetchMax, QString::number(bytes));
+}
+
+void AppSettings::setLogToFile(bool on) {
+    write(kLogToFile, on ? QStringLiteral("1") : QStringLiteral("0"));
 }

@@ -77,6 +77,11 @@ public:
     // the session this drops.
     Q_INVOKABLE void forgetChat(const QString &acc, const QString &jid);
 
+    // What the command line asked of the logger, applied when the backend
+    // starts. An explicit file owns the sink for the whole run, and the stored
+    // toggle is left alone - the same rule the Tk client follows.
+    void setDebugArgs(const QString &level, const QString &file);
+
     // Start a persistent on-disk backend and sign in TACKY_ACC if it is set.
     // No-op once started.
     Q_INVOKABLE void startFromEnvironment();
@@ -84,6 +89,9 @@ public:
 private:
     // Drop what was cached for an account that has been removed.
     void forget(const QString &acc);
+    // Point the backend's logger at a file, or back at stderr. Re-sent on every
+    // connect: the setting is stored, but the sink it drives is per process.
+    void applyLogToFile();
 
     TackyBackend m_backend;
     AccountsModel m_accounts;
@@ -93,6 +101,8 @@ private:
     AppSettings m_settings;
     NotificationController m_notifications;
     const AvatarEncoder *m_encoder = nullptr;
+    QString m_debugLevel;
+    QString m_debugFile;
     QHash<QString, ChatListModel *> m_chatLists;
     QHash<QString, AccountSettings *> m_accountSettings;
     // acc -> jid -> session, so dropping an account drops its chats with it.

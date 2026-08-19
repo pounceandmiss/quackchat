@@ -4,6 +4,10 @@
 //   TACKY_ACC=you@example.com TACKY_PASSWORD=secret ./quackchat
 //
 // Without TACKY_ACC it still runs, against a persistent account-less session.
+//
+// --debug-file/--debug-level are for a report from a run that will not reach
+// the settings page; the Diagnostics toggle covers the ordinary case.
+#include <QCommandLineParser>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QLibraryInfo>
@@ -13,6 +17,7 @@
 
 #include "AppController.h"
 #include "AvatarImageProvider.h"
+#include "LogBridge.h"
 #include "QImageAvatarEncoder.h"
 
 int main(int argc, char *argv[]) {
@@ -59,6 +64,30 @@ int main(int argc, char *argv[]) {
                           QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
         QCoreApplication::installTranslator(&qtTranslator);
 
+    // parse(), not process(): Qt's own options are still in arguments() here,
+    // and process() would exit over the first one it does not know.
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        QGuiApplication::translate("main", "A chat client."));
+    const QCommandLineOption helpOption = parser.addHelpOption();
+    const QCommandLineOption levelOption(
+        QStringLiteral("debug-level"),
+        QGuiApplication::translate(
+            "main", "How much to log: verbose, debug, info, warning, error, "
+                    "fatal or none."),
+        QGuiApplication::translate("main", "level"));
+    const QCommandLineOption fileOption(
+        QStringLiteral("debug-file"),
+        QGuiApplication::translate(
+            "main", "Write the log here, instead of wherever the stored "
+                    "Diagnostics setting points."),
+        QGuiApplication::translate("main", "path"));
+    parser.addOption(levelOption);
+    parser.addOption(fileOption);
+    parser.parse(QCoreApplication::arguments());
+    if (parser.isSet(helpOption))
+        parser.showHelp(0);
+
     // Declared before the engine so it outlives everything holding a pointer
     // to it.
     QImageAvatarEncoder avatarEncoder;
@@ -70,6 +99,11 @@ int main(int argc, char *argv[]) {
         engine.addImageProvider(QStringLiteral("avatar"), // engine takes ownership
                                 new AvatarImageProvider(controller->avatars()));
         controller->setAvatarEncoder(&avatarEncoder);
+        controller->setDebugArgs(parser.value(levelOption),
+                                 parser.value(fileOption));
+        // Before the backend starts, so the first thing it says about itself
+        // is in the same file as the first thing we say about it.
+        installLogBridge(controller->backend());
         controller->startFromEnvironment();
     }
 

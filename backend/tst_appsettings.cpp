@@ -33,11 +33,15 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
 
     emit backend.connected();
 
-    QCOMPARE(sent.count(), 2);
+    QStringList keys;
     for (const QList<QVariant> &call : sent) {
         QCOMPARE(call.at(0).toString(), QString("setting"));
         QCOMPARE(call.at(1).toString(), QString("get"));
+        keys << call.at(2).toMap().value("key").toString();
     }
+    keys.sort();
+    QCOMPARE(keys, QStringList({"attachment_autofetch",
+                                "attachment_autofetch_max", "log_to_file"}));
 }
 
 // The store holds nothing until something is written, and "" is not a policy
@@ -96,6 +100,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setBackend(&backend);
     s.setAttachmentAutofetch(QStringLiteral("never"));
     s.setAttachmentAutofetchMax(1048576);
+    s.setLogToFile(true);
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
 
@@ -105,6 +110,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.attachmentAutofetch() == QLatin1String("never"), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.attachmentAutofetchMax() == 1048576LL, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(readback.logToFile(), 5000);
 
     backend.stop();
 }

@@ -245,6 +245,7 @@ qt_add_qml_module(quack
         Theme.qml
     SOURCES
         backend/AppController.cpp backend/AppController.h
+        backend/LogBridge.cpp backend/LogBridge.h
         backend/TackyBackend.cpp backend/TackyBackend.h
         backend/TackyTransport.h
         ${_embedded_transport}
@@ -418,7 +419,7 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
           tst_calls tst_audiodevices tst_appsettings tst_notifications
-          tst_registration tst_i18n)
+          tst_registration tst_i18n tst_logging)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})
