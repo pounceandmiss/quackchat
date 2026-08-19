@@ -255,7 +255,18 @@ Rectangle {
         }
     }
 
-    AddAccountSheet { id: addSheet; objectName: "addAccountSheet" }
+    AddAccountSheet {
+        id: addSheet
+        objectName: "addAccountSheet"
+        // One sheet at a time: the sign-up replaces the sign-in rather than
+        // stacking over it.
+        onCreateAccount: {
+            addSheet.close()
+            registerSheet.open()
+        }
+    }
+
+    RegisterAccountSheet { id: registerSheet }
 
     // Full-screen rather than a centred dialog: the form plus a device list of
     // unknown length is a screenful.

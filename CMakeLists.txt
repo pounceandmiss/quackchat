@@ -203,6 +203,7 @@ qt_add_qml_module(quack
         FullScreenSheet.qml
         PageHeader.qml
         AddAccountSheet.qml
+        RegisterAccountSheet.qml
         DataForm.qml
         AccountSettingsPage.qml
         AppSettingsPage.qml
