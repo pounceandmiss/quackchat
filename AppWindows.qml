@@ -122,7 +122,6 @@ QtObject {
     // outlive the singletons they read: their bindings re-run against an App and
     // a Theme that have already gone, and the process dies inside a singleton
     // property lookup. Take them down while what they read is still there.
-    // QQmlApplicationEngine does the same for the windows it loaded itself.
     property Connections _quit: Connections {
         target: Qt.application
         function onAboutToQuit() { mgr.closeAll() }

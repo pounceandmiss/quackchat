@@ -346,9 +346,8 @@ class TestQmlLoad : public QObject {
     // The window AppWindows hands back for a second identical request is the one
     // it already made: a second view of the same state would argue with the
     // first over what is on screen. Asked from inside a test that holds a page
-    // of its own - on an engine with nothing else on it, AppWindows' window is
-    // the last thing alive at teardown, and its bindings hang or crash re-reading
-    // singletons that have gone.
+    // of its own, since nothing here calls closeAll and AppWindows' window would
+    // otherwise be the last thing alive at teardown.
     static void oneWindowNotTwo(const QVariant &first, const QVariant &again) {
         QVERIFY(first.value<QObject *>());
         QCOMPARE(again.value<QObject *>(), first.value<QObject *>());
@@ -357,18 +356,13 @@ class TestQmlLoad : public QObject {
     }
 
 private slots:
-    // The app's own startup, then quit with a settings window open. AppWindows
-    // holds that window, so without a teardown its bindings re-run against
-    // singletons that have already gone and the process dies inside a singleton
-    // property lookup - four runs in five, and a hang in the rest.
-    //
-    // In the app the teardown comes from Qt.application.aboutToQuit, which no
-    // test can raise without ending the whole run, so this drives closeAll()
-    // directly and leaves the hook to the one line that connects it.
+    // The app's own startup, then quit with a settings window open - which
+    // segfaulted until AppWindows took its own windows down first. The app does
+    // that from Qt.application.aboutToQuit, which no test can raise without
+    // ending the whole run, so this drives closeAll() directly.
     void closingTheWindowsItHoldsSurvivesShutdown() {
         AppEngine e;
-        auto *app = e.singletonInstance<AppController *>("Quack", "App");
-        QVERIFY(app);
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
         e.loadFromModule("Quack", "Main");
         QVERIFY(!e.rootObjects().isEmpty());
 
@@ -1590,8 +1584,7 @@ private slots:
     // instead: every device they have is listed, and none of it is ours.
     void contactDetailsShowsTheirDevicesAndOurOwnKey() {
         Engine e;
-        auto *app = e.singletonInstance<AppController *>("Quack", "App");
-        QVERIFY(app);
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
         QScopedPointer<QObject> holder;
         QQuickWindow *w = openContactDetails(e, holder);
         QVERIFY(w);
