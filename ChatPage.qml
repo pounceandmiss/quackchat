@@ -1611,8 +1611,10 @@ Page {
                             wrapMode: TextArea.Wrap
                             // Measured off the text: how far apart lines sit is
                             // the style's business, not the font's pixel size.
+                            // An empty field counts no lines, and dividing by
+                            // that would leave the composer with no height.
                             readonly property real lineHeight:
-                                input.contentHeight / input.lineCount
+                                input.contentHeight / Math.max(1, input.lineCount)
                             // Six lines, then it scrolls: past that the composer
                             // starts taking the feed's half of the window.
                             readonly property real maxHeight:
