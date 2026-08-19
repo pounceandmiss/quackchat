@@ -8,10 +8,10 @@ import Quack
 // An XEP-0004 data form, drawn from whatever the server asked for: one control
 // per row of `fields`, picked by the row's type. The Tk GUI's regform, which
 // this follows, renders the same set - a form is the server's questions and
-// there is nothing here to decide beyond which control answers each one.
+// there is nothing to decide here beyond which control answers each one.
 //
 // Answers go straight back into the model as they are typed (`setValue(row,
-// value)`), so the model is what holds the form's state and this holds none.
+// value)`), so the model holds the form's state and this holds none.
 // Registration is the first user; a MUC's config form is the same wire type
 // and the same rows.
 ColumnLayout {
@@ -39,16 +39,28 @@ ColumnLayout {
             required property string mediaSource
             required property bool hasMedia
 
-            readonly property bool isFixed: field.type === "fixed"
+            // Which of the controls below answers this field. Several types
+            // share one, and an unknown type is a line to type in: naming it
+            // once beats five bindings each spelling out what it is not.
+            readonly property string control: {
+                switch (field.type) {
+                case "fixed": return "prose"
+                case "boolean": return "tick"
+                case "text-multi": return "block"
+                case "list-single": return "choice"
+                case "list-multi": return "ticks"
+                default: return "line"
+                }
+            }
 
             Layout.fillWidth: true
             spacing: 4
 
-            // A boolean answers in its own box, and a fixed field is a line of
-            // the server's prose, so neither wants a label above it.
+            // A tick carries its own label and a fixed field is a line of the
+            // server's prose, so neither wants one above it.
             Label {
                 Layout.fillWidth: true
-                visible: !field.isFixed && field.type !== "boolean"
+                visible: field.control !== "prose" && field.control !== "tick"
                 text: field.required ? field.label + " *" : field.label
                 color: Theme.textDim
                 font.pixelSize: 12
@@ -57,7 +69,7 @@ ColumnLayout {
 
             Text {
                 Layout.fillWidth: true
-                visible: field.isFixed
+                visible: field.control === "prose"
                 text: field.value
                 color: Theme.textPrimary
                 font.pixelSize: 13
@@ -68,9 +80,7 @@ ColumnLayout {
                 id: line
                 Layout.fillWidth: true
                 objectName: "formLine" + field.index
-                visible: !field.isFixed && field.type !== "boolean"
-                       && field.type !== "text-multi" && field.type !== "list-single"
-                       && field.type !== "list-multi"
+                visible: field.control === "line"
                 text: field.value
                 echoMode: field.type === "text-private" ? TextInput.Password
                                                         : TextInput.Normal
@@ -83,7 +93,7 @@ ColumnLayout {
             CheckBox {
                 id: tick
                 objectName: "formTick" + field.index
-                visible: field.type === "boolean"
+                visible: field.control === "tick"
                 text: field.label
                 checked: field.value === "1" || field.value === "true"
                 // The wire spells a boolean 1/0, as XEP-0004 does.
@@ -95,14 +105,12 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.minimumHeight: 72
                 objectName: "formBlock" + field.index
-                visible: field.type === "text-multi"
+                visible: field.control === "block"
                 wrapMode: TextEdit.Wrap
                 text: field.values.join("\n")
-                // TextEdit has no textEdited, so this also fires when the model
-                // pushes a value in - and once at build, for every row, since
-                // each row builds every control and shows one. Only the shown
-                // one answers; writing back what just arrived is then a no-op,
-                // the text it sets being the text already there.
+                // TextEdit has no textEdited, so this fires for the model's own
+                // writes too, and once per row at build. Only the shown control
+                // answers; what it writes back is what it was just given.
                 onTextChanged: if (block.visible)
                                    form.fields.setValue(field.index,
                                                         block.text.split("\n"))
@@ -112,7 +120,7 @@ ColumnLayout {
                 id: choice
                 Layout.fillWidth: true
                 objectName: "formChoice" + field.index
-                visible: field.type === "list-single"
+                visible: field.control === "choice"
                 model: field.options
                 textRole: "label"
                 valueRole: "value"
@@ -126,15 +134,15 @@ ColumnLayout {
                 onActivated: form.fields.setValue(field.index, choice.currentValue)
             }
 
-            // No multi-select combo in Controls, and a list of ticks is what a
-            // form of a handful of options wants anyway.
+            // No multi-select combo in Controls, and a column of ticks is what
+            // a form of a handful of options wants anyway.
             ColumnLayout {
                 Layout.fillWidth: true
-                visible: field.type === "list-multi"
+                visible: field.control === "ticks"
                 spacing: 0
 
                 Repeater {
-                    model: field.type === "list-multi" ? field.options : []
+                    model: field.control === "ticks" ? field.options : []
 
                     delegate: CheckBox {
                         id: option
@@ -152,15 +160,15 @@ ColumnLayout {
                 }
             }
 
-            // A CAPTCHA (XEP-0158): the bytes come as a second round trip, so
-            // the field is drawn before there is a picture to put in it.
+            // A CAPTCHA (XEP-0158): the bytes are a round trip of their own, so
+            // the field is drawn before there is a picture to put under it.
             Image {
                 objectName: "formMedia" + field.index
                 Layout.topMargin: 4
-                visible: field.hasMedia && field.mediaSource !== ""
+                Layout.maximumWidth: form.width
+                visible: field.mediaSource !== ""
                 source: field.mediaSource
                 fillMode: Image.PreserveAspectFit
-                Layout.maximumWidth: form.width
             }
 
             Caption {
