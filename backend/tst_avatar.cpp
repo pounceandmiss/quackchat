@@ -176,6 +176,53 @@ private slots:
         QCOMPARE(jidsAsked(sent, "visible", "other@h"), QStringList{});
     }
 
+    // `avatar metadata` reads the metadata row alone, so it can hand over a hash
+    // whose bytes tacky has not fetched yet. The empty `data` reply that follows
+    // has to unstick the hash: QML would otherwise keep an Image pointed at the
+    // one URL it has already failed on, and never reload it when the bytes land.
+    void forgetsAHashTheBackendCannotServe() {
+        TackyBackend backend;
+        QVERIFY(backend.start());
+        AvatarController c;
+        c.setBackend(&backend);
+        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
+
+        AvatarResponse r;
+        c.fetch("me@h", "bob@h", "abc", &r);
+        // request() hands out tokens in order, so the fetch's is the one before
+        // whatever the next request would get.
+        const int dataToken =
+            backend.request("avatar", "metadata", QVariantMap{}) - 1;
+        emit backend.result(dataToken, QString()); // "" == bytes not cached
+
+        QVERIFY(!r.errorString().isEmpty()); // the Image falls back
+        QCOMPARE(c.hashFor("me@h", "bob@h"), QString());
+
+        // The hash comes back when the backend's own fetch ends in an <Update>,
+        // and QML sees a URL it has not failed on.
+        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
+        QCOMPARE(c.hashFor("me@h", "bob@h"), QString("abc"));
+    }
+
+    // Only the hash that went unserved is dropped: an <Update> that landed while
+    // the fetch was out is newer news than the reply to it.
+    void keepsAHashThatMovedDuringTheFetch() {
+        TackyBackend backend;
+        QVERIFY(backend.start());
+        AvatarController c;
+        c.setBackend(&backend);
+        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
+
+        AvatarResponse r;
+        c.fetch("me@h", "bob@h", "abc", &r);
+        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "def"));
+        const int dataToken =
+            backend.request("avatar", "metadata", QVariantMap{}) - 1;
+        emit backend.result(dataToken, QString());
+
+        QCOMPARE(c.hashFor("me@h", "bob@h"), QString("def"));
+    }
+
     // Nothing times out an avatar request, so a backend that stops has to fail
     // the waiting sinks or the QQuickImageResponse never completes.
     void pendingSinksFailWhenBackendStops() {

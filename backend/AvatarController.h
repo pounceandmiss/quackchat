@@ -79,10 +79,18 @@ private:
     // moved while `acc` was offline, with no one here to hear the <Update>.
     void resubscribe(const QString &acc);
 
+    // A fetch in flight: the sink to complete, and which JID's hash it is
+    // serving, since a hash the backend cannot serve has to be forgotten again.
+    struct Fetch {
+        AvatarSink *sink = nullptr;
+        QString key;
+        QString hash;
+    };
+
     TackyBackend *m_backend = nullptr;
-    QHash<QString, QString> m_hash;     // "acc\njid" -> hash
-    QHash<int, AvatarSink *> m_pending; // request token -> waiting sink
-    QHash<int, QString> m_metaPending;  // request token -> "acc\njid"
+    QHash<QString, QString> m_hash;    // "acc\njid" -> hash
+    QHash<int, Fetch> m_pending;       // request token -> waiting fetch
+    QHash<int, QString> m_metaPending; // request token -> "acc\njid"
     QSet<QString> m_visible;
     int m_rev = 0;
 };

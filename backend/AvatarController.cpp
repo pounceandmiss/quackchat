@@ -31,10 +31,10 @@ void AvatarController::onRunningChanged() {
         return;
     m_visible.clear(); // the backend holding them is gone
     m_metaPending.clear();
-    const QHash<int, AvatarSink *> pending = m_pending;
+    const QHash<int, Fetch> pending = m_pending;
     m_pending.clear();
-    for (AvatarSink *sink : pending)
-        sink->failSink(QStringLiteral("backend went away"));
+    for (const Fetch &f : pending)
+        f.sink->failSink(QStringLiteral("backend went away"));
 }
 
 QString AvatarController::key(const QString &acc, const QString &jid) {
@@ -117,7 +117,7 @@ void AvatarController::fetch(const QString &acc, const QString &jid,
         m_backend->request(QStringLiteral("avatar"), QStringLiteral("data"),
                            QVariantMap{{QStringLiteral("acc"), acc},
                                        {QStringLiteral("hash"), hash}});
-    m_pending.insert(tok, sink);
+    m_pending.insert(tok, Fetch{sink, key(acc, jid), hash});
 }
 
 void AvatarController::onResult(int token, const QVariant &data) {
@@ -130,20 +130,31 @@ void AvatarController::onResult(int token, const QVariant &data) {
             applyHash(k, hash);
         return;
     }
-    AvatarSink *sink = m_pending.take(token);
-    if (!sink)
+    const Fetch f = m_pending.take(token);
+    if (!f.sink)
         return; // not one of ours
     // base64 image string, "" when the bytes aren't cached
-    sink->deliverBase64(data.toString().toLatin1());
+    const QByteArray base64 = data.toString().toLatin1();
+    f.sink->deliverBase64(base64);
+    // An `avatar metadata` read answers from the metadata row alone, so it can
+    // name a hash whose bytes tacky has not fetched yet - every <Update> route
+    // waits for the bytes, that one does not. Forget such a hash rather than
+    // leave QML pointing an Image at bytes that aren't there: the URL retracts
+    // to the initials, and the <Update> the backend's own fetch ends in
+    // re-forms it. Keeping it would leave the same URL the Image has already
+    // failed on, which is one it never reloads. A hash that moved while we were
+    // waiting is someone else's news, so only the one we asked for is dropped.
+    if (base64.isEmpty() && m_hash.value(f.key) == f.hash)
+        applyHash(f.key, QString());
 }
 
 void AvatarController::onError(int token, const QString &message) {
     if (m_metaPending.remove(token))
         return; // no hash to record; the <Update> route still stands
-    AvatarSink *sink = m_pending.take(token);
-    if (!sink)
+    const Fetch f = m_pending.take(token);
+    if (!f.sink)
         return;
-    sink->failSink(message);
+    f.sink->failSink(message);
 }
 
 void AvatarController::handleEvent(const QString &module, const QString &name,
