@@ -12,9 +12,9 @@ import Quack
 //
 // Registering does not create the account locally: tacky runs the sign-up on a
 // throwaway connection and says only that the account now exists on the
-// server. Adding it here is this sheet's last act, and only it can be done
-// from what the server asked - which is why a server that never asks for a
-// `username` leaves the account to be added by hand.
+// server. Adding it here is this sheet's last act, and only the answers say
+// which account to add - which is why a server that never asks for a
+// `username` leaves it to be added by hand.
 SheetDialog {
     id: sheet
     objectName: "registerAccountSheet"
@@ -24,7 +24,6 @@ SheetDialog {
     height: Math.min(520, parent ? parent.height - 24 : 520)
     standardButtons: Dialog.Cancel
 
-    readonly property bool haveForm: reg.hasForm
     readonly property bool busy: reg.state === RegistrationController.Connecting
                                  || reg.state === RegistrationController.Submitting
 
@@ -46,11 +45,10 @@ SheetDialog {
     Connections {
         target: reg
         function onStateChanged() {
-            if (reg.state !== RegistrationController.Registered)
-                return
-            // The password went in as an answer, so it is read back from the
+            // The password went in as an answer, so it is read back out of the
             // form rather than kept beside it.
-            if (reg.registeredJid !== "") {
+            if (reg.state === RegistrationController.Registered
+                    && reg.registeredJid !== "") {
                 App.accounts.add(reg.registeredJid, reg.valueFor("password"))
                 sheet.close()
             }
@@ -61,8 +59,8 @@ SheetDialog {
         anchors.fill: parent
         spacing: 12
 
-        // Step one: which server. Kept visible behind the form so the answer
-        // to "where am I signing up" stays on screen.
+        // Step one, and it stays put: which server this is a sign-up with is
+        // worth keeping on screen, and changing it asks the new one afresh.
         Label {
             Layout.fillWidth: true
             text: "Server"
@@ -76,26 +74,16 @@ SheetDialog {
                 id: serverField
                 objectName: "registerServer"
                 Layout.fillWidth: true
-                enabled: !sheet.haveForm && !sheet.busy
+                enabled: !sheet.busy
                 placeholderText: "example.com"
                 inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
                 onAccepted: if (text.trim() !== "") reg.start(text.trim())
             }
             Button {
                 objectName: "registerContinue"
-                text: sheet.haveForm ? "Change" : "Continue"
-                enabled: sheet.haveForm
-                         || (!sheet.busy && serverField.text.trim() !== "")
-                // "Change" drops the form and the session behind it, back to an
-                // empty server box.
-                onClicked: {
-                    if (sheet.haveForm) {
-                        reg.cancel()
-                        serverField.forceActiveFocus()
-                    } else {
-                        reg.start(serverField.text.trim())
-                    }
-                }
+                text: "Continue"
+                enabled: !sheet.busy && serverField.text.trim() !== ""
+                onClicked: reg.start(serverField.text.trim())
             }
         }
 
@@ -104,7 +92,7 @@ SheetDialog {
             id: scroll
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: sheet.haveForm
+            visible: reg.hasForm
             contentWidth: availableWidth
             clip: true
             ScrollBar.vertical: ThinScrollBar {}
@@ -125,6 +113,8 @@ SheetDialog {
                 DataForm {
                     objectName: "registrationForm"
                     Layout.fillWidth: true
+                    // Nothing to answer while the answers are on their way.
+                    enabled: !sheet.busy
                     fields: reg
                 }
             }
@@ -134,7 +124,7 @@ SheetDialog {
         Text {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: !sheet.haveForm
+            visible: !reg.hasForm
             wrapMode: Text.WordWrap
             color: Theme.textDim
             font.pixelSize: 12
@@ -142,12 +132,10 @@ SheetDialog {
                 if (reg.state === RegistrationController.Connecting)
                     return "Asking " + reg.host + " what it needs…"
                 if (reg.state === RegistrationController.Registered)
-                    return "The account was created on " + reg.host
-                         + ", but the server never asked for a username, so it "
-                         + "could not be added here. Add it with Sign in."
-                return "Type the server to sign up with. Not every server "
-                     + "allows it, and some ask you to register on their website "
-                     + "instead."
+                    return "The account was created, but the server never asked "
+                         + "for a username, so it could not be added here."
+                return "Name a server to sign up with. Not every server hands "
+                     + "out accounts."
             }
         }
 
@@ -162,15 +150,15 @@ SheetDialog {
 
         RowLayout {
             Layout.fillWidth: true
-            visible: sheet.haveForm
+            visible: reg.hasForm
             spacing: 8
 
-            // A failed submit can have spent the form behind it - a CAPTCHA in
-            // it has expired either way - so fetching a fresh one is its own
-            // button, and it keeps the answers already typed.
+            // A rejected submit can have spent the form behind it - a CAPTCHA
+            // in it has expired either way - so fetching a fresh one is its own
+            // button. It keeps the answers already typed.
             Button {
                 objectName: "registerRetry"
-                text: "New form"
+                text: "Refresh form"
                 enabled: !sheet.busy
                 onClicked: reg.retry()
             }
