@@ -138,7 +138,10 @@ private:
     QString m_chat;
     QString m_query;   // what is typed
     QString m_matched; // what the last search went out with, held for paging
-    QString m_cursor;  // `last`, resent verbatim: account-wide it is a pair
+    // Where the next page starts. The store's cursor is a timestamp, paired
+    // account-wide with the chat it came from, since two chats can share one.
+    qlonglong m_cursorTs = 0;
+    QString m_cursorChat;
     QString m_tag;     // ours alone, so one window's cancel spares the others
     bool m_alsoRemote = false;
     bool m_remoteAvailable = false;

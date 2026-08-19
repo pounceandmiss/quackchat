@@ -133,7 +133,7 @@ void SearchModel::search() {
 }
 
 void SearchModel::loadMore() {
-    if (searching() || m_complete || m_cursor.isEmpty() || m_matched.isEmpty())
+    if (searching() || m_complete || m_cursorTs == 0 || m_matched.isEmpty())
         return;
     issue(true);
 }
@@ -169,8 +169,13 @@ void SearchModel::issue(bool append) {
     const bool remoteLeg = !append && m_alsoRemote && m_remoteAvailable;
     a.insert(QStringLiteral("source"),
              remoteLeg ? QStringLiteral("both") : QStringLiteral("local"));
-    if (append)
-        a.insert(QStringLiteral("before"), m_cursor);
+    if (append) {
+        a.insert(QStringLiteral("before"), m_cursorTs);
+        // Account-wide the timestamp alone does not place the row: two chats
+        // can share one, and the store needs both to resume where it stopped.
+        if (m_chat.isEmpty() && !m_cursorChat.isEmpty())
+            a.insert(QStringLiteral("before_chat_jid"), m_cursorChat);
+    }
 
     m_appending = append;
     m_token = m_backend->request(QStringLiteral("message"),
@@ -216,7 +221,8 @@ void SearchModel::clearRows() {
 // asked, the cursor that would page it, and how the last attempt ended.
 void SearchModel::forgetPage() {
     m_matched.clear();
-    m_cursor.clear();
+    m_cursorTs = 0;
+    m_cursorChat.clear();
     setComplete(false);
     if (m_failed) {
         m_failed = false;
@@ -312,11 +318,12 @@ void SearchModel::applyResult(const QVariantMap &result, bool append) {
     if (m_msgs.size() != was)
         emit countChanged();
 
-    // Verbatim: scoped this is a timestamp, account-wide a {timestamp chat_jid}
-    // pair, and only tacky has to be able to tell them apart.
-    m_cursor = result.value(QStringLiteral("last")).toString();
+    // The store's cursor. `last_id` is the archive's, which paging never uses:
+    // the remote leg skips itself the moment a cursor is passed.
+    m_cursorTs = result.value(QStringLiteral("last")).toLongLong();
+    m_cursorChat = result.value(QStringLiteral("last_chat_jid")).toString();
     setComplete(result.value(QStringLiteral("complete")).toBool() ||
-                m_cursor.isEmpty());
+                m_cursorTs == 0);
     rebuildResultChats();
     // Not countChanged: three hits replaced by three others is every row new
     // and the count where it was.

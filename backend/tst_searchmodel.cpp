@@ -40,7 +40,7 @@ private slots:
     void loadMoreAppendsBehindThem();
     void aFreshSearchKeepsTheRowsButNotTheCursor();
     void everyPageThatLandsIsAnnounced();
-    void cursorIsResentVerbatim();
+    void theStoreCursorPagesTheNextRequest();
     void accountWideCursorKeepsItsPair();
     void pagingNeverAsksTheServer();
     void serverLegNeedsAnArchiveThatCanSearch();
@@ -69,7 +69,7 @@ void TestSearchModel::rowsComeOffTheResult() {
         {"timestamp":100,"chat_jid":"a@h","from_jid":"me@h","is_outgoing":true,
          "content":{"type":"media","caption":"the pizza","attachments":[],
                     "matches":[{"offset":4,"length":5}]}}],
-        "complete":true,"last":"100"})"));
+        "complete":true,"last":100})"));
 
     QCOMPARE(m.rowCount(), 2);
     QVERIFY(!m.searching());
@@ -97,7 +97,7 @@ void TestSearchModel::searchReplacesTheDisplayedResults() {
     m.setQuery("pizza");
     m.search();
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"300"})"));
+                             "complete":false,"last":300})"));
     QCOMPARE(m.rowCount(), 1);
 
     // A second search is a fresh question, but the last answer holds the floor
@@ -109,12 +109,12 @@ void TestSearchModel::searchReplacesTheDisplayedResults() {
     QVERIFY(m.searching());
 
     m.handleResult(3, res(R"({"messages":[{"timestamp":900,"chat_jid":"a@h"}],
-                             "complete":true,"last":"900"})"));
+                             "complete":true,"last":900})"));
     QCOMPARE(m.rowCount(), 1);
     QCOMPARE(m.data(m.index(0), SearchModel::TimestampRole).toLongLong(), 900);
     // The first search's reply, arriving late, no longer has a window to land in.
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":true,"last":"300"})"));
+                             "complete":true,"last":300})"));
     QCOMPARE(m.rowCount(), 1);
 }
 
@@ -125,10 +125,10 @@ void TestSearchModel::loadMoreAppendsBehindThem() {
     m.setQuery("pizza");
     m.search();
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"300"})"));
+                             "complete":false,"last":300})"));
     m.loadMore();
     m.handleResult(3, res(R"({"messages":[{"timestamp":200,"chat_jid":"a@h"}],
-                             "complete":true,"last":"200"})"));
+                             "complete":true,"last":200})"));
 
     QCOMPARE(m.rowCount(), 2);
     QCOMPARE(m.data(m.index(0), SearchModel::TimestampRole).toLongLong(), 300);
@@ -145,7 +145,7 @@ void TestSearchModel::aFreshSearchKeepsTheRowsButNotTheCursor() {
     m.setQuery("pizza");
     m.search();
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"300"})"));
+                             "complete":false,"last":300})"));
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     m.setQuery("pasta");
@@ -170,36 +170,38 @@ void TestSearchModel::everyPageThatLandsIsAnnounced() {
     QSignalSpy arrived(&m, &SearchModel::resultsArrived);
     QSignalSpy counted(&m, &SearchModel::countChanged);
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":true,"last":"300"})"));
+                             "complete":true,"last":300})"));
     QCOMPARE(arrived.count(), 1);
 
     counted.clear();
     m.setQuery("pasta");
     m.search();
     m.handleResult(3, res(R"({"messages":[{"timestamp":900,"chat_jid":"a@h"}],
-                             "complete":true,"last":"900"})"));
+                             "complete":true,"last":900})"));
     QCOMPARE(m.rowCount(), 1);
     QCOMPARE(counted.count(), 0); // one hit for one hit
     QCOMPARE(arrived.count(), 2);
 }
 
-void TestSearchModel::cursorIsResentVerbatim() {
+void TestSearchModel::theStoreCursorPagesTheNextRequest() {
     TackyBackend backend;
     SearchModel m;
     scopeTo(m, backend, "a@h");
     m.setQuery("pizza");
     m.search();
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"1700000000123456"})"));
+                             "complete":false,"last":1700000000123456})"));
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     m.loadMore();
     const QVariantMap a = lastSearch(sent);
-    // A string, exactly as it came: tacky declares `last` a string on both
-    // paths, and the store column's own affinity converts it back.
-    QCOMPARE(a.value("before").toString(), QString("1700000000123456"));
+    // A timestamp, and one big enough that rounding through a double would
+    // move it.
+    QCOMPARE(a.value("before").toLongLong(), 1700000000123456LL);
     QCOMPARE(a.value("query").toString(), QString("pizza"));
     QCOMPARE(a.value("chat").toString(), QString("a@h"));
+    // Scoped, so there is one chat and no pair to send.
+    QVERIFY(!a.contains("before_chat_jid"));
 }
 
 void TestSearchModel::accountWideCursorKeepsItsPair() {
@@ -209,14 +211,16 @@ void TestSearchModel::accountWideCursorKeepsItsPair() {
     m.setAccount("me@h"); // no chat: every chat in the account
     m.setQuery("pizza");
     m.search();
-    // Equal timestamps in different chats are ordinary, so the unscoped cursor
-    // is a {timestamp chat_jid} pair. Reading it as a number would lose the chat.
+    // Equal timestamps in different chats are ordinary, so account-wide the
+    // cursor is a pair. Dropping the chat resumes at the wrong row.
     m.handleResult(1, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"300 a@h"})"));
+                             "complete":false,"last":300,"last_chat_jid":"a@h"})"));
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     m.loadMore();
-    QCOMPARE(lastSearch(sent).value("before").toString(), QString("300 a@h"));
+    const QVariantMap a = lastSearch(sent);
+    QCOMPARE(a.value("before").toLongLong(), 300LL);
+    QCOMPARE(a.value("before_chat_jid").toString(), QString("a@h"));
 }
 
 void TestSearchModel::pagingNeverAsksTheServer() {
@@ -231,7 +235,7 @@ void TestSearchModel::pagingNeverAsksTheServer() {
     QCOMPARE(lastSearch(sent).value("source").toString(), QString("both"));
 
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"300"})"));
+                             "complete":false,"last":300})"));
     sent.clear();
     m.loadMore();
     // tacky's `both` skips its remote half the moment a cursor is passed, so
@@ -278,7 +282,7 @@ void TestSearchModel::anEmptyCursorMeansComplete() {
     m.search();
     // Nothing to page from - `complete` false with an empty cursor would leave
     // a Load more button whose only move is to repeat the same request.
-    m.handleResult(2, res(R"({"messages":[],"complete":false,"last":""})"));
+    m.handleResult(2, res(R"({"messages":[],"complete":false,"last":null})"));
     QVERIFY(m.complete());
     QCOMPARE(m.rowCount(), 0);
     QVERIFY(m.searched());
@@ -292,14 +296,14 @@ void TestSearchModel::failedSearchSaysSoRatherThanShowingNothing() {
     m.setQuery("pizza");
     m.search();
     m.handleResult(2, res(R"({"messages":[{"timestamp":300,"chat_jid":"a@h"}],
-                             "complete":false,"last":"300"})"));
+                             "complete":false,"last":300})"));
     QCOMPARE(m.rowCount(), 1);
 
     // error/unsupported sit outside the declared JSON schema, so they arrive as
     // the string "1" rather than a bool - which is how they are written here.
     m.setQuery("pasta");
     m.search();
-    m.handleResult(3, res(R"({"messages":[],"complete":false,"last":"",
+    m.handleResult(3, res(R"({"messages":[],"complete":false,"last":null,
                               "error":"1","unsupported":"1"})"));
     QVERIFY(m.failed());
     QVERIFY(m.complete()); // no cursor, so nothing to offer behind it
@@ -326,7 +330,7 @@ void TestSearchModel::aSearchThatErrorsOutrightStopsSpinning() {
 
     // And a late answer on that token cannot start it up again.
     m.handleResult(2, res(R"({"messages":[{"timestamp":1,"chat_jid":"a@h"}],
-                             "complete":false,"last":"1"})"));
+                             "complete":false,"last":1})"));
     QCOMPARE(m.rowCount(), 0);
 }
 
@@ -341,7 +345,7 @@ void TestSearchModel::resultChatsAreDistinctAndOrdered() {
         {"timestamp":400,"chat_jid":"a@h"},
         {"timestamp":300,"chat_jid":"room@muc?join"},
         {"timestamp":200,"chat_jid":"a@h"}],
-        "complete":true,"last":"200 a@h"})"));
+        "complete":true,"last":200,"last_chat_jid":"a@h"})"));
     // One name cache per chat, and this is the list the view builds them from.
     QCOMPARE(m.resultChats(), QStringList({"a@h", "room@muc?join"}));
 }
