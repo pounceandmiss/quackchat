@@ -467,12 +467,16 @@ foreach(t tst_qmlload_shell tst_qmlload_search tst_qmlload_transfers
     set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endforeach()
 
-# real window + real backend: the feed has to lay out before it can page
-qt_add_executable(tst_chatpage backend/tst_chatpage.cpp)
-target_link_libraries(tst_chatpage PRIVATE
-    quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
-add_test(NAME tst_chatpage COMMAND tst_chatpage)
-set_tests_properties(tst_chatpage PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# real window + real backend: the feed has to lay out before it can page.
+# Over backend/ChatPageTest.h, which each suite seeds its own chats into.
+foreach(t tst_chatpage_paging tst_chatpage_selection tst_chatpage_composer
+          tst_chatpage_windows)
+    qt_add_executable(${t} backend/${t}.cpp)
+    target_link_libraries(${t} PRIVATE
+        quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+    add_test(NAME ${t} COMMAND ${t})
+    set_tests_properties(${t} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endforeach()
 
 # The Flatpak manifest names the tacky commit a second time, since
 # flatpak-builder cannot read a submodule. A pin left behind there is invisible
