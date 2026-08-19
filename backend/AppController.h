@@ -91,9 +91,16 @@ public:
     Q_INVOKABLE void shareLog();
 
     // What the command line asked of the logger, applied when the backend
-    // starts. An explicit file owns the sink for the whole run, and the stored
-    // toggle is left alone - the same rule the Tk client follows.
-    void setDebugArgs(const QString &level, const QString &file);
+    // starts. Each flag owns its own setting for the run: where one is given
+    // the stored preference is left alone, which is the rule the Tk client
+    // follows too.
+    struct DebugArgs {
+        QString level;
+        QString file;
+        QString libdatachannelLevel;
+        QString rtcmaLevel;
+    };
+    void setDebugArgs(const DebugArgs &args);
 
     // Start a persistent on-disk backend and sign in TACKY_ACC if it is set.
     // No-op once started.
@@ -105,9 +112,11 @@ signals:
 private:
     // Drop what was cached for an account that has been removed.
     void forget(const QString &acc);
-    // Point the backend's logger at a file, or back at stderr. Re-sent on every
-    // connect: the setting is stored, but the sink it drives is per process.
+    // Push the stored logging preferences at the backend. Re-sent on every
+    // connect: the settings are stored, but what they drive is per process.
     void applyLogToFile();
+    void applyLogLevel();
+    void applyLogNative();
     void onResult(int token, const QVariant &data);
 
     TackyBackend m_backend;
@@ -118,8 +127,7 @@ private:
     AppSettings m_settings;
     NotificationController m_notifications;
     const AvatarEncoder *m_encoder = nullptr;
-    QString m_debugLevel;
-    QString m_debugFile;
+    DebugArgs m_debug;
     QString m_logPath;
     int m_logPathToken = -1;
     QHash<QString, ChatListModel *> m_chatLists;

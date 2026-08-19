@@ -28,6 +28,11 @@ class AppSettings : public QObject {
     // Whether the backend writes its log to a file. The same key the Tk
     // client's File menu toggles, so the two agree about one session's store.
     Q_PROPERTY(bool logToFile READ logToFile NOTIFY logToFileChanged)
+    // How much of it: verbose, debug, info, warning, error or none.
+    Q_PROPERTY(QString logLevel READ logLevel NOTIFY logLevelChanged)
+    // The native loggers inside libdatachannel and rtc-ma, which have their own
+    // levels and say a great deal - so a switch rather than a level.
+    Q_PROPERTY(bool logNative READ logNative NOTIFY logNativeChanged)
 
 public:
     explicit AppSettings(QObject *parent = nullptr);
@@ -35,6 +40,8 @@ public:
     QString attachmentAutofetch() const { return m_autofetch; }
     qlonglong attachmentAutofetchMax() const { return m_autofetchMax; }
     bool logToFile() const { return m_logToFile; }
+    QString logLevel() const { return m_logLevel; }
+    bool logNative() const { return m_logNative; }
 
     void setBackend(TackyBackend *backend);
 
@@ -44,6 +51,8 @@ public:
     Q_INVOKABLE void setAttachmentAutofetch(const QString &policy);
     Q_INVOKABLE void setAttachmentAutofetchMax(qlonglong bytes);
     Q_INVOKABLE void setLogToFile(bool on);
+    Q_INVOKABLE void setLogLevel(const QString &level);
+    Q_INVOKABLE void setLogNative(bool on);
 
     // Public so tests can drive them with canned events and replies.
     void handleEvent(const QString &module, const QString &name,
@@ -55,6 +64,8 @@ signals:
     void attachmentAutofetchChanged();
     void attachmentAutofetchMaxChanged();
     void logToFileChanged();
+    void logLevelChanged();
+    void logNativeChanged();
 
 private:
     void applyValue(const QString &key, const QString &value);
@@ -65,10 +76,14 @@ private:
     QString m_autofetch = QStringLiteral("everyone");
     qlonglong m_autofetchMax = 5242880;
     bool m_logToFile = false;
+    QString m_logLevel = QStringLiteral("warning");
+    bool m_logNative = false;
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;
     int m_logToFileToken = -1;
+    int m_logLevelToken = -1;
+    int m_logNativeToken = -1;
 };
 
 #endif // APPSETTINGS_H

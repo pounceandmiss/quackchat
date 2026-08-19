@@ -82,8 +82,20 @@ int main(int argc, char *argv[]) {
             "main", "Write the log here instead of where the Diagnostics "
                     "setting says."),
         QGuiApplication::translate("main", "path"));
+    // The two libraries behind calls, which log at their own levels and at
+    // length. Separate flags because the two can differ.
+    const QCommandLineOption datachannelOption(
+        QStringLiteral("libdatachannel-debug-level"),
+        QGuiApplication::translate("main", "How much libdatachannel logs."),
+        QGuiApplication::translate("main", "level"));
+    const QCommandLineOption rtcmaOption(
+        QStringLiteral("rtcma-debug-level"),
+        QGuiApplication::translate("main", "How much rtc-ma logs."),
+        QGuiApplication::translate("main", "level"));
     parser.addOption(levelOption);
     parser.addOption(fileOption);
+    parser.addOption(datachannelOption);
+    parser.addOption(rtcmaOption);
     parser.parse(QCoreApplication::arguments());
     if (parser.isSet(helpOption))
         parser.showHelp(0);
@@ -99,8 +111,10 @@ int main(int argc, char *argv[]) {
         engine.addImageProvider(QStringLiteral("avatar"), // engine takes ownership
                                 new AvatarImageProvider(controller->avatars()));
         controller->setAvatarEncoder(&avatarEncoder);
-        controller->setDebugArgs(parser.value(levelOption),
-                                 parser.value(fileOption));
+        controller->setDebugArgs({parser.value(levelOption),
+                                  parser.value(fileOption),
+                                  parser.value(datachannelOption),
+                                  parser.value(rtcmaOption)});
         // Early, so the handler is in place before anything logs; it stays
         // inert until the backend answers with a file to forward to.
         installLogBridge(controller->backend());

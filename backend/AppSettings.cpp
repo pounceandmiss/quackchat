@@ -8,6 +8,8 @@ namespace {
 const QLatin1String kAutofetch("attachment_autofetch");
 const QLatin1String kAutofetchMax("attachment_autofetch_max");
 const QLatin1String kLogToFile("log_to_file");
+const QLatin1String kLogLevel("log_level");
+const QLatin1String kLogNative("log_native");
 } // namespace
 
 AppSettings::AppSettings(QObject *parent) : QObject(parent) {}
@@ -34,6 +36,12 @@ void AppSettings::refresh() {
     m_logToFileToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kLogToFile}});
+    m_logLevelToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kLogLevel}});
+    m_logNativeToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kLogNative}});
 }
 
 void AppSettings::handleResult(int token, const QVariant &data) {
@@ -43,6 +51,10 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kAutofetchMax, data.toString());
     else if (token == m_logToFileToken)
         applyValue(kLogToFile, data.toString());
+    else if (token == m_logLevelToken)
+        applyValue(kLogLevel, data.toString());
+    else if (token == m_logNativeToken)
+        applyValue(kLogNative, data.toString());
 }
 
 // The stored value never came, so the compiled-in default stands. Dropping the
@@ -55,6 +67,10 @@ void AppSettings::handleError(int token, const QString &message) {
         m_autofetchMaxToken = -1;
     else if (token == m_logToFileToken)
         m_logToFileToken = -1;
+    else if (token == m_logLevelToken)
+        m_logLevelToken = -1;
+    else if (token == m_logNativeToken)
+        m_logNativeToken = -1;
 }
 
 void AppSettings::handleEvent(const QString &module, const QString &name,
@@ -90,6 +106,17 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_logToFile = on;
         emit logToFileChanged();
+    } else if (key == kLogLevel) {
+        if (m_logLevel == value)
+            return;
+        m_logLevel = value;
+        emit logLevelChanged();
+    } else if (key == kLogNative) {
+        const bool on = value != QLatin1String("0");
+        if (m_logNative == on)
+            return;
+        m_logNative = on;
+        emit logNativeChanged();
     }
 }
 
@@ -112,4 +139,12 @@ void AppSettings::setAttachmentAutofetchMax(qlonglong bytes) {
 
 void AppSettings::setLogToFile(bool on) {
     write(kLogToFile, on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void AppSettings::setLogLevel(const QString &level) {
+    write(kLogLevel, level);
+}
+
+void AppSettings::setLogNative(bool on) {
+    write(kLogNative, on ? QStringLiteral("1") : QStringLiteral("0"));
 }

@@ -249,6 +249,68 @@ Page {
                     text: qsTr("Turn this on, do the thing that goes wrong, then send the log with your report.")
                     wrapMode: Text.WordWrap
                 }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: Theme.hairline
+                }
+
+                Caption { text: qsTr("Log level") }
+                Repeater {
+                    // tacky's levels, less `fatal`: a log holding only what
+                    // killed the process has nothing to say about how it got
+                    // there. The Tk client offers the same six.
+                    model: [
+                        { label: qsTr("Verbose"), value: "verbose" },
+                        { label: qsTr("Debug"), value: "debug" },
+                        { label: qsTr("Info"), value: "info" },
+                        { label: qsTr("Warning"), value: "warning" },
+                        { label: qsTr("Error"), value: "error" },
+                        { label: qsTr("Off"), value: "none" }
+                    ]
+                    delegate: OptionRow {
+                        required property var modelData
+                        objectName: "logLevel_" + modelData.value
+                        text: modelData.label
+                        selected: App.settings.logLevel === modelData.value
+                        onClicked: App.settings.setLogLevel(modelData.value)
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("Below Debug the log says what went wrong, not what was said.")
+                    wrapMode: Text.WordWrap
+                }
+
+                CheckBox {
+                    id: nativeBox
+                    objectName: "logNativeBox"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    padding: 0
+                    text: qsTr("Log WebRTC internals")
+                    checked: App.settings.logNative
+                    onToggled: App.settings.setLogNative(checked)
+                    contentItem: Text {
+                        text: nativeBox.text
+                        color: Theme.textPrimary
+                        font.pixelSize: 14
+                        leftPadding: nativeBox.indicator.width + 8
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("For calls that will not connect. Very noisy, and it ignores the level above.")
+                    wrapMode: Text.WordWrap
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: Theme.hairline
+                }
                 Caption {
                     Layout.fillWidth: true
                     // Not a footnote: it is the whole of the informed part of

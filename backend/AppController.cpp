@@ -4,6 +4,7 @@
 #include "Notifier.h"
 
 #include <QFileInfo>
+#include <QPair>
 #include <utility>
 
 #ifdef Q_OS_ANDROID
@@ -31,18 +32,24 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     connect(&m_accounts, &AccountsModel::removed, this, &AppController::forget);
     connect(&m_settings, &AppSettings::logToFileChanged, this,
             &AppController::applyLogToFile);
-    connect(&m_backend, &TackyBackend::connected, this,
-            &AppController::applyLogToFile);
+    connect(&m_settings, &AppSettings::logLevelChanged, this,
+            &AppController::applyLogLevel);
+    connect(&m_settings, &AppSettings::logNativeChanged, this,
+            &AppController::applyLogNative);
+    connect(&m_backend, &TackyBackend::connected, this, [this] {
+        applyLogToFile();
+        applyLogLevel();
+        applyLogNative();
+    });
     connect(&m_backend, &TackyBackend::result, this, &AppController::onResult);
 }
 
-void AppController::setDebugArgs(const QString &level, const QString &file) {
-    m_debugLevel = level;
-    m_debugFile = file;
+void AppController::setDebugArgs(const DebugArgs &args) {
+    m_debug = args;
 }
 
 void AppController::applyLogToFile() {
-    if (m_debugFile.isEmpty())
+    if (m_debug.file.isEmpty())
         m_backend.notify(
             QStringLiteral("log"), QStringLiteral("setenabled"),
             QVariantMap{{QStringLiteral("enabled"), m_settings.logToFile()}});
@@ -50,6 +57,26 @@ void AppController::applyLogToFile() {
     // with --debug-file it is already writing to one of its own.
     m_logPathToken =
         m_backend.request(QStringLiteral("log"), QStringLiteral("getfile"));
+}
+
+void AppController::applyLogLevel() {
+    if (!m_debug.level.isEmpty() || m_settings.logLevel().isEmpty())
+        return;
+    m_backend.notify(
+        QStringLiteral("log"), QStringLiteral("setlevel"),
+        QVariantMap{{QStringLiteral("level"), m_settings.logLevel()}});
+}
+
+// The setting is a switch and the native loggers take a level, so `debug` is
+// what "on" means - they do their own filtering, and jlog does not re-filter.
+void AppController::applyLogNative() {
+    if (!m_debug.libdatachannelLevel.isEmpty() || !m_debug.rtcmaLevel.isEmpty())
+        return;
+    m_backend.notify(
+        QStringLiteral("log"), QStringLiteral("setnativelevel"),
+        QVariantMap{{QStringLiteral("level"), m_settings.logNative()
+                                                  ? QStringLiteral("debug")
+                                                  : QStringLiteral("none")}});
 }
 
 void AppController::onResult(int token, const QVariant &data) {
@@ -183,10 +210,15 @@ void AppController::startFromEnvironment() {
     QStringList tacoArgs{QStringLiteral("-transient"), QStringLiteral("0")};
     // Here rather than through the log module once it is up: these have to be
     // in force before the backend writes its first line.
-    if (!m_debugLevel.isEmpty())
-        tacoArgs << QStringLiteral("-debug-level") << m_debugLevel;
-    if (!m_debugFile.isEmpty())
-        tacoArgs << QStringLiteral("-debug-file") << m_debugFile;
+    const QList<QPair<QLatin1String, QString>> flags{
+        {QLatin1String("-debug-level"), m_debug.level},
+        {QLatin1String("-debug-file"), m_debug.file},
+        {QLatin1String("-libdatachannel-debug-level"),
+         m_debug.libdatachannelLevel},
+        {QLatin1String("-rtcma-debug-level"), m_debug.rtcmaLevel}};
+    for (const auto &[flag, value] : flags)
+        if (!value.isEmpty())
+            tacoArgs << flag << value;
     m_backend.start(tacoArgs);
 #endif
 

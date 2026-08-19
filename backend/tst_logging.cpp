@@ -16,7 +16,10 @@ private slots:
     void categoriesHangUnderOneRoot();
     void ourOwnWireLoggingIsNotForwarded();
     void theToggleReachesTheBackend();
+    void theLevelReachesTheBackend();
+    void theWebrtcSwitchBecomesANativeLevel();
     void anExplicitDebugFileOwnsTheSink();
+    void eachDebugFlagOwnsOnlyItsOwnSetting();
     void loggingToAFileRoundTripsThroughTheBackend();
     void theBackendAnswersWithThePathItChose();
     void nothingIsForwardedWhileTheSinkIsStderr();
@@ -24,13 +27,20 @@ private slots:
 
 // Everything else bound to the backend reseeds on the same connect, so the log
 // frames have to be picked out of the crowd.
-static QVariantList setEnabledCalls(const QSignalSpy &sent) {
+static QVariantList logCalls(const QSignalSpy &sent, const char *method) {
     QVariantList out;
     for (const QList<QVariant> &call : sent)
-        if (call.at(0).toString() == "log" &&
-            call.at(1).toString() == "setenabled")
+        if (call.at(0).toString() == "log" && call.at(1).toString() == method)
             out.append(call.at(2));
     return out;
+}
+
+// Feed the model the stored value the way the backend announces one.
+static void store(AppSettings *settings, const QString &key,
+                  const QString &value) {
+    settings->handleEvent(QStringLiteral("setting"), QStringLiteral("Changed"),
+                          QVariantMap{{QStringLiteral("key"), key},
+                                      {QStringLiteral("value"), value}});
 }
 
 static QVariantMap args(QtMsgType type, const char *category,
@@ -83,32 +93,88 @@ void TestLogging::theToggleReachesTheBackend() {
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
     emit app.backend()->connected();
-    QCOMPARE(setEnabledCalls(sent).size(), 1);
-    QCOMPARE(setEnabledCalls(sent).first().toMap().value("enabled").toBool(),
+    QCOMPARE(logCalls(sent, "setenabled").size(), 1);
+    QCOMPARE(logCalls(sent, "setenabled").first().toMap().value("enabled").toBool(),
              false);
 
     sent.clear();
-    app.settings()->handleEvent(
-        QStringLiteral("setting"), QStringLiteral("Changed"),
-        QVariantMap{{QStringLiteral("key"), QStringLiteral("log_to_file")},
-                    {QStringLiteral("value"), QStringLiteral("1")}});
-    QCOMPARE(setEnabledCalls(sent).size(), 1);
-    QCOMPARE(setEnabledCalls(sent).first().toMap().value("enabled").toBool(), true);
+    store(app.settings(), QStringLiteral("log_to_file"), QStringLiteral("1"));
+    QCOMPARE(logCalls(sent, "setenabled").size(), 1);
+    QCOMPARE(
+        logCalls(sent, "setenabled").first().toMap().value("enabled").toBool(),
+        true);
+}
+
+// The level is stored, but what it drives is per process, so it goes out on
+// every connect as well as every change.
+void TestLogging::theLevelReachesTheBackend() {
+    AppController app;
+    QSignalSpy sent(app.backend(), &TackyBackend::sent);
+
+    emit app.backend()->connected();
+    QCOMPARE(logCalls(sent, "setlevel").size(), 1);
+    // tacky's own default, until something stored says otherwise.
+    QCOMPARE(logCalls(sent, "setlevel").first().toMap().value("level").toString(),
+             QString("warning"));
+
+    sent.clear();
+    store(app.settings(), QStringLiteral("log_level"), QStringLiteral("debug"));
+    QCOMPARE(logCalls(sent, "setlevel").size(), 1);
+    QCOMPARE(logCalls(sent, "setlevel").first().toMap().value("level").toString(),
+             QString("debug"));
+}
+
+// A switch here, a level there: the libraries filter their own output and jlog
+// does not filter it again, so "on" has to name a level for them to stop at.
+void TestLogging::theWebrtcSwitchBecomesANativeLevel() {
+    AppController app;
+    QSignalSpy sent(app.backend(), &TackyBackend::sent);
+
+    emit app.backend()->connected();
+    QCOMPARE(
+        logCalls(sent, "setnativelevel").first().toMap().value("level").toString(),
+        QString("none"));
+
+    sent.clear();
+    store(app.settings(), QStringLiteral("log_native"), QStringLiteral("1"));
+    QCOMPARE(logCalls(sent, "setnativelevel").size(), 1);
+    QCOMPARE(
+        logCalls(sent, "setnativelevel").first().toMap().value("level").toString(),
+        QString("debug"));
+    // No source: both libraries move together, which is what one switch means.
+    QVERIFY(!logCalls(sent, "setnativelevel").first().toMap().contains("source"));
+}
+
+// Each flag owns its own setting, and only its own: --debug-level says nothing
+// about the file or the native loggers.
+void TestLogging::eachDebugFlagOwnsOnlyItsOwnSetting() {
+    AppController app;
+    app.setDebugArgs({QStringLiteral("debug"), {}, {}, {}});
+    QSignalSpy sent(app.backend(), &TackyBackend::sent);
+
+    emit app.backend()->connected();
+    QCOMPARE(logCalls(sent, "setlevel").size(), 0);
+    QCOMPARE(logCalls(sent, "setenabled").size(), 1);
+    QCOMPARE(logCalls(sent, "setnativelevel").size(), 1);
+
+    AppController native;
+    native.setDebugArgs({{}, {}, QStringLiteral("info"), {}});
+    QSignalSpy nativeSent(native.backend(), &TackyBackend::sent);
+    emit native.backend()->connected();
+    QCOMPARE(logCalls(nativeSent, "setnativelevel").size(), 0);
+    QCOMPARE(logCalls(nativeSent, "setlevel").size(), 1);
 }
 
 // --debug-file names the sink for the whole run, so the toggle stays out of it
 // - otherwise the first connect would move the log the user asked for.
 void TestLogging::anExplicitDebugFileOwnsTheSink() {
     AppController app;
-    app.setDebugArgs(QString(), QStringLiteral("/tmp/quack-test.log"));
+    app.setDebugArgs({{}, QStringLiteral("/tmp/quack-test.log"), {}, {}});
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
     emit app.backend()->connected();
-    app.settings()->handleEvent(
-        QStringLiteral("setting"), QStringLiteral("Changed"),
-        QVariantMap{{QStringLiteral("key"), QStringLiteral("log_to_file")},
-                    {QStringLiteral("value"), QStringLiteral("1")}});
-    QCOMPARE(setEnabledCalls(sent).size(), 0);
+    store(app.settings(), QStringLiteral("log_to_file"), QStringLiteral("1"));
+    QCOMPARE(logCalls(sent, "setenabled").size(), 0);
 }
 
 // Against the real module: the backend picks the path, and what we write
@@ -148,6 +214,45 @@ void TestLogging::loggingToAFileRoundTripsThroughTheBackend() {
     // of the GUI spoke.
     QVERIFY(text.contains(QLatin1String("frontend.quack.test")));
 
+    // Below the default threshold, so it is dropped until the level moves.
+    backend.notify(QStringLiteral("log"), QStringLiteral("write"),
+                   logWriteArgs(QtInfoMsg, ctx, QStringLiteral("only at info")));
+    QTest::qWait(200);
+    QVERIFY(log.seek(0));
+    QVERIFY(!QString::fromUtf8(log.readAll())
+                 .contains(QLatin1String("only at info")));
+
+    backend.notify(QStringLiteral("log"), QStringLiteral("setlevel"),
+                   QVariantMap{{QStringLiteral("level"),
+                                QStringLiteral("info")}});
+    backend.notify(QStringLiteral("log"), QStringLiteral("write"),
+                   logWriteArgs(QtInfoMsg, ctx, QStringLiteral("now at info")));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&] {
+            return log.seek(0) && QString::fromUtf8(log.readAll())
+                                      .contains(QLatin1String("now at info"));
+        }(),
+        5000);
+
+    // The native loggers take the same levels and answer for themselves.
+    backend.notify(QStringLiteral("log"), QStringLiteral("setnativelevel"),
+                   QVariantMap{{QStringLiteral("level"),
+                                QStringLiteral("debug")}});
+    QString native;
+    const int nativeTok = backend.request(
+        QStringLiteral("log"), QStringLiteral("getnativelevel"),
+        QVariantMap{{QStringLiteral("source"),
+                     QStringLiteral("libdatachannel")}});
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&] {
+            for (const QList<QVariant> &r : results)
+                if (r.at(0).toInt() == nativeTok)
+                    native = r.at(1).toString();
+            return !native.isEmpty();
+        }(),
+        5000);
+    QCOMPARE(native, QString("debug"));
+
     backend.stop();
 }
 
@@ -162,10 +267,7 @@ void TestLogging::theBackendAnswersWithThePathItChose() {
     QVERIFY(app.logPath().isEmpty());
 
     QSignalSpy changed(&app, &AppController::logPathChanged);
-    app.settings()->handleEvent(
-        QStringLiteral("setting"), QStringLiteral("Changed"),
-        QVariantMap{{QStringLiteral("key"), QStringLiteral("log_to_file")},
-                    {QStringLiteral("value"), QStringLiteral("1")}});
+    store(app.settings(), QStringLiteral("log_to_file"), QStringLiteral("1"));
 
     QTRY_VERIFY_WITH_TIMEOUT(!app.logPath().isEmpty(), 5000);
     QCOMPARE(changed.count(), 1);
