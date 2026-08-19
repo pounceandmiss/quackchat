@@ -24,6 +24,7 @@
 #include "ChatListModel.h"
 #include "MucRoomModel.h"
 #include "OmemoDevicesModel.h"
+#include "RegistrationController.h"
 #include "SearchModel.h"
 #include "TackyBackend.h"
 
@@ -3129,6 +3130,113 @@ private slots:
         // centred off the top of the window.
         sheet->setProperty("keyboardTop", 40);
         QTRY_COMPARE(sheet->property("y").toReal(), qreal(12));
+
+        e.assertNoErrors();
+    }
+
+    // A registration form is drawn from questions the app has never seen: the
+    // field types decide which control answers each one, and nothing about the
+    // page can be checked against a layout written for it. So: every field got
+    // a control, of the kind its type calls for, laid out down the page.
+    void drawsWhateverFormTheServerAsked() {
+        Engine e;
+        e.singletonInstance<AppController *>("Quack", "App");
+
+        QQuickWindow win;
+        win.resize(360, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        // Declared before the form it feeds, so it outlives it.
+        TackyBackend backend;
+        RegistrationController reg;
+        reg.setBackend(&backend); // unstarted: a read gets a token and no reply
+        reg.applyForm(QJsonDocument::fromJson(R"({
+            "instructions":"Pick a name",
+            "fields":[
+                {"var":"FORM_TYPE","type":"hidden","value":["jabber:iq:register"]},
+                {"var":"username","type":"text-single","label":"Username",
+                 "required":true,"value":[]},
+                {"var":"password","type":"text-private","label":"Password",
+                 "required":true,"value":[]},
+                {"var":"tier","type":"list-single","label":"Tier","value":["paid"],
+                 "options":[{"label":"Free","value":"free"},
+                            {"label":"Paid","value":"paid"}]},
+                {"var":"terms","type":"boolean","label":"I agree","value":["0"]},
+                {"var":"ocr","type":"text-single","label":"Type the word",
+                 "required":true,"value":[],
+                 "media":{"cid":"c1","type":"image/png"}}
+            ]})")
+                          .object()
+                          .toVariantMap());
+        QCOMPARE(reg.rowCount(), 5);
+
+        QQmlComponent comp(&e, "Quack", "DataForm");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"fields", QVariant::fromValue(&reg)}, {"width", win.width()}}));
+        QVERIFY(!obj.isNull());
+        auto *form = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(form);
+        form->setParentItem(win.contentItem());
+        win.grabWindow(); // force the delegates to lay out and bind
+        QCoreApplication::processEvents();
+
+        // The control each type calls for, and no other: a row that builds one
+        // of each and shows one is how a delegate covers six field types.
+        QQuickItem *user = findItem(win.contentItem(), "formLine0");
+        QQuickItem *secret = findItem(win.contentItem(), "formLine1");
+        QQuickItem *tier = findItem(win.contentItem(), "formChoice2");
+        QQuickItem *terms = findItem(win.contentItem(), "formTick3");
+        QVERIFY(user && secret && tier && terms);
+        QVERIFY(user->isVisible() && secret->isVisible());
+        QVERIFY(tier->isVisible() && terms->isVisible());
+        QVERIFY(!findItem(win.contentItem(), "formChoice0")->isVisible());
+        // The one the password goes in is the one that hides it.
+        QCOMPARE(secret->property("echoMode").toInt(), 2); // TextInput.Password
+        // A list field opens on what the server preselected.
+        QCOMPARE(tier->property("currentText").toString(), QString("Paid"));
+
+        // Laid out down the page, each inside the form and none over another:
+        // a form that stacked its fields at zero height would still find every
+        // control above and read as drawn.
+        QRectF last;
+        for (const QString &name :
+             {"formLine0", "formLine1", "formChoice2", "formTick3", "formLine4"}) {
+            QQuickItem *item = findItem(win.contentItem(), name);
+            QVERIFY2(item, qPrintable(name));
+            const QRectF r = itemRect(item, form);
+            QVERIFY2(r.width() > 0 && r.height() > 0, qPrintable(name));
+            QVERIFY2(r.left() >= 0 && r.right() <= form->width() + 1, qPrintable(name));
+            QVERIFY2(r.top() >= last.bottom(), qPrintable(name));
+            last = r;
+        }
+        QVERIFY(form->height() >= last.bottom());
+
+        // Typing an answer writes it back through the model, which is where a
+        // form's state lives: nothing is ever collected off the controls.
+        user->forceActiveFocus();
+        for (const QChar c : QStringLiteral("alice"))
+            QTest::keyClick(&win, c.toLatin1());
+        QTRY_COMPARE(reg.valueFor("username"), QString("alice"));
+
+        // The CAPTCHA is a further round trip, so its field is drawn before
+        // there is a picture for it: nothing until the bytes turn up, then the
+        // picture itself, straight out of a data: URL.
+        QQuickItem *picture = findItem(win.contentItem(), "formMedia4");
+        QVERIFY(picture);
+        QVERIFY(!picture->isVisible());
+        QSignalSpy sent(&backend, &TackyBackend::sent);
+        reg.handleEvent("register", "MediaReady",
+                        QVariantMap{{"token", reg.token()}, {"var", "ocr"}});
+        QVERIFY(asked(sent, "register", "media"));
+        // The first read this backend has been asked for, so token 1.
+        reg.handleResult(1, QString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+                                    "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5"
+                                    "ErkJggg=="));
+        QTRY_VERIFY(picture->isVisible());
+        QTRY_COMPARE(picture->property("status").toInt(), 1); // Image.Ready
+        QVERIFY(picture->width() > 0 && picture->height() > 0);
 
         e.assertNoErrors();
     }
