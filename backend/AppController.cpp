@@ -41,6 +41,20 @@ AppController::AppController(QObject *parent) : QObject(parent) {
         applyLogNative();
     });
     connect(&m_backend, &TackyBackend::result, this, &AppController::onResult);
+    connect(&m_backend, &TackyBackend::event, this, &AppController::onEvent);
+}
+
+// The error module carries failures no reply can carry - a timer, a socket
+// handler, the stanza loop. Every model filters on its own module, so without
+// this they land nowhere at all.
+void AppController::onEvent(const QString &module, const QString &,
+                            const QVariant &args) {
+    if (module != QLatin1String("error"))
+        return;
+    const QString message =
+        args.toMap().value(QStringLiteral("message")).toString();
+    if (!message.isEmpty())
+        emit backendError(message);
 }
 
 void AppController::setDebugArgs(const DebugArgs &args) {
@@ -201,7 +215,7 @@ void AppController::startFromEnvironment() {
     // Already running is the common case, so the socket is retried rather than
     // sequenced after the service: whoever is ready first waits for the other.
     m_backend.setTransport(new SocketTransport(kAndroidBackendSocket));
-    m_backend.start();
+    const bool started = m_backend.start();
 #else
     // Persist to disk so an enabled account reconnects next launch without the
     // env vars. No -config-dir override, so we share tacky's own store
@@ -218,8 +232,16 @@ void AppController::startFromEnvironment() {
                  << m_debug.libdatachannelLevel;
     if (!m_debug.rtcmaLevel.isEmpty())
         tacoArgs << QStringLiteral("-rtcma-debug-level") << m_debug.rtcmaLevel;
-    m_backend.start(tacoArgs);
+    const bool started = m_backend.start(tacoArgs);
 #endif
+
+    // Nothing retries this: an interpreter that would not create is not going
+    // to on its own, and a socket that is merely down reports itself through
+    // the transport instead.
+    if (!started) {
+        m_startFailed = true;
+        emit backendStartFailedChanged();
+    }
 
     const QString acc = qEnvironmentVariable("TACKY_ACC");
     if (!acc.isEmpty()) {

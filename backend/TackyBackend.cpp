@@ -29,6 +29,7 @@ void TackyBackend::setTransport(TackyTransport *transport) {
     if (m_transport == transport)
         return;
     const bool was = isRunning();
+    const bool wasAttached = isAttached();
     delete m_transport;
     m_transport = transport;
     if (m_transport) {
@@ -38,6 +39,8 @@ void TackyBackend::setTransport(TackyTransport *transport) {
         connect(m_transport, &TackyTransport::connectedChanged, this,
                 &TackyBackend::onTransportStateChanged);
     }
+    if (wasAttached != isAttached())
+        emit attachedChanged();
     if (was != isRunning())
         onTransportStateChanged();
 }

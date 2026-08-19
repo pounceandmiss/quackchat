@@ -28,8 +28,35 @@
 #include "RegistrationController.h"
 #include "SearchModel.h"
 #include "TackyBackend.h"
+#include "TackyTransport.h"
 
 namespace {
+// A transport that goes up and down on command and speaks to nobody. The UI
+// tests otherwise run with no transport at all, which is a different state
+// from one that dropped.
+class FakeTransport : public TackyTransport {
+    Q_OBJECT
+public:
+    bool start(const QStringList &) override {
+        setConnected(true);
+        return true;
+    }
+    void stop() override { setConnected(false); }
+    bool isConnected() const override { return m_connected; }
+    void send(const QByteArray &) override {}
+
+    void deliver(const QByteArray &json) { emit received(QString::fromUtf8(json)); }
+
+private:
+    void setConnected(bool on) {
+        if (m_connected == on)
+            return;
+        m_connected = on;
+        emit connectedChanged();
+    }
+    bool m_connected = false;
+};
+
 // Stands in for the GUI's QImage encoder, so a publish can be put in flight
 // without one. The engine's backend is never started here, so the request goes
 // no further than its token.
@@ -382,6 +409,73 @@ private slots:
         QCoreApplication::processEvents();
         QTRY_VERIFY2(held.isNull(), "the settings window outlived closeAll()");
 
+        e.assertNoErrors();
+    }
+
+    // The notice is the only thing that says a shared backend went away: every
+    // model filters events by its own module and drops the rest.
+    void backendNoticeFollowsTheBackendGoingAway() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QVERIFY(win);
+        auto *notice = win->findChild<QQuickItem *>("backendNotice");
+        QVERIFY(notice);
+
+        // Attached but not up yet: that is a backend to wait for.
+        QVERIFY(notice->isVisible());
+        QVERIFY(notice->property("message").toString().contains("Reconnecting"));
+
+        fake->start({});
+        QTRY_VERIFY(!notice->isVisible());
+
+        fake->stop();
+        QTRY_VERIFY(notice->isVisible());
+        e.assertNoErrors();
+    }
+
+    // A UI with no transport has no backend to miss, which is what keeps the
+    // notice off every other test in this file.
+    void backendNoticeStaysOffWithNoTransport() {
+        AppEngine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QVERIFY(win);
+        auto *notice = win->findChild<QQuickItem *>("backendNotice");
+        QVERIFY(notice);
+        QVERIFY(!notice->isVisible());
+        e.assertNoErrors();
+    }
+
+    // error <Background> reaches the user as its message alone: errorinfo is a
+    // Tcl trace, which the backend has already logged.
+    void backendNoticeShowsAReportedFailure() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        e.loadFromModule("Quack", "Main");
+        QVERIFY(!e.rootObjects().isEmpty());
+        auto *win = qobject_cast<QQuickWindow *>(e.rootObjects().first());
+        QVERIFY(win);
+        auto *notice = win->findChild<QQuickItem *>("backendNotice");
+        QVERIFY(notice);
+        QVERIFY(!notice->isVisible());
+
+        fake->deliver(R"(["event","error","Background",)"
+                      R"({"message":"cannot read x","errorinfo":"trace\n at y"}])");
+        QTRY_VERIFY(notice->isVisible());
+        const QString shown = notice->property("message").toString();
+        QCOMPARE(shown, QString("cannot read x"));
         e.assertNoErrors();
     }
 

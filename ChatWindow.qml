@@ -39,4 +39,8 @@ ApplicationWindow {
         showBack: false  // nowhere to go back to
         canPopOut: false // cannot pop itself out again
     }
+
+    // A pop-out is somewhere you type: it says a dead backend as loudly as the
+    // shell does.
+    BackendNotice {}
 }

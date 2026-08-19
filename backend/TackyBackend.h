@@ -18,12 +18,17 @@ class TackyBackend : public QObject {
     QML_ELEMENT
     QML_UNCREATABLE("TackyBackend is created and started in C++.")
     Q_PROPERTY(bool running READ isRunning NOTIFY runningChanged)
+    // Whether a transport has been chosen at all, which is not the same as one
+    // that is up. A UI loaded without one - every QML test - has no backend to
+    // report as gone; a real run always has one before the first frame draws.
+    Q_PROPERTY(bool attached READ isAttached NOTIFY attachedChanged)
 
 public:
     explicit TackyBackend(QObject *parent = nullptr);
     ~TackyBackend() override;
 
     bool isRunning() const;
+    bool isAttached() const { return m_transport != nullptr; }
 
     // Hands the backend a transport to run over, replacing any previous one.
     // Takes ownership. Call before start(); without it start() builds an
@@ -47,6 +52,7 @@ public:
 
 signals:
     void runningChanged();
+    void attachedChanged();
     // Rising edge of runningChanged. State the backend held for us is gone by
     // now, so this is where models re-ask for what they were showing.
     void connected();

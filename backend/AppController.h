@@ -44,6 +44,11 @@ class AppController : public QObject {
     // App-wide for the same reason as calls: an alert names a chat, and which
     // window ends up showing it is decided when the user picks it.
     Q_PROPERTY(NotificationController *notifications READ notifications CONSTANT)
+    // True when the backend never came up at all: on the desktop, an
+    // interpreter that would not create. Nothing retries that, so the UI says
+    // so rather than showing it as merely disconnected.
+    Q_PROPERTY(bool backendStartFailed READ backendStartFailed NOTIFY
+                   backendStartFailedChanged)
 
 public:
     explicit AppController(QObject *parent = nullptr);
@@ -56,6 +61,7 @@ public:
     AppSettings *settings() { return &m_settings; }
     QString logPath() const { return m_logPath; }
     NotificationController *notifications() { return &m_notifications; }
+    bool backendStartFailed() const { return m_startFailed; }
 
     // Set by the GUI host, which owns the QImage side. Not owned here, and
     // expected to outlive this object.
@@ -108,6 +114,11 @@ public:
 
 signals:
     void logPathChanged();
+    void backendStartFailedChanged();
+    // A backend failure with no request behind it (error <Background>). No
+    // model listens for those, so the app itself is what says them. The
+    // message only: the event's errorinfo is a Tcl trace for the log.
+    void backendError(const QString &message);
 
 private:
     // Drop what was cached for an account that has been removed.
@@ -118,6 +129,7 @@ private:
     void applyLogLevel();
     void applyLogNative();
     void onResult(int token, const QVariant &data);
+    void onEvent(const QString &module, const QString &name, const QVariant &args);
 
     TackyBackend m_backend;
     AccountsModel m_accounts;
@@ -135,6 +147,7 @@ private:
     // acc -> jid -> session, so dropping an account drops its chats with it.
     QHash<QString, QHash<QString, ChatSession *>> m_chatSessions;
     bool m_started = false;
+    bool m_startFailed = false;
 };
 
 #endif // APPCONTROLLER_H

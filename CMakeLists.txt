@@ -216,6 +216,7 @@ qt_add_qml_module(quack
         Card.qml
         Caption.qml
         CopiedNotice.qml
+        BackendNotice.qml
         ContactDetailsPage.qml
         MucDetailsPage.qml
         MessageXmlPage.qml

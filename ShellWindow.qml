@@ -52,4 +52,7 @@ ApplicationWindow {
         anchors.leftMargin: SafeArea.margins.left
         anchors.rightMargin: SafeArea.margins.right
     }
+
+    // After the shell, so it floats over it rather than under.
+    BackendNotice {}
 }
