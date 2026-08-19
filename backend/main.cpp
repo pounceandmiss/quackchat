@@ -6,7 +6,10 @@
 // Without TACKY_ACC it still runs, against a persistent account-less session.
 #include <QGuiApplication>
 #include <QIcon>
+#include <QLibraryInfo>
+#include <QLocale>
 #include <QQmlApplicationEngine>
+#include <QTranslator>
 
 #include "AppController.h"
 #include "AvatarImageProvider.h"
@@ -29,6 +32,32 @@ int main(int argc, char *argv[]) {
     for (int size : {48, 128, 256})
         icon.addFile(QStringLiteral(":/icons/quack-%1.png").arg(size));
     QGuiApplication::setWindowIcon(icon);
+
+    // Our own catalogues are compiled into :/i18n; Qt's cover what its dialogs
+    // and text fields say for themselves, and live wherever this Qt was
+    // installed. Either one missing for the current locale leaves that half in
+    // the source English, which is why a failed load is not an error.
+    //
+    // The source-language catalogue goes on unconditionally, underneath the
+    // locale's: a plural in the sources reads "%n person(s)", which is a
+    // placeholder for the forms English itself needs and not something to put
+    // on screen. A later translator is consulted first, so a locale that has
+    // its own answer still wins.
+    //
+    // All three are installed before the engine reads any QML, since qsTr()
+    // resolves as a binding is first evaluated and QML does not re-resolve on
+    // its own.
+    QTranslator sourceTranslator;
+    if (sourceTranslator.load(QStringLiteral("quack_en"), QStringLiteral(":/i18n")))
+        QCoreApplication::installTranslator(&sourceTranslator);
+    QTranslator appTranslator;
+    if (appTranslator.load(QLocale(), QStringLiteral("quack"), QStringLiteral("_"),
+                           QStringLiteral(":/i18n")))
+        QCoreApplication::installTranslator(&appTranslator);
+    QTranslator qtTranslator;
+    if (qtTranslator.load(QLocale(), QStringLiteral("qtbase"), QStringLiteral("_"),
+                          QLibraryInfo::path(QLibraryInfo::TranslationsPath)))
+        QCoreApplication::installTranslator(&qtTranslator);
 
     // Declared before the engine so it outlives everything holding a pointer
     // to it.

@@ -26,8 +26,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
     endif()
 endif()
 
-find_package(Qt6 6.5 REQUIRED
-    COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test)
+find_package(Qt6 6.8 REQUIRED
+    COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test
+               LinguistTools)
 # Desktop notifications on Linux go over the session bus. Optional: without it
 # the app builds and runs exactly as before, just silently. Android posts its
 # own from the backend service (android/.../Notifications.java), so it is never
@@ -35,9 +36,9 @@ find_package(Qt6 6.5 REQUIRED
 # because the Windows and macOS kits do ship Qt6DBus: QUIET alone would pick the
 # FreeDesktop notifier there and address a session bus that is not running.
 if(NOT ANDROID AND NOT WIN32 AND NOT APPLE)
-    find_package(Qt6 6.5 QUIET COMPONENTS DBus)
+    find_package(Qt6 6.8 QUIET COMPONENTS DBus)
 endif()
-qt_standard_project_setup(REQUIRES 6.5)
+qt_standard_project_setup(REQUIRES 6.8 I18N_SOURCE_LANGUAGE en)
 
 # tacky has its own (non-CMake) make, so we find what it drops in <root>/dist
 # instead of building it. Normally that is the third_party/tacky submodule,
@@ -304,6 +305,22 @@ qt_add_resources(quackchat "appicon"
     BASE icons
     FILES icons/quack-48.png icons/quack-128.png icons/quack-256.png)
 
+# Nearly every translatable string is in `quack`, which owns the QML files and
+# most of the C++; quackchat carries the rest. The compiled catalogues go into
+# `quack` all the same, so a test binary linking it can read them without the
+# app around it.
+#
+# i18n/quack_en.ts is the source language: it holds no translations, only the
+# plural forms English itself needs, and is what a translator copies to start a
+# language. Adding one means listing it in I18N_TRANSLATED_LANGUAGES beside the
+# source language above, then running the `update_translations` target: lupdate
+# re-reads the sources and rewrites i18n/*.ts in place, leaving what is already
+# translated alone.
+qt_add_translations(quack
+    SOURCE_TARGETS quack quackchat
+    TS_FILE_BASE quack
+    TS_FILE_DIR i18n)
+
 if(WIN32)
     # Mark the PE as GUI-subsystem, or Windows opens a terminal behind the app.
     # Deliberately not WIN32_EXECUTABLE, which routes the entry through
@@ -386,7 +403,7 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
           tst_calls tst_audiodevices tst_appsettings tst_notifications
-          tst_registration)
+          tst_registration tst_i18n)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})

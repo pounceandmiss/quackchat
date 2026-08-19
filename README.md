@@ -23,9 +23,10 @@ its own, and without it `make lib` stops at a missing `zippy/zippy.mk`.
 
 ## What you need
 
-* Qt 6.5 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
-  QuickDialogs2 and Test. On Linux, Qt6 DBus carries the desktop notifications
-  if it is there; without it the app builds and runs the same, just silently.
+* Qt 6.8 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
+  QuickDialogs2, Test and LinguistTools. On Linux, Qt6 DBus carries the desktop
+  notifications if it is there; without it the app builds and runs the same,
+  just silently.
 * CMake 3.21+, Ninja, and a C++17 compiler.
 * For tacky: a POSIX toolchain and `make`. Its own dependencies (Tcl, mbedTLS,
   libdatachannel, opus and the rest) are downloaded and built by its makefile
@@ -125,6 +126,35 @@ it, in a tacky checkout:
     make -f zippy/zippy.mk flatpak-sources FLATPAK_DEPS_DIR=build/deps
 
 and finish with `./flatpak/check-pin.sh`.
+
+## Translations
+
+Every string the app puts on screen goes through `qsTr()` or `tr()`, and the
+catalogues are compiled into the binary. `i18n/quack_en.ts` is the source
+language: it carries no translations, only the plural forms English itself
+needs, since a plural reads `%n person(s)` in the sources.
+
+To add a language, list it in `qt_standard_project_setup`:
+
+    I18N_TRANSLATED_LANGUAGES de fr
+
+then generate its catalogue and hand `i18n/quack_de.ts` to a translator (Qt
+Linguist opens it, and so does any editor):
+
+    cmake --build build --target update_translations
+
+That target re-reads the sources and rewrites every `i18n/*.ts` in place,
+leaving finished translations alone, so it is also what to run after changing a
+string. The build compiles them to `.qm` on its own.
+
+At runtime the app loads the catalogue for the system locale, and falls back to
+English where there is none. Qt's own strings - the buttons in a file dialog,
+the text field's context menu - come from the Qt installation's catalogues, so a
+deployment missing those keeps them in English while the rest translates.
+
+The Android notification service is Java and does not read these: its strings
+are Android resources in `android/res/values/strings.xml`, translated by adding
+`android/res/values-<lang>/strings.xml` beside it.
 
 ## Licence
 
