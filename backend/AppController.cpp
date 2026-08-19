@@ -1,5 +1,6 @@
 #include "AppController.h"
 
+#include "LogBridge.h"
 #include "Notifier.h"
 
 #include <QFileInfo>
@@ -59,6 +60,9 @@ void AppController::onResult(int token, const QVariant &data) {
     if (m_logPath == path)
         return;
     m_logPath = path;
+    // Nothing to add to stderr that the handler underneath us has not already
+    // printed, so the bridge only runs while there is a file to add it to.
+    setLogBridgeActive(!m_logPath.isEmpty());
     emit logPathChanged();
 }
 

@@ -19,6 +19,7 @@ private slots:
     void anExplicitDebugFileOwnsTheSink();
     void loggingToAFileRoundTripsThroughTheBackend();
     void theToggleAnswersWithSomewhereToSendFrom();
+    void nothingIsForwardedWhileTheSinkIsStderr();
 };
 
 // Everything else bound to the backend reseeds on the same connect, so the log
@@ -173,6 +174,28 @@ void TestLogging::theToggleAnswersWithSomewhereToSendFrom() {
              QUrl::fromLocalFile(QFileInfo(app.logPath()).absolutePath()));
 
     app.backend()->stop();
+}
+
+// Forwarding to a backend still writing to stderr would print every message
+// twice: once from the handler we chained to, once from the backend.
+void TestLogging::nothingIsForwardedWhileTheSinkIsStderr() {
+    // Static: the handler keeps the pointer for the life of the process, and
+    // there is no uninstalling it - chaining a second time would make the
+    // handler its own predecessor.
+    static TackyBackend backend;
+    installLogBridge(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    setLogBridgeActive(false);
+    qWarning("into the void");
+    QCOMPARE(sent.count(), 0);
+
+    setLogBridgeActive(true);
+    qWarning("and into the file");
+    // Queued, so it is on the way rather than already sent.
+    QTRY_VERIFY_WITH_TIMEOUT(sent.count() == 1, 5000);
+    QCOMPARE(sent.first().at(1).toString(), QString("write"));
+    setLogBridgeActive(false);
 }
 
 QTEST_MAIN(TestLogging)

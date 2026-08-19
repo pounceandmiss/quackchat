@@ -27,4 +27,9 @@ QVariantMap logWriteArgs(QtMsgType type, const QMessageLogContext &ctx,
 // is up are not held for it - they reach the previous handler and no further.
 void installLogBridge(TackyBackend *backend);
 
+// Whether to forward at all. Off until the backend has a log file: with the
+// sink still on stderr the previous handler has already printed the message,
+// and forwarding would only print it a second time.
+void setLogBridgeActive(bool active);
+
 #endif // LOGBRIDGE_H

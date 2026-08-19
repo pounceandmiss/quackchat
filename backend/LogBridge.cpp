@@ -3,6 +3,8 @@
 #include <QMetaObject>
 #include <QString>
 
+#include <atomic>
+
 #include "TackyBackend.h"
 
 namespace {
@@ -12,6 +14,8 @@ namespace {
 // could still be writing a message.
 TackyBackend *g_backend = nullptr;
 QtMessageHandler g_previous = nullptr;
+// Read from every thread that logs, written from the main one.
+std::atomic<bool> g_active{false};
 
 // tacky's own level names. `none` is a threshold rather than a severity, so
 // nothing maps to it.
@@ -37,7 +41,7 @@ void handler(QtMsgType type, const QMessageLogContext &ctx,
     // from it, and the queued write below would not have run anyway.
     if (g_previous)
         g_previous(type, ctx, msg);
-    if (!g_backend)
+    if (!g_backend || !g_active.load(std::memory_order_relaxed))
         return;
     const QVariantMap args = logWriteArgs(type, ctx, msg);
     if (args.isEmpty())
@@ -72,4 +76,8 @@ QVariantMap logWriteArgs(QtMsgType type, const QMessageLogContext &ctx,
 void installLogBridge(TackyBackend *backend) {
     g_backend = backend;
     g_previous = qInstallMessageHandler(handler);
+}
+
+void setLogBridgeActive(bool active) {
+    g_active.store(active, std::memory_order_relaxed);
 }
