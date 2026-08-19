@@ -7,7 +7,13 @@
 
 #include "AvatarEncoder.h"
 
+#include <QCoreApplication>
+
 class QImageAvatarEncoder : public AvatarEncoder {
+    // No QObject to inherit tr() from, and the two failures it reports are read
+    // by whoever tried to publish a picture.
+    Q_DECLARE_TR_FUNCTIONS(QImageAvatarEncoder)
+
 public:
     // Matches tacky's own client. The published PNG is the exact blob every
     // subscriber downloads, so it has to stay under the server's stanza cap;

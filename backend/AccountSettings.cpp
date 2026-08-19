@@ -68,12 +68,12 @@ void AccountSettings::save(const QString &password, const QString &nick) {
             m_backend->request(QStringLiteral("nick"), QStringLiteral("set"),
                                QVariantMap{{QStringLiteral("acc"), m_account},
                                            {QStringLiteral("nick"), nick}});
-        setStatus(QStringLiteral("Saving"), false);
+        setStatus(tr("Saving"), false);
         emit savingChanged();
         return;
     }
 
-    setStatus(wrote ? QStringLiteral("Saved") : QString(), false);
+    setStatus(wrote ? tr("Saved") : QString(), false);
     emit saved();
 }
 
@@ -81,7 +81,7 @@ void AccountSettings::setAvatar(const QUrl &source) {
     if (!m_backend || m_account.isEmpty() || m_avatarToken >= 0)
         return;
     if (!m_encoder) {
-        setAvatarStatus(QStringLiteral("Cannot read pictures here"), true);
+        setAvatarStatus(tr("Cannot read pictures here"), true);
         return;
     }
 
@@ -90,7 +90,7 @@ void AccountSettings::setAvatar(const QUrl &source) {
     QString error;
     const AvatarImage image = m_encoder->encode(source, &error);
     if (image.png.isEmpty()) {
-        setAvatarStatus(error.isEmpty() ? QStringLiteral("Could not read that picture")
+        setAvatarStatus(error.isEmpty() ? tr("Could not read that picture")
                                         : error,
                         true);
         return;
@@ -107,7 +107,7 @@ void AccountSettings::setAvatar(const QUrl &source) {
             {QStringLiteral("type"), QStringLiteral("image/png")},
             {QStringLiteral("width"), image.width},
             {QStringLiteral("height"), image.height}});
-    setAvatarStatus(QStringLiteral("Publishing"), false);
+    setAvatarStatus(tr("Publishing"), false);
     emit avatarBusyChanged();
 }
 
@@ -117,7 +117,7 @@ void AccountSettings::clearAvatar() {
     m_avatarToken =
         m_backend->request(QStringLiteral("avatar"), QStringLiteral("disable"),
                            QVariantMap{{QStringLiteral("acc"), m_account}});
-    setAvatarStatus(QStringLiteral("Removing"), false);
+    setAvatarStatus(tr("Removing"), false);
     emit avatarBusyChanged();
 }
 
@@ -169,7 +169,7 @@ void AccountSettings::handleResult(int token, const QVariant &data) {
     } else if (token == m_nickToken) {
         m_nickToken = -1;
         emit savingChanged();
-        setStatus(QStringLiteral("Saved"), false);
+        setStatus(tr("Saved"), false);
         emit saved();
     } else if (token == m_avatarToken) {
         finishAvatar(QString()); // publish/disable answer empty on success
@@ -182,7 +182,7 @@ void AccountSettings::handleError(int token, const QString &message) {
     if (token == m_avatarToken) {
         // Where a rejected publish lands: the server's reason, a dispatch that
         // threw before sending, or the request timing out unanswered.
-        finishAvatar(message.isEmpty() ? QStringLiteral("Could not publish the picture")
+        finishAvatar(message.isEmpty() ? tr("Could not publish the picture")
                                        : message);
         return;
     }

@@ -53,7 +53,7 @@ void TackyBackend::onTransportStateChanged() {
     emit runningChanged();
     // Those replies are never coming, and a caller told nothing waits forever.
     for (auto it = dead.cbegin(); it != dead.cend(); ++it)
-        emit error(it.key(), QStringLiteral("backend stopped before %1 answered")
+        emit error(it.key(), tr("backend stopped before %1 answered")
                                  .arg(it.value()));
 }
 

@@ -24,7 +24,7 @@ AvatarImage QImageAvatarEncoder::encode(const QUrl &source,
     const QImage decoded = reader.read();
     if (decoded.isNull()) {
         if (error)
-            *error = QStringLiteral("Unsupported image format");
+            *error = tr("Unsupported image format");
         return out;
     }
 
@@ -41,7 +41,7 @@ AvatarImage QImageAvatarEncoder::encode(const QUrl &source,
     if (!img.save(&buf, "PNG") || out.png.isEmpty()) {
         out.png.clear();
         if (error)
-            *error = QStringLiteral("Could not encode the picture");
+            *error = tr("Could not encode the picture");
         return out;
     }
     out.width = img.width();

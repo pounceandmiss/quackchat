@@ -418,7 +418,7 @@ void MucRoomModel::kick(const QString &nick, const QString &reason) {
     QVariantMap args{{QStringLiteral("nick"), nick}};
     if (!reason.isEmpty())
         args.insert(QStringLiteral("reason"), reason);
-    sendAction(QStringLiteral("Kick"), QStringLiteral("kick"), args);
+    sendAction(tr("Kick"), QStringLiteral("kick"), args);
 }
 
 void MucRoomModel::setRole(const QString &nick, const QString &role,
@@ -428,7 +428,7 @@ void MucRoomModel::setRole(const QString &nick, const QString &role,
     QVariantMap args{{QStringLiteral("nick"), nick}, {QStringLiteral("role"), role}};
     if (!reason.isEmpty())
         args.insert(QStringLiteral("reason"), reason);
-    sendAction(QStringLiteral("Role change"), QStringLiteral("role"), args);
+    sendAction(tr("Role change"), QStringLiteral("role"), args);
 }
 
 void MucRoomModel::setAffiliation(const QString &targetJid,
@@ -442,7 +442,7 @@ void MucRoomModel::setAffiliation(const QString &targetJid,
                      {QStringLiteral("affiliation"), affiliation}};
     if (!reason.isEmpty())
         args.insert(QStringLiteral("reason"), reason);
-    sendAction(QStringLiteral("Affiliation change"), QStringLiteral("affiliation"),
+    sendAction(tr("Affiliation change"), QStringLiteral("affiliation"),
                args);
 }
 
@@ -450,7 +450,7 @@ void MucRoomModel::destroyRoom(const QString &reason) {
     QVariantMap args;
     if (!reason.isEmpty())
         args.insert(QStringLiteral("reason"), reason);
-    sendAction(QStringLiteral("Destroy room"), QStringLiteral("destroyRoom"), args);
+    sendAction(tr("Destroy room"), QStringLiteral("destroyRoom"), args);
 }
 
 void MucRoomModel::invite(const QString &jid, const QString &reason) {

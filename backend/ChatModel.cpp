@@ -844,10 +844,10 @@ void ChatModel::fetchThumbs(const QVariantMap &msg) {
 // and has no notion of anywhere else, so the copy is ours to make.
 static QString copyAttachment(const QString &from, const QUrl &to) {
     if (from.isEmpty())
-        return QStringLiteral("Could not fetch the file");
+        return ChatModel::tr("Could not fetch the file");
     const QString dest = to.isLocalFile() ? to.toLocalFile() : to.toString();
     if (dest.isEmpty())
-        return QStringLiteral("Nowhere to save it");
+        return ChatModel::tr("Nowhere to save it");
     QFile::remove(dest);
     QFile src(from);
     return src.copy(dest) ? QString() : src.errorString();
