@@ -8,6 +8,14 @@
 // --debug-file/--debug-level are for a report from a run that will not reach
 // the settings page; the Diagnostics toggle covers the ordinary case.
 #include <QCommandLineParser>
+#ifdef Q_OS_ANDROID
+#include <QDir>
+#include <QFileInfo>
+#include <QFontDatabase>
+
+#include <algorithm>
+#include <utility>
+#endif
 #include <QGuiApplication>
 #include <QIcon>
 #include <QLibraryInfo>
@@ -30,6 +38,29 @@ int main(int argc, char *argv[]) {
     // exports nothing whose name lacks the app id.
     app.setApplicationName(QStringLiteral("io.github.pounceandmiss.Quack"));
     app.setDesktopFileName(app.applicationName());
+
+#ifdef Q_OS_ANDROID
+    // Android splits Noto Sans Symbols over two files that share a family and a
+    // style name but not one character of coverage, and Qt keys a font by family
+    // and style, so whichever is read second replaces the other. /system/fonts is
+    // read in name order, which leaves the 124-glyph subset registered and puts
+    // the 4,600-glyph one out of reach: ✓ ★ ➤ and the mathematical alphabets a
+    // room writes its subject in all come out as boxes. Adding them back, largest
+    // last, settles it the other way, and costs nothing - every character in the
+    // small subset is a pictograph the colour emoji font carries too.
+    //
+    // families() is here to populate the database first. An application font
+    // added before that does not survive it, and nothing above asks the database
+    // for anything.
+    QFontDatabase::families();
+    QFileInfoList symbolFonts =
+        QDir(QStringLiteral("/system/fonts"))
+            .entryInfoList({QStringLiteral("NotoSansSymbols*.ttf")}, QDir::Files);
+    std::sort(symbolFonts.begin(), symbolFonts.end(),
+              [](const QFileInfo &a, const QFileInfo &b) { return a.size() < b.size(); });
+    for (const QFileInfo &font : std::as_const(symbolFonts))
+        QFontDatabase::addApplicationFont(font.absoluteFilePath());
+#endif
 
     // Rasters, not icons/quack.svg: the SVG would need the svg icon engine
     // plugin deployed alongside.
