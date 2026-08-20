@@ -6,6 +6,7 @@
 #include "AppController.h"
 #include "RegistrationController.h"
 #include "TackyBackend.h"
+#include "MessageMarkup.h"
 
 #include "QmlTestSupport.h"
 
@@ -315,6 +316,48 @@ QtObject { function when(us) { return Stamp.when(us) } })",
         // A row is keyed by its stamp so one is always there, but blank beats
         // 1970 for whatever gets asked before it has one.
         QCOMPARE(when(QDateTime::fromMSecsSinceEpoch(0)), QString());
+
+        e.assertNoErrors();
+    }
+
+    // A pasted traceback is preformatted, and <pre> alone marks its lines
+    // unbreakable: the bubble stayed its usual width while the words carried
+    // on straight out through the side of it.
+    void aPreformattedBodyStaysInsideItsBubble() {
+        Engine e;
+        QQuickWindow win;
+        win.resize(500, 400);
+        win.show();
+        QVERIFY2(QTest::qWaitForWindowExposed(&win), "the window never appeared");
+
+        const QString body = QStringLiteral(
+            "Traceback (most recent call last):\n"
+            "  File \"/usr/lib/python3.14/site-packages/gajim/gtk/preview/image.py\", "
+            "line 220, in _on_thumbnail\n"
+            "    thumbnail_bytes, _metadata = future.result()");
+        const QVariantList spans{QVariantMap{{"type", "preformatted"},
+                                             {"offset", 0},
+                                             {"length", body.size()}}};
+
+        QQmlComponent comp(&e, "Quack", "ChatBubble");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QQuickItem> bubble(qobject_cast<QQuickItem *>(
+            comp.createWithInitialProperties(
+                {{"text", body},
+                 {"markup", messageMarkup(body, spans, "#0a0")},
+                 {"width", win.width()}})));
+        QVERIFY(!bubble.isNull());
+        bubble->setParentItem(win.contentItem());
+
+        QQuickItem *text = findItem(bubble.data(), "bubbleText");
+        QVERIFY(text);
+        QTRY_VERIFY(text->width() > 0);
+        // What it draws, against the room it was given. A line too long to
+        // break would run past both.
+        QVERIFY2(text->property("contentWidth").toReal() <= text->width(),
+                 qPrintable(QStringLiteral("%1 of words in %2 of bubble")
+                                .arg(text->property("contentWidth").toReal())
+                                .arg(text->width())));
 
         e.assertNoErrors();
     }

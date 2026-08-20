@@ -39,7 +39,10 @@ std::optional<Span> spanFor(const QString &type, const QString &quoteColor,
     } else if (type == QLatin1String("preformatted")) {
         s.rank = 1;
         s.literalWhitespace = true;
-        s.openTag = QStringLiteral("<pre>");
+        // pre-wrap rather than <pre>'s own pre: both keep the whitespace, but
+        // pre marks the lines unbreakable, and a pasted traceback then paints
+        // its full width straight out through the side of the bubble.
+        s.openTag = QStringLiteral("<pre style=\"white-space:pre-wrap\">");
         s.closeTag = QStringLiteral("</pre>");
     } else if (type == QLatin1String("monospace")) {
         s.rank = 2;

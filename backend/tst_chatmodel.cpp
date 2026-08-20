@@ -552,10 +552,11 @@ void TestChatModel::markupEscapesAndKeepsWhitespace() {
     // Newlines and runs of spaces survive HTML's whitespace collapsing...
     QCOMPARE(messageMarkup("a\n  b", spans(R"([{"type":"bold","offset":0,"length":1}])"), kQuote),
              QString("<b>a</b><br> &nbsp;b"));
-    // ...and inside <pre> they are already literal.
+    // ...and inside <pre> they are already literal. It wraps all the same, so
+    // a long line stays inside the bubble instead of painting out of it.
     QCOMPARE(messageMarkup("a\n  b",
                            spans(R"([{"type":"preformatted","offset":0,"length":5}])"), kQuote),
-             QString("<pre>a\n  b</pre>"));
+             QString("<pre style=\"white-space:pre-wrap\">a\n  b</pre>"));
 }
 
 // The spans index into whatever string the body role returned, so the role has
