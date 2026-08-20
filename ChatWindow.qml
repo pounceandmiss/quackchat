@@ -1,11 +1,10 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import Quack
 
 // A lightweight pop-out window holding a single conversation, no rail or list.
-ApplicationWindow {
+AppWindow {
     id: win
     property string account: ""
     property string chatJid: ""
@@ -16,22 +15,14 @@ ApplicationWindow {
     height: 680
     minimumWidth: 320
     minimumHeight: 420
-    visible: true
     title: chatName !== "" ? chatName : chatJid
-    color: Theme.background
 
-    Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
     // The search bar lives in the chat's own header, so a pop-out has one too.
     Shortcut { sequences: [StandardKey.Find]; onActivated: pane.openSearch() }
 
     ChatPage {
         id: pane
         anchors.fill: parent
-        // Same safe-area padding as ShellWindow (zeros on desktop).
-        anchors.topMargin: SafeArea.margins.top
-        anchors.bottomMargin: SafeArea.margins.bottom
-        anchors.leftMargin: SafeArea.margins.left
-        anchors.rightMargin: SafeArea.margins.right
         account: win.account
         chatJid: win.chatJid
         chatName: win.chatName
@@ -42,5 +33,5 @@ ApplicationWindow {
 
     // A pop-out is somewhere you type: it says a dead backend as loudly as the
     // shell does.
-    BackendNotice {}
+    edgeToEdge: BackendNotice {}
 }

@@ -193,6 +193,7 @@ qt_add_qml_module(quack
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Quack"
     QML_FILES
         Main.qml
+        AppWindow.qml
         ShellWindow.qml
         ChatWindow.qml
         AccountSettingsWindow.qml

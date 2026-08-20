@@ -1,12 +1,11 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import QtQuick.Controls
 import Quack
 
 // Both the primary window (Main.qml) and what "New window" spawns, so
 // several can be open at once, each with its own navigation.
-ApplicationWindow {
+AppWindow {
     id: win
     property alias initialAccount: shell.initialAccount
 
@@ -14,13 +13,10 @@ ApplicationWindow {
     height: 720
     minimumWidth: 360
     minimumHeight: 480
-    visible: true
     title: shell.currentAccount !== ""
            ? qsTr("Quack — %1").arg(shell.currentAccount)
            : qsTr("Quack Chat")
-    color: Theme.background
 
-    Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
     Shortcut { sequence: "Ctrl+N"; onActivated: AppWindows.newShell() }
     // `sequences`, not `sequence`: the standard key stands for more than one
     // combination, and binding the singular takes only the first of them.
@@ -45,14 +41,7 @@ ApplicationWindow {
     AppShell {
         id: shell
         anchors.fill: parent
-        // Keep content clear of notches / system bars on mobile; the window's
-        // Theme.background still paints behind them. All zeros on desktop.
-        anchors.topMargin: SafeArea.margins.top
-        anchors.bottomMargin: SafeArea.margins.bottom
-        anchors.leftMargin: SafeArea.margins.left
-        anchors.rightMargin: SafeArea.margins.right
     }
 
-    // After the shell, so it floats over it rather than under.
-    BackendNotice {}
+    edgeToEdge: BackendNotice {}
 }
