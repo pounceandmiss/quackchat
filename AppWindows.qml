@@ -179,11 +179,8 @@ QtObject {
         if (!account)
             return null
         const open = mgr._settingsWindows[account]
-        if (open) {
-            open.raise()
-            open.requestActivate()
-            return open
-        }
+        if (open)
+            return _raise(open)
         const w = _track(mgr._settingsComp.createObject(null, { account: account }))
         if (w)
             mgr._settingsWindows[account] = w
@@ -206,11 +203,8 @@ QtObject {
             return null
         const key = account + "|" + jid
         const open = mgr._contactWindows[key]
-        if (open) {
-            open.raise()
-            open.requestActivate()
-            return open
-        }
+        if (open)
+            return _raise(open)
         const w = _track(mgr._contactComp.createObject(null,
             { account: account, jid: jid, name: name || "" }))
         if (w)
