@@ -236,6 +236,7 @@ qt_add_qml_module(quack
         ThinScrollBar.qml
         ChatPage.qml
         ChatBubble.qml
+        MessageAttachment.qml
         Avatar.qml
         IconButton.qml
         CallWindow.qml

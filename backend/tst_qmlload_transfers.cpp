@@ -164,8 +164,10 @@ private slots:
         bubbles.tap(chip);
         QCOMPARE(opened.count(), 1);
 
+        QQuickItem *item = findItem(b.data(), "attachment");
+        QVERIFY(item);
         QVariant size;
-        QVERIFY(QMetaObject::invokeMethod(b.data(), "fmtSize",
+        QVERIFY(QMetaObject::invokeMethod(item, "fmtSize",
                                           Q_RETURN_ARG(QVariant, size),
                                           Q_ARG(QVariant, 2048)));
         QCOMPARE(size.toString(), QString("2.0 KB"));
@@ -503,6 +505,50 @@ private slots:
 
         prefs.reset();
         QCoreApplication::processEvents();
+
+        e.assertNoErrors();
+    }
+
+    // Built on its own, with nothing but an index and the row the model handed
+    // over. All it decides is which of the bubble's requests a gesture meant,
+    // so a right-click asks for a menu rather than opening one.
+    void anAttachmentStandsUpOutsideABubble() {
+        Engine e;
+        QQuickWindow win;
+        win.resize(500, 400);
+        win.show();
+        QVERIFY2(QTest::qWaitForWindowExposed(&win), "the window never appeared");
+
+        QQmlComponent comp(&e, "Quack", "MessageAttachment");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QQuickItem> item(qobject_cast<QQuickItem *>(
+            comp.createWithInitialProperties(
+                {{"index", 3},
+                 {"modelData", attachment("file", "doc.pdf", "", "")},
+                 {"maxWidth", 300}})));
+        QVERIFY2(!item.isNull(), qPrintable(comp.errorString()));
+        item->setParentItem(win.contentItem());
+
+        QQuickItem *chip = findItem(item.data(), "attachmentChip");
+        QVERIFY(chip);
+        QVERIFY(chip->isVisible());
+        QTRY_VERIFY(chip->width() > 0);
+        QCOMPARE(findItem(item.data(), "attachmentHint")->property("text").toString(),
+                 QString("2.0 KB"));
+
+        QSignalSpy opened(item.data(), SIGNAL(openRequested()));
+        QSignalSpy menued(item.data(), SIGNAL(menuRequested()));
+        const QPoint p = win.contentItem()
+                             ->mapFromItem(chip, QPointF(chip->width() / 2,
+                                                         chip->height() / 2))
+                             .toPoint();
+        QTest::mouseClick(&win, Qt::LeftButton, Qt::NoModifier, p);
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(menued.count(), 0);
+
+        QTest::mouseClick(&win, Qt::RightButton, Qt::NoModifier, p);
+        QCOMPARE(menued.count(), 1);
+        QCOMPARE(opened.count(), 1);
 
         e.assertNoErrors();
     }
