@@ -239,7 +239,8 @@ Page {
     property real textSelectTs: 0
     // The one whose words are picked out, by that hand-over or by a mouse
     // drag. A row keeps its highlight until told otherwise, so this is what
-    // tells the row before it to drop one.
+    // tells the row before it to drop one. Zero matches no message, so all of
+    // them let go.
     property real wordsTs: 0
     // The one showing a menu. Here rather than in the row because a touch on any
     // other row has to know about it: that touch closes this menu and does
@@ -258,11 +259,19 @@ Page {
         })
     }
 
-    function isSelected(ts) { return selectedRows[ts] !== undefined }
-    function toggle(ts, row) {
+    // Each of these marks one message, and picking or unpicking any message is
+    // the end of all three. Words especially: the highlight would hold that
+    // body live, and a live body is one that does not answer the click picking
+    // its message.
+    function dropRowMarks() {
         armedTs = 0
         textSelectTs = 0
-        dropWords()
+        wordsTs = 0
+    }
+
+    function isSelected(ts) { return selectedRows[ts] !== undefined }
+    function toggle(ts, row) {
+        dropRowMarks()
         const next = Object.assign({}, selectedRows)
         if (next[ts] !== undefined)
             delete next[ts]
@@ -281,16 +290,9 @@ Page {
         armedTs = 0
     }
     function clearSelection() {
-        armedTs = 0
-        textSelectTs = 0
-        dropWords()
+        dropRowMarks()
         selectedRows = ({})
     }
-    // Messages being picked is no time for words to stay picked out of one:
-    // the highlight would hold that body live, and a live body is one that
-    // does not answer the click picking its message. -1 matches no row, so
-    // all of them let go.
-    function dropWords() { wordsTs = -1 }
     function copySelected() {
         // Object keys iterate in ascending numeric order, so this joins the
         // chosen messages oldest-first regardless of the tap order.
@@ -1298,7 +1300,7 @@ Page {
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     textSelecting: page.textSelectTs === wrap.timestamp
-                    ownsWords: page.wordsTs === 0 || page.wordsTs === wrap.timestamp
+                    ownsWords: page.wordsTs === wrap.timestamp
                     onWordsTaken: page.wordsTs = wrap.timestamp
                     reactions: wrap.reactions
                     onToggleRequested: page.toggle(wrap.timestamp, wrap.row)
