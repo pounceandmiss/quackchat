@@ -62,12 +62,23 @@ void TestChatPageComposer::theComposerGrowsWithTheTextUpToACeiling() {
     QVERIFY(input);
     QTRY_VERIFY(field->width() > 0);
 
+    // The height alone says nothing about where the field ended up: it used to
+    // grow downwards out of the bar, off the bottom of the window, leaving the
+    // room it had taken showing as a gap over it. It sits 10 in from the bar's
+    // top and bottom edges alike, whatever it is holding.
+    const auto sitsInTheBar = [bar, field] {
+        const qreal top = field->mapToItem(bar, QPointF(0, 0)).y();
+        return qFuzzyCompare(top, qreal(10))
+                && qFuzzyCompare(top + field->height() + 10, bar->height());
+    };
+
     // One line at rest, and the bar is the field plus its margins.
     const qreal restField = field->height();
     const qreal restBar = bar->height();
     QVERIFY(restField > 0);
     QCOMPARE(input->property("lineCount").toInt(), 1);
     QCOMPARE(restBar, restField + 20);
+    QVERIFY(sitsInTheBar());
 
     // A long sentence wraps, and the field is taller for it - no newline
     // typed, which is how a message grows it in practice.
@@ -75,6 +86,7 @@ void TestChatPageComposer::theComposerGrowsWithTheTextUpToACeiling() {
     QTRY_VERIFY(input->property("lineCount").toInt() > 1);
     QTRY_VERIFY(field->height() > restField);
     QCOMPARE(bar->height(), field->height() + 20);
+    QVERIFY(sitsInTheBar());
 
     // Line by line it keeps up, as far as the ceiling.
     QStringList lines{QStringLiteral("line 1")};
@@ -88,6 +100,13 @@ void TestChatPageComposer::theComposerGrowsWithTheTextUpToACeiling() {
                                         .arg(field->height())
                                         .arg(lines.size())));
         last = field->height();
+        QTRY_VERIFY2(sitsInTheBar(),
+                     qPrintable(QStringLiteral("field %1 tall sits at %2 in a "
+                                               "bar %3 tall, on %4 lines")
+                                        .arg(field->height())
+                                        .arg(field->mapToItem(bar, QPointF(0, 0)).y())
+                                        .arg(bar->height())
+                                        .arg(lines.size())));
     }
 
     // Past the ceiling the field holds still and the text scrolls inside it.
@@ -97,12 +116,14 @@ void TestChatPageComposer::theComposerGrowsWithTheTextUpToACeiling() {
     QTRY_COMPARE(input->property("lineCount").toInt(), lines.size());
     settle();
     QCOMPARE(field->height(), last);
+    QVERIFY(sitsInTheBar());
     QVERIFY(input->property("contentHeight").toReal() > field->height());
 
     // Emptying it puts the bar back where it started.
     input->setProperty("text", QString());
     QTRY_COMPARE(field->height(), restField);
     QCOMPARE(bar->height(), restBar);
+    QVERIFY(sitsInTheBar());
 }
 
 // Enter still sends, as it did before the field could hold more than a line.

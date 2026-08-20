@@ -1507,8 +1507,10 @@ Page {
         Rectangle {
             id: composer
             objectName: "composerBar"
-            // The row inside keeps its height as the bar grows, so the space
-            // gained is all above the buttons rather than under them.
+            // What the field asks the bar for: the text it holds, up to the
+            // ceiling set below. Everything beside it keeps to the bar's
+            // bottom edge as it grows, so the room the field gains opens above
+            // them rather than under them.
             readonly property real fieldHeight:
                 Math.min(input.implicitHeight, input.maxHeight)
             Layout.fillWidth: true
@@ -1519,11 +1521,18 @@ Page {
                 width: parent.width; height: 1
                 color: Theme.hairline
             }
-            RowLayout {
+            // The bar's three pieces are anchored by hand rather than held in
+            // a layout row. The field is taller than the buttons beside it,
+            // and a row asked to carry an item that outgrows it puts that item
+            // where it fits rather than where the alignment says: the field
+            // hung off the bottom of the bar, under the window's edge, with
+            // the room it had grown showing as a gap above it.
+            Row {
+                id: composerButtons
                 anchors.left: parent.left
-                anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                anchors.margins: 10
+                anchors.leftMargin: 10
+                anchors.bottomMargin: 10
                 height: 40
                 spacing: 10
                 // Beside the box you type in, because it says how what you are
@@ -1532,8 +1541,8 @@ Page {
                 Item {
                     objectName: "omemoToggle"
                     visible: page.canEncrypt && page.hasChat && page.encryptKnown
-                    Layout.preferredWidth: visible ? 32 : 0
-                    Layout.fillHeight: true
+                    width: 32
+                    height: composerButtons.height
                     Text {
                         anchors.centerIn: parent
                         // As on the bubbles: the colour form of the glyph, so
@@ -1580,76 +1589,91 @@ Page {
                     glyphColor: Theme.textDim
                     Accessible.name: qsTr("Attach a file")
                     visible: page.hasChat
-                    Layout.preferredWidth: visible ? 36 : 0
+                    width: 36
+                    height: composerButtons.height
                     onClicked: attachDialog.open()
                 }
-                Rectangle {
-                    objectName: "composerField"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: composer.fieldHeight
-                    // Held to the bottom, so the field grows into the space above
-                    // rather than moving the buttons beside it.
-                    Layout.alignment: Qt.AlignBottom
-                    radius: 20
-                    color: Theme.field
-                    ScrollView {
-                        anchors.fill: parent
-                        clip: true
-                        ScrollBar.vertical: ThinScrollBar {}
-                        TextArea {
-                            id: input
-                            objectName: "messageInput"
-                            // The pill is drawn by the Rectangle, so the inset is
-                            // the field's own padding. A margin on top of it would
-                            // stack with whatever the style pads by - 16 under
-                            // Material, and the text starts a third of an inch in.
-                            leftPadding: 16
-                            rightPadding: 16
-                            topPadding: 10
-                            bottomPadding: 10
-                            // Wrapping is what grows it, with no newline typed.
-                            wrapMode: TextArea.Wrap
-                            // Measured off the text: how far apart lines sit is
-                            // the style's business, not the font's pixel size.
-                            // An empty field counts no lines, and dividing by
-                            // that would leave the composer with no height.
-                            readonly property real lineHeight:
-                                input.contentHeight / Math.max(1, input.lineCount)
-                            // Six lines, then it scrolls: past that the composer
-                            // starts taking the feed's half of the window.
-                            readonly property real maxHeight:
-                                input.topPadding + input.bottomPadding + 6 * input.lineHeight
-                            color: Theme.textPrimary
-                            font.pixelSize: 15
-                            background: null
-                            // Label the virtual keyboard's enter key "Send".
-                            EnterKey.type: Qt.EnterKeySend
-                            Keys.onReturnPressed: (event) => page.typedReturn(event)
-                            Keys.onEnterPressed: (event) => page.typedReturn(event)
-                            onTextChanged: if (page.session) page.session.draft = text
-                        }
+            }
+            Rectangle {
+                objectName: "composerField"
+                // Held to the bottom, so the field grows into the space above
+                // rather than moving the buttons either side of it.
+                anchors.left: composerButtons.right
+                anchors.leftMargin: 10
+                anchors.right: sendBtn.left
+                anchors.rightMargin: 10
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 10
+                // Off the bar rather than off the text: whatever the layout
+                // settles on for the bar - the height asked for above, or less
+                // of it in a window with no room to spare - the field is that
+                // less its margins, and never more.
+                height: Math.max(0, composer.height - 20)
+                radius: 20
+                color: Theme.field
+                ScrollView {
+                    anchors.fill: parent
+                    clip: true
+                    ScrollBar.vertical: ThinScrollBar {}
+                    TextArea {
+                        id: input
+                        objectName: "messageInput"
+                        // The pill is drawn by the Rectangle, so the inset is
+                        // the field's own padding. A margin on top of it would
+                        // stack with whatever the style pads by - 16 under
+                        // Material, and the text starts a third of an inch in.
+                        leftPadding: 16
+                        rightPadding: 16
+                        topPadding: 10
+                        bottomPadding: 10
+                        // Wrapping is what grows it, with no newline typed.
+                        wrapMode: TextArea.Wrap
+                        // Measured off the text: how far apart lines sit is
+                        // the style's business, not the font's pixel size.
+                        // An empty field counts no lines, and dividing by
+                        // that would leave the composer with no height.
+                        readonly property real lineHeight:
+                            input.contentHeight / Math.max(1, input.lineCount)
+                        // Six lines, then it scrolls: past that the composer
+                        // starts taking the feed's half of the window.
+                        readonly property real maxHeight:
+                            input.topPadding + input.bottomPadding + 6 * input.lineHeight
+                        color: Theme.textPrimary
+                        font.pixelSize: 15
+                        background: null
+                        // Label the virtual keyboard's enter key "Send".
+                        EnterKey.type: Qt.EnterKeySend
+                        Keys.onReturnPressed: (event) => page.typedReturn(event)
+                        Keys.onEnterPressed: (event) => page.typedReturn(event)
+                        onTextChanged: if (page.session) page.session.draft = text
                     }
                 }
-                Rectangle {
-                    id: sendBtn
-                    Layout.preferredWidth: 44
-                    Layout.preferredHeight: 44
-                    radius: 22
-                    gradient: Gradient {
-                        orientation: Gradient.Vertical
-                        GradientStop { position: 0.0; color: Theme.accent2 }
-                        GradientStop { position: 1.0; color: Theme.accent }
-                    }
-                    opacity: input.text.trim().length > 0 ? 1.0 : 0.5
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
-                    Glyph {
-                        anchors.centerIn: parent
-                        path: Icons.send
-                        color: Theme.textOnAccent
-                        size: 20
-                    }
-                    MouseArea { anchors.fill: parent; onClicked: page.sendCurrent() }
+            }
+            Rectangle {
+                id: sendBtn
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.bottom: parent.bottom
+                // Four taller than the row of buttons across from it, which it
+                // laps by two at each end.
+                anchors.bottomMargin: 8
+                width: 44
+                height: 44
+                radius: 22
+                gradient: Gradient {
+                    orientation: Gradient.Vertical
+                    GradientStop { position: 0.0; color: Theme.accent2 }
+                    GradientStop { position: 1.0; color: Theme.accent }
                 }
+                opacity: input.text.trim().length > 0 ? 1.0 : 0.5
+                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Glyph {
+                    anchors.centerIn: parent
+                    path: Icons.send
+                    color: Theme.textOnAccent
+                    size: 20
+                }
+                MouseArea { anchors.fill: parent; onClicked: page.sendCurrent() }
             }
         }
     }
