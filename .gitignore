@@ -1,6 +1,8 @@
 build/
 build-android/
 build-win/
+build-appimage/
+dist/
 flatpak/.flatpak-builder/
 flatpak/build-dir/
 flatpak/repo/
