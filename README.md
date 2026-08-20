@@ -13,7 +13,7 @@ After a plain clone, or when the pin moves:
     git submodule update --init --recursive
 
 `--recursive` matters: tacky carries zippy, its build system, as a submodule of
-its own, and without it `make lib` stops at a missing `zippy/zippy.mk`.
+its own.
 
 ## What you need
 
@@ -55,8 +55,8 @@ time to C++, trading build time for startup and binding speed. Override with
 
 ## Windows
 
-Cross-built from Linux against a MinGW Qt kit; no Windows host is involved,
-packaging included.
+Cross-built from Linux against a MinGW Qt kit, no Windows host is involved.
+Windows installer is included.
 
     make -C third_party/tacky win-lib
     cmake -B build-win -G Ninja \
@@ -77,19 +77,24 @@ tacky's archive is cross-compiled in Docker, so Docker is needed here:
         -DQT_HOST_PATH=<qt>/gcc_64 \
         -DANDROID_SDK_ROOT=<sdk> \
         -DANDROID_NDK_ROOT=<sdk>/ndk/<r29> \
-        -DANDROID_PLATFORM=android-30
+        -DANDROID_PLATFORM=android-30 \
+        -DCMAKE_BUILD_TYPE=Debug
     JAVA_HOME=<jdk21> cmake --build build-android --target apk
 
 NDK r29 and `ANDROID_PLATFORM=android-30` are what the tacky archive is built
 against: older NDKs lack `__cxa_init_primary_exception`, and API levels below
 30 lack `pthread_cond_clockwait`.
 
-JDK 21 has to be `JAVA_HOME` for the `apk` target; newer JDKs break gradle's
+JDK 21 has to be `JAVA_HOME` for the `apk` target: newer JDKs break gradle's
 jlink step.
 
-`qt-cmake` leaves `CMAKE_BUILD_TYPE` empty and Qt derives the package type from
-it, so a Release configure emits an unsigned, non-debuggable apk. Pass
-`-DQT_ANDROID_DEPLOYMENT_TYPE=Debug` for anything that will be installed.
+`CMAKE_BUILD_TYPE` is worth passing because `qt-cmake` leaves it empty, and an
+empty build type compiles with no `-O` flags yet still packages as a release.
+Debug is the one that installs: gradle signs it with the machine's debug
+keystore. Release leaves the apk unsigned - the signing key is the packager's to
+supply, and Android takes nothing unsigned - so for a release build that still
+goes on a device, add `-DQT_ANDROID_DEPLOYMENT_TYPE=Debug`. Nothing the debug
+key signed can be published.
 
 ## Flatpak
 
@@ -108,24 +113,19 @@ the only thing the host has to have:
 
     ./appimage/build.sh
 
-The result is `dist/quackchat-<version>-x86_64.AppImage`. The build runs inside
-`appimage/Dockerfile`, which is Rocky 9 for its glibc 2.34 - the floor Qt itself
-sets, since Qt's own binaries reference GLIBC_2.34 and nothing older can link
-them. That reaches Ubuntu 22.04, Debian 12, RHEL 9 and newer.
+The result is `dist/quackchat-<version>-x86_64.AppImage`, built in Rocky 9 for
+its glibc 2.34 - the floor Qt's own binaries set - so it runs on Ubuntu 22.04,
+Debian 12, RHEL 9 and newer. It carries Qt and tacky, and leaves the graphics
+stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
 
-`--clean` rebuilds the app but keeps tacky's deps, which take the better part of
-an hour to compile; delete `build-appimage/` for those too. `--no-aot` skips the
-ahead-of-time QML compile, which dominates a release build and has no bearing on
-packaging.
-
-The AppImage carries Qt, its plugins, the QML modules and tacky. What it leaves
-to the host is the graphics stack, which has to match the local driver: libGL,
-libEGL, libxkbcommon, fontconfig and dbus.
+`--clean` rebuilds the app but keeps tacky's deps which takes long to compile -
+delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
+compile, which dominates the build.
 
     ./appimage/smoke-test.sh
 
-runs it on clean Ubuntu and Debian containers under a virtual X server, which is
-the only real check that it works without Qt installed.
+runs it on clean Ubuntu and Debian containers under a virtual X server, the only
+real check that it works without Qt installed.
 
 ## Moving the tacky pin
 
@@ -135,7 +135,7 @@ the only real check that it works without Qt installed.
     ./flatpak/check-pin.sh --sync
 
 The last line carries the commit into the manifest, which names it a second
-time; `ctest` fails while the two disagree. If tacky's own dependency pins
+time. `ctest` fails while the two disagree. If tacky's own dependency pins
 moved, the manifest says how to regenerate its source list.
 
 ## Translations
