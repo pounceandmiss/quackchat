@@ -101,6 +101,32 @@ flatpak-builder cannot read a submodule, so it builds tacky from the commit
 pinned in the manifest instead. tacky and its dependencies are fetched from
 pinned sources and built with no network of their own.
 
+## AppImage
+
+A single portable binary needing no Qt on the machine that runs it. Docker is
+the only thing the host has to have:
+
+    ./appimage/build.sh
+
+The result is `dist/quackchat-<version>-x86_64.AppImage`. The build runs inside
+`appimage/Dockerfile`, which is Rocky 9 for its glibc 2.34 - the floor Qt itself
+sets, since Qt's own binaries reference GLIBC_2.34 and nothing older can link
+them. That reaches Ubuntu 22.04, Debian 12, RHEL 9 and newer.
+
+`--clean` rebuilds the app but keeps tacky's deps, which take the better part of
+an hour to compile; delete `build-appimage/` for those too. `--no-aot` skips the
+ahead-of-time QML compile, which dominates a release build and has no bearing on
+packaging.
+
+The AppImage carries Qt, its plugins, the QML modules and tacky. What it leaves
+to the host is the graphics stack, which has to match the local driver: libGL,
+libEGL, libxkbcommon, fontconfig and dbus.
+
+    ./appimage/smoke-test.sh
+
+runs it on clean Ubuntu and Debian containers under a virtual X server, which is
+the only real check that it works without Qt installed.
+
 ## Moving the tacky pin
 
     git -C third_party/tacky fetch origin
