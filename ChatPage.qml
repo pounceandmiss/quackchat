@@ -254,7 +254,9 @@ Page {
         if (page.menuTs !== ts)
             return
         Qt.callLater(function() {
-            if (page.menuTs === ts)
+            // A window closing with its menu still up takes the page before the
+            // turn comes round, and there is nothing left to forget.
+            if (page && page.menuTs === ts)
                 page.menuTs = 0
         })
     }
