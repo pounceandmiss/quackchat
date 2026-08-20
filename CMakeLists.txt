@@ -602,6 +602,11 @@ set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 # ZIP is the portable-folder build and needs no host tooling, so it stays the
 # default; NSIS wants makensis on PATH and is opt-in via `cpack -G NSIS`.
 set(CPACK_GENERATOR ZIP)
+# The Start Menu link CPACK_PACKAGE_EXECUTABLES asks for is written as
+# $INSTDIR/bin/<exe>, and the install above is flat on Windows, so without this
+# the shortcut points at a bin/ that was never installed and silently fails to
+# launch. The installed tree is the only thing that moves it; "." tracks it.
+set(CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 set(CPACK_NSIS_PACKAGE_NAME quackchat)
 set(CPACK_NSIS_DISPLAY_NAME quackchat)
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
