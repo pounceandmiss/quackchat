@@ -1,8 +1,10 @@
 // What a chat page opens beside itself: the XML viewer, the contact and room
 // pages, its own search bar, and the sheets and menus that have to keep clear
-// of the system bars.
+// of the system bars. Plus what a row draws for whoever sent it: the name, and
+// the face beside it.
 #include <QQmlExpression>
 
+#include "AppSettings.h"
 #include "AuthorNames.h"
 #include "ChatPageTest.h"
 #include "SearchModel.h"
@@ -87,6 +89,9 @@ private slots:
     void aMenuNearTheBottomOpensClearOfTheSystemBars();
     void tappingTheChatHeaderOpensTheContact();
     void senderNamesComeFromAuthorGet();
+    void avatarsMarkTheFootOfEachRun();
+    void anOutgoingAvatarHangsOffTheOtherEdge();
+    void theAvatarPreferenceClosesTheGutter();
     void closingTheSearchBarEmptiesIt();
     void returnSearchesWhenTheLastAnswerIsGone();
 };
@@ -97,6 +102,7 @@ void TestChatPageWindows::initTestCase() {
     send("pair@example.com", "the older one");
     send("pair@example.com", "the newer one");
     send("room@example.com", "who said that");
+    send("avatarroom@example.com", "the one already here");
     send("xml@example.com", "look at my stanza");
     send("twoxml@example.com", "looked at from two windows");
     send("bars@example.com", "under the status bar");
@@ -382,6 +388,135 @@ void TestChatPageWindows::senderNamesComeFromAuthorGet() {
     QQuickItem *quietLine = findItem(direct.row(0), "authorLine");
     QVERIFY(quietLine);
     QVERIFY(!quietLine->isVisible());
+}
+
+namespace {
+// One row as the backend hands it over. Nothing is connected, so somebody
+// else's message has to be injected rather than received.
+QVariantMap said(qlonglong at, const QString &from, const char *body) {
+    return QVariantMap{
+        {"timestamp", QVariant::fromValue(at)},
+        {"from_jid", from},
+        {"is_outgoing", false},
+        {"content", QVariantMap{{"type", "text"}, {"body", body}}}};
+}
+
+// The avatar gutter: the gap between a row's bubble and the edge it sits
+// against, whether or not a face is drawn in it. Which edge that is depends on
+// the direction, so the caller says.
+qreal gutterOf(QQuickItem *row, bool outgoing) {
+    QQuickItem *body = findItem(row, "bubbleBody");
+    if (!body)
+        return qQNaN();
+    const qreal left = body->mapToItem(row, QPointF(0, 0)).x();
+    return outgoing ? row->width() - (left + body->width()) : left;
+}
+} // namespace
+
+// One face per run, on the message at its foot; the rest of the run hold the
+// gutter open so the bubbles line up.
+void TestChatPageWindows::avatarsMarkTheFootOfEachRun() {
+    const Chat chat = open("avatarroom@example.com", true);
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+
+    const QString ann = QStringLiteral("avatarroom@example.com/ann");
+    const QString bo = QStringLiteral("avatarroom@example.com/bo");
+    chat.model()->applyBatch(QVariantList{said(9000000000000001LL, ann, "one"),
+                                          said(9000000000000002LL, ann, "two"),
+                                          said(9000000000000003LL, ann, "three"),
+                                          said(9000000000000004LL, bo, "mine")});
+    QTRY_COMPARE(chat.count(), 5);
+
+    // The row is fetched afresh each poll: the delegate for a freshly inserted
+    // index is not in place the moment the count changes. On the JID rather
+    // than on there being a face at all - the row that held index 0 before the
+    // insert had one already, so existence settles before the insert lands.
+    auto face = [&](int row) { return findItem(chat.row(row), "messageAvatar"); };
+    auto faceJid = [&](int row) {
+        QQuickItem *f = face(row);
+        return f ? f->property("jid").toString() : QString();
+    };
+
+    // Newest first, so row 0 is bo's lone message and rows 1-3 are ann's run
+    // with its foot - the lowest of the three on screen - at row 1.
+    QTRY_COMPARE(faceJid(0), bo);
+    // A room's occupant JID keeps its resource, which is what gives ann and bo
+    // a face each rather than the room's logo twice.
+    QCOMPARE(faceJid(1), ann);
+
+    // The two above it are the same voice carrying on. The slot is checked too,
+    // so an inactive loader is not read as a row that never got built.
+    for (int row : {2, 3}) {
+        QVERIFY(findItem(chat.row(row), "avatarSlot"));
+        QVERIFY2(!face(row),
+                 qPrintable(QString("row %1 repeats the face above it").arg(row)));
+    }
+
+    // The bubble starts clear of the face rather than over it.
+    const qreal foot = gutterOf(chat.row(1), false);
+    QVERIFY(foot >= face(1)->mapToItem(chat.row(1), QPointF(0, 0)).x()
+                        + face(1)->width());
+    // And the rest of the run line up with it, which is what the empty gutter
+    // is held open for.
+    QCOMPARE(gutterOf(chat.row(2), false), foot);
+    QCOMPARE(gutterOf(chat.row(3), false), foot);
+}
+
+// Ours sit on the right, so their faces do too - the gutter is on whichever
+// side the bubble already took.
+void TestChatPageWindows::anOutgoingAvatarHangsOffTheOtherEdge() {
+    const Chat chat = open("quiet@example.com");
+    QTRY_COMPARE(chat.count(), kQuiet);
+
+    // Every one of them is ours, so the three are a single run.
+    auto face = [&](int row) { return findItem(chat.row(row), "messageAvatar"); };
+    QTRY_VERIFY(face(0));
+    QVERIFY(!face(1));
+    QVERIFY(!face(2));
+
+    QQuickItem *row = chat.row(0);
+    QQuickItem *mine = face(0);
+    const qreal left = mine->mapToItem(row, QPointF(0, 0)).x();
+    QVERIFY2(left > row->width() / 2,
+             qPrintable(QString("our own face is at %1 of %2, on the wrong side")
+                            .arg(left).arg(row->width())));
+    QCOMPARE(left + mine->width(), row->width());
+    // And the bubble is held off that same edge, so the two never overlap.
+    QVERIFY(gutterOf(row, true) > 0);
+    QQuickItem *body = findItem(row, "bubbleBody");
+    QVERIFY(body);
+    QVERIFY(body->mapToItem(row, QPointF(0, 0)).x() + body->width() <= left);
+}
+
+// Turned off, there is no face and no gutter held open for one.
+void TestChatPageWindows::theAvatarPreferenceClosesTheGutter() {
+    const Chat chat = open("avatarroom@example.com", true);
+    QTRY_COMPARE(chat.count(), 1);
+
+    const QString ann = QStringLiteral("avatarroom@example.com/ann");
+    chat.model()->applyBatch(QVariantList{said(9000000000000001LL, ann, "one")});
+    QTRY_COMPARE(chat.count(), 2);
+    auto annsFace = [&] {
+        QQuickItem *f = findItem(chat.row(0), "messageAvatar");
+        return f ? f->property("jid").toString() : QString();
+    };
+    QTRY_COMPARE(annsFace(), ann);
+    QVERIFY(gutterOf(chat.row(0), false) > 0);
+
+    // Arriving from the store, which is how a window that was already open
+    // hears about a preference changed in another one.
+    m_app->settings()->handleEvent(
+        "setting", "Changed",
+        QVariantMap{{"key", "chat_avatars"}, {"value", "0"}});
+    QTRY_VERIFY(!findItem(chat.row(0), "messageAvatar"));
+    QCOMPARE(gutterOf(chat.row(0), false), 0.0);
+
+    // Put back, so the suites that run after this one see the shipped default.
+    m_app->settings()->handleEvent(
+        "setting", "Changed",
+        QVariantMap{{"key", "chat_avatars"}, {"value", "1"}});
+    QTRY_COMPARE(annsFace(), ann);
 }
 
 // The bar comes back blank. It used to keep the last query with nothing behind

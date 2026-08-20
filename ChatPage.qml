@@ -1113,6 +1113,12 @@ Page {
             bottomMargin: 8
             verticalLayoutDirection: ListView.BottomToTop
             cacheBuffer: 400
+            // Runs of messages from one sender, so only one of each draws a
+            // face. No section delegate, so nothing is rendered for this; it is
+            // here for the attached properties, which Qt keeps right across the
+            // batches paging adds at either end.
+            section.property: "from"
+            section.criteria: ViewSection.FullString
             boundsBehavior: Flickable.StopAtBounds
 
             ScrollBar.vertical: ThinScrollBar {}
@@ -1232,6 +1238,12 @@ Page {
                 required property var timestamp
                 required property var reactions
                 required property var attachments
+                // BottomToTop over a newest-first model puts row index - 1
+                // below this one on screen, so a row whose section differs from
+                // the previous one is the foot of its run. Index 0 has no
+                // previous section and compares against "", so it always is.
+                readonly property bool runEnd:
+                    wrap.ListView.previousSection !== wrap.ListView.section
                 // A share with no caption still has to copy and select as
                 // something; its filename is what the user sees.
                 readonly property string label: wrap.body === "" && wrap.attachments.length > 0
@@ -1256,6 +1268,9 @@ Page {
                     // Rooms have many voices; a 1:1 has only the two, already
                     // named by the header and the bubble side.
                     showAuthor: page.chatGroupchat && !wrap.outgoing
+                    avatarAccount: page.account
+                    avatarJid: App.settings.chatAvatars ? wrap.from : ""
+                    showAvatar: wrap.runEnd
                     attachments: wrap.attachments
                     onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
                     onAttachmentLoadRequested: (idx) => page.retryAttachment(wrap.timestamp,

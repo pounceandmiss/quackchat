@@ -10,6 +10,7 @@ const QLatin1String kAutofetchMax("attachment_autofetch_max");
 const QLatin1String kLogToFile("log_to_file");
 const QLatin1String kLogLevel("log_level");
 const QLatin1String kLogNative("log_native");
+const QLatin1String kChatAvatars("chat_avatars");
 } // namespace
 
 AppSettings::AppSettings(QObject *parent) : QObject(parent) {}
@@ -42,6 +43,9 @@ void AppSettings::refresh() {
     m_logNativeToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kLogNative}});
+    m_chatAvatarsToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kChatAvatars}});
 }
 
 void AppSettings::handleResult(int token, const QVariant &data) {
@@ -55,6 +59,8 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kLogLevel, data.toString());
     else if (token == m_logNativeToken)
         applyValue(kLogNative, data.toString());
+    else if (token == m_chatAvatarsToken)
+        applyValue(kChatAvatars, data.toString());
 }
 
 // The stored value never came, so the compiled-in default stands. Dropping the
@@ -71,6 +77,8 @@ void AppSettings::handleError(int token, const QString &message) {
         m_logLevelToken = -1;
     else if (token == m_logNativeToken)
         m_logNativeToken = -1;
+    else if (token == m_chatAvatarsToken)
+        m_chatAvatarsToken = -1;
 }
 
 void AppSettings::handleEvent(const QString &module, const QString &name,
@@ -117,6 +125,12 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_logNative = on;
         emit logNativeChanged();
+    } else if (key == kChatAvatars) {
+        const bool on = value != QLatin1String("0");
+        if (m_chatAvatars == on)
+            return;
+        m_chatAvatars = on;
+        emit chatAvatarsChanged();
     }
 }
 
@@ -147,4 +161,8 @@ void AppSettings::setLogLevel(const QString &level) {
 
 void AppSettings::setLogNative(bool on) {
     write(kLogNative, on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void AppSettings::setChatAvatars(bool on) {
+    write(kChatAvatars, on ? QStringLiteral("1") : QStringLiteral("0"));
 }

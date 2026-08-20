@@ -20,6 +20,7 @@ private slots:
     void unsetKeysReadAsTackysOwnDefaults();
     void changedEventsAreGlobal();
     void settingsRoundTripThroughTheBackend();
+    void chatAvatarsIsOnUntilItIsTurnedOff();
     void refreshesWhenTheBackendConnects();
 };
 
@@ -41,8 +42,8 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
     }
     keys.sort();
     QCOMPARE(keys, QStringList({"attachment_autofetch",
-                                "attachment_autofetch_max", "log_level",
-                                "log_native", "log_to_file"}));
+                                "attachment_autofetch_max", "chat_avatars",
+                                "log_level", "log_native", "log_to_file"}));
 }
 
 // The store holds nothing until something is written, and "" is not a policy
@@ -62,6 +63,29 @@ void TestAppSettings::unsetKeysReadAsTackysOwnDefaults() {
         {"key":"attachment_autofetch","value":""}])");
     QCOMPARE(s.attachmentAutofetch(), QString("everyone"));
     QCOMPARE(changed.count(), 0);
+}
+
+// The one preference here whose default is the set state, so an unwritten key
+// and a stored "1" have to mean the same thing while "0" is the only way off.
+void TestAppSettings::chatAvatarsIsOnUntilItIsTurnedOff() {
+    AppSettings s;
+    QVERIFY(s.chatAvatars());
+
+    QSignalSpy changed(&s, &AppSettings::chatAvatarsChanged);
+    // Answering the startup read with an unwritten key leaves it on, and says
+    // nothing - the bindings were already showing what is in force.
+    feed(s, R"(["event","setting","Changed",{"key":"chat_avatars","value":""}])");
+    QVERIFY(s.chatAvatars());
+    QCOMPARE(changed.count(), 0);
+
+    feed(s, R"(["event","setting","Changed",{"key":"chat_avatars","value":"0"}])");
+    QVERIFY(!s.chatAvatars());
+    QCOMPARE(changed.count(), 1);
+
+    // Stored on, which reads the same as never having been written.
+    feed(s, R"(["event","setting","Changed",{"key":"chat_avatars","value":"1"}])");
+    QVERIFY(s.chatAvatars());
+    QCOMPARE(changed.count(), 2);
 }
 
 void TestAppSettings::changedEventsAreGlobal() {
@@ -104,6 +128,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setLogToFile(true);
     s.setLogLevel(QStringLiteral("debug"));
     s.setLogNative(true);
+    s.setChatAvatars(false);
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
 
@@ -116,6 +141,9 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(readback.logToFile(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.logLevel() == QLatin1String("debug"), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.logNative(), 5000);
+    // Off is the value that has to travel: readback starts on, so this only
+    // passes once the stored "0" has come back.
+    QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);
 
     backend.stop();
 }

@@ -221,6 +221,36 @@ Page {
                     text: qsTr("The app starts on its own theme each time.")
                     wrapMode: Text.WordWrap
                 }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 4
+                    implicitHeight: 1
+                    color: Theme.hairline
+                }
+
+                CheckBox {
+                    id: avatarBox
+                    objectName: "chatAvatarsBox"
+                    Layout.fillWidth: true
+                    padding: 0
+                    text: qsTr("Show avatars in chats")
+                    checked: App.settings.chatAvatars
+                    onToggled: App.settings.setChatAvatars(checked)
+                    contentItem: Text {
+                        text: avatarBox.text
+                        color: Theme.textPrimary
+                        font.pixelSize: 14
+                        leftPadding: avatarBox.indicator.width + 8
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("One picture per run of messages from the same person.")
+                    wrapMode: Text.WordWrap
+                }
             }
 
             Card {

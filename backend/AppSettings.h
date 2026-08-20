@@ -34,6 +34,9 @@ class AppSettings : public QObject {
     // own output and are voluminous with it, so this is a switch rather than a
     // level of its own.
     Q_PROPERTY(bool logNative READ logNative NOTIFY logNativeChanged)
+    // Whether the chat feed draws a face beside each run of messages. A key of
+    // our own: the Tk client draws them either way.
+    Q_PROPERTY(bool chatAvatars READ chatAvatars NOTIFY chatAvatarsChanged)
 
 public:
     explicit AppSettings(QObject *parent = nullptr);
@@ -43,6 +46,7 @@ public:
     bool logToFile() const { return m_logToFile; }
     QString logLevel() const { return m_logLevel; }
     bool logNative() const { return m_logNative; }
+    bool chatAvatars() const { return m_chatAvatars; }
 
     void setBackend(TackyBackend *backend);
 
@@ -54,6 +58,7 @@ public:
     Q_INVOKABLE void setLogToFile(bool on);
     Q_INVOKABLE void setLogLevel(const QString &level);
     Q_INVOKABLE void setLogNative(bool on);
+    Q_INVOKABLE void setChatAvatars(bool on);
 
     // Public so tests can drive them with canned events and replies.
     void handleEvent(const QString &module, const QString &name,
@@ -67,6 +72,7 @@ signals:
     void logToFileChanged();
     void logLevelChanged();
     void logNativeChanged();
+    void chatAvatarsChanged();
 
 private:
     void applyValue(const QString &key, const QString &value);
@@ -79,12 +85,14 @@ private:
     bool m_logToFile = false;
     QString m_logLevel = QStringLiteral("warning");
     bool m_logNative = false;
+    bool m_chatAvatars = true;
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;
     int m_logToFileToken = -1;
     int m_logLevelToken = -1;
     int m_logNativeToken = -1;
+    int m_chatAvatarsToken = -1;
 };
 
 #endif // APPSETTINGS_H

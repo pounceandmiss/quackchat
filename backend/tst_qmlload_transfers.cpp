@@ -5,6 +5,7 @@
 #include <QTemporaryDir>
 
 #include "AppController.h"
+#include "AppSettings.h"
 
 #include "QmlTestSupport.h"
 
@@ -456,6 +457,36 @@ private slots:
         QTRY_COMPARE(appTheme->property("name").toString(), QString("midnight"));
         QVERIFY(midnight->property("current").toBool());
         QVERIFY(!plum->property("current").toBool());
+
+        // Avatars in the feed share the card. On until something says
+        // otherwise, so the box shows what is in force before anything is
+        // stored, as the dots above do.
+        QQuickItem *avatarBox = option("chatAvatarsBox");
+        QVERIFY(avatarBox);
+        QVERIFY(app->settings()->chatAvatars());
+        QVERIFY(avatarBox->property("checked").toBool());
+
+        // A value arriving from the store, which is how a second window and a
+        // fresh start both learn it.
+        app->settings()->handleEvent(
+            "setting", "Changed",
+            QVariantMap{{"key", "chat_avatars"}, {"value", "0"}});
+        QTRY_VERIFY(!avatarBox->property("checked").toBool());
+
+        // And back the other way, through the box itself.
+        const QPoint onBox = prefsWin->contentItem()
+                                 ->mapFromItem(avatarBox,
+                                               QPointF(avatarBox->height() / 2,
+                                                       avatarBox->height() / 2))
+                                 .toPoint();
+        QVERIFY2(prefsWin->contentItem()->boundingRect().contains(onBox),
+                 qPrintable(QString("avatar box at %1,%2 in a %3x%4 viewport")
+                                .arg(onBox.x()).arg(onBox.y())
+                                .arg(prefsWin->contentItem()->width())
+                                .arg(prefsWin->contentItem()->height())));
+        QTest::mouseClick(prefsWin, Qt::LeftButton, Qt::NoModifier, onBox);
+        QTRY_VERIFY(app->settings()->chatAvatars());
+        QVERIFY(avatarBox->property("checked").toBool());
 
         // App-wide settings, so every window's menu leads to the same one.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");

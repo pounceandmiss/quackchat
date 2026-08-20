@@ -17,6 +17,17 @@ Item {
     property string author: ""
     property bool showAuthor: false
 
+    // The sender's avatar, drawn in a gutter on the bubble's own side. An empty
+    // jid is how the preference turns them off: no face, and no gutter either.
+    property string avatarAccount: ""
+    property string avatarJid: ""
+    // Only the message at the foot of a run from one sender carries the
+    // picture. The rest of the run keep the gutter, so their bubbles line up.
+    property bool showAvatar: false
+
+    readonly property real avatarEdge: 28
+    readonly property real avatarGutter: avatarJid !== "" ? avatarEdge + 8 : 0
+
     // The message this one answers: a one-line preview and its author, both
     // resolved by tacky. Empty when this is not a reply.
     property string replyBody: ""
@@ -121,7 +132,8 @@ Item {
     // Briefly tinted after a jump lands on this row.
     property bool highlighted: false
 
-    readonly property real maxBubbleWidth: Math.min(parent ? parent.width * 0.72 : 320, 480)
+    readonly property real maxBubbleWidth:
+        Math.min(parent ? parent.width * 0.72 : 320, 480) - avatarGutter
 
     // Byte counts as the chip shows them.
     function fmtSize(n) {
@@ -612,6 +624,8 @@ Item {
             radius: 14
             anchors.right: root.outgoing ? parent.right : undefined
             anchors.left:  root.outgoing ? undefined : parent.left
+            anchors.rightMargin: root.outgoing ? root.avatarGutter : 0
+            anchors.leftMargin:  root.outgoing ? 0 : root.avatarGutter
 
             width: content.width + 24
             height: content.height + 16
@@ -999,6 +1013,30 @@ Item {
                         size: 13
                     }
                 }
+            }
+        }
+
+        // Level with the foot of the bubble rather than its middle, so a tall
+        // message keeps its face on the last line. In rowContent, so it travels
+        // with the selection shift and the reply swipe.
+        //
+        // A Loader rather than a visible: false Avatar: a hidden one still runs
+        // its source binding, and that binding is what subscribes the JID.
+        Loader {
+            objectName: "avatarSlot"
+            active: root.showAvatar && root.avatarJid !== ""
+            width: root.avatarEdge
+            height: root.avatarEdge
+            anchors.bottom: bubble.bottom
+            anchors.right: root.outgoing ? parent.right : undefined
+            anchors.left:  root.outgoing ? undefined : parent.left
+
+            sourceComponent: Avatar {
+                objectName: "messageAvatar"
+                account: root.avatarAccount
+                jid: root.avatarJid
+                label: root.author
+                initialsPixelSize: 13
             }
         }
 
