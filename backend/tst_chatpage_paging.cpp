@@ -26,6 +26,7 @@ private slots:
     void buffersNameTheRightEdges();
     void initialLoadStopsAtOnePage();
     void scrollingUpPagesOlder();
+    void scrollingUpOffersTheWayBackDown();
     void underTallViewportPagesWithoutScrolling();
     void reachingTheOldestEdgeRetriesAfterExhaustion();
     void tappingAQuoteJumpsToItsTarget();
@@ -134,6 +135,35 @@ void TestChatPagePaging::scrollingUpPagesOlder() {
 
     // Reading back does not leave the tail, so live messages keep landing.
     QVERIFY(chat.model()->atTail());
+}
+
+// Reading back through history puts the newest message off screen without the
+// window losing the tail, which is the commonest way to want the button. Taking
+// it scrolls the view back rather than fetching the newest page again.
+void TestChatPagePaging::scrollingUpOffersTheWayBackDown() {
+    const Chat chat = open("friend@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+
+    QQuickItem *jump = chat.feed->findChild<QQuickItem *>("jumpToLatest");
+    QVERIFY(jump);
+    QVERIFY(!jump->isVisible()); // the newest message is already on screen
+
+    chat.scrollNearOldest();
+    QTRY_VERIFY(jump->isVisible());
+    QVERIFY(chat.model()->atTail()); // only the view has left the newest row
+    QTRY_COMPARE_WITH_TIMEOUT(chat.count(), 2 * kPage, 5000);
+    settle();
+    const int rows = chat.count();
+
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {},
+                      jump->mapToScene(QPointF(jump->width() / 2, jump->height() / 2)).toPoint());
+    QTRY_VERIFY(!jump->isVisible());
+    QVERIFY(chat.buffer("newerBuffer") < 10);
+    // Same window as before the click, so it scrolled instead of reloading.
+    QCOMPARE(chat.count(), rows);
 }
 
 // A chat whose whole history is shorter than the viewport cannot be scrolled,

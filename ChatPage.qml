@@ -1141,6 +1141,24 @@ Page {
             readonly property real fillThreshold: Math.max(400, height)
             property bool olderExhausted: false
 
+            // Whether the newest row is on screen. A binding is safe where the
+            // two measures above are not, since no handler reads it. The slack
+            // is for rounding; a row is far taller than that.
+            readonly property bool atNewestEdge:
+                originY + contentHeight + bottomMargin - height - contentY < 10
+
+            // The way back to the newest message: scroll to it while the window
+            // still holds it, and fetch the newest page again once a jump has
+            // left it behind.
+            function jumpToNewest() {
+                hitScroll.stop()
+                cancelFlick()
+                if (page.atTail)
+                    positionViewAtBeginning()
+                else
+                    page.chatModel.resetToBottom()
+            }
+
             // Rows are variable-height and laid out bottom-to-top, so where
             // centring one would leave the view is nothing to be worked out
             // here: go there, read it back, and decide whether to make the
@@ -1340,8 +1358,8 @@ Page {
                     page.chatModel.loadNewer()
             }
 
-            // Jumping to a reply's target leaves the tail, and paging back is a
-            // long way, so offer the one-tap route the backend already has.
+            // Scrolling up and jumping to a reply's target both leave the
+            // newest message off screen, a long way back by hand.
             Rectangle {
                 objectName: "jumpToLatest"
                 parent: feed
@@ -1354,7 +1372,7 @@ Page {
                 radius: 19
                 color: Theme.surface
                 border.color: Theme.hairline
-                opacity: page.atTail ? 0 : 1
+                opacity: page.atTail && feed.atNewestEdge ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
 
@@ -1364,7 +1382,7 @@ Page {
                     color: Theme.textDim
                     size: 22
                 }
-                TapHandler { onTapped: page.chatModel.resetToBottom() }
+                TapHandler { onTapped: feed.jumpToNewest() }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
 
