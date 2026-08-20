@@ -74,8 +74,9 @@ Item {
     // gestures stand down so the drag reaches the body's TextEdit.
     property bool textSelecting: false
     // Whether the words picked out in this chat are this message's. The page
-    // decides; going false drops the highlight this row was left holding.
-    property bool ownsWords: true
+    // decides; going false drops the highlight this row was left holding. No
+    // row has them until a drag or a hand-over says so.
+    property bool ownsWords: false
     onOwnsWordsChanged: if (!root.ownsWords) bodyText.deselect()
 
     // Android answers a long press on a live body with its own text
