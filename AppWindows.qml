@@ -142,19 +142,20 @@ QtObject {
         return w
     }
 
+    // Every map above that holds at most one window per key. A key left
+    // pointing at a closed window would answer the next request by raising
+    // something already destroyed, so _forget clears them all.
+    readonly property var _keyedWindows: [mgr._settingsWindows, mgr._contactWindows,
+                                          mgr._roomWindows]
+
     function _forget(w) {
         const i = mgr._windows.indexOf(w)
         if (i >= 0)
             mgr._windows.splice(i, 1)
-        for (const acc in mgr._settingsWindows)
-            if (mgr._settingsWindows[acc] === w)
-                delete mgr._settingsWindows[acc]
-        for (const key in mgr._contactWindows)
-            if (mgr._contactWindows[key] === w)
-                delete mgr._contactWindows[key]
-        for (const room in mgr._roomWindows)
-            if (mgr._roomWindows[room] === w)
-                delete mgr._roomWindows[room]
+        for (const held of mgr._keyedWindows)
+            for (const key in held)
+                if (held[key] === w)
+                    delete held[key]
         if (mgr._prefsWindow === w)
             mgr._prefsWindow = null
         w.destroy()
