@@ -214,6 +214,39 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Looking for a person puts away what the page says about the room: the
+    // matches start under the box rather than under a screenful of subject.
+    void filteringPutsTheRoomCardsAway() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QVERIFY(joinedRoom(w));
+
+        QQuickItem *page = findItem(w->contentItem(), "mucDetailsPage");
+        QVERIFY(page);
+        QQuickItem *roomCard = findItem(w->contentItem(), "roomCard");
+        QQuickItem *youCard = findItem(w->contentItem(), "youCard");
+        QVERIFY(roomCard);
+        QVERIFY(youCard);
+        QVERIFY(roomCard->isVisible());
+        QVERIFY(youCard->isVisible());
+
+        QVERIFY(QMetaObject::invokeMethod(page, "openFilter"));
+        QVERIFY(!roomCard->isVisible());
+        QVERIFY(!youCard->isVisible());
+
+        QVariant closed;
+        QVERIFY(QMetaObject::invokeMethod(page, "closeFilter",
+                                          Q_RETURN_ARG(QVariant, closed)));
+        QVERIFY(closed.toBool());
+        QVERIFY(roomCard->isVisible());
+        QVERIFY(youCard->isVisible());
+
+        e.assertNoErrors();
+    }
+
     // The filter narrows the rows without touching the room, so the heading
     // still counts everyone in the group.
     void theOccupantFilterNarrowsTheRowsNotTheRoom() {

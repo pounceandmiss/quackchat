@@ -101,6 +101,10 @@ Page {
     function openFilter() {
         page.filterMode = true
         filterInput.forceActiveFocus()
+        // A filter opened halfway down a room would otherwise start on rows
+        // the typing is about to throw away, at a scroll offset the departing
+        // cards have just moved out from under it.
+        list.positionViewAtBeginning()
     }
     // Answers whether it had anything to close, so an Android back press knows
     // whether it was spent here.
@@ -517,8 +521,14 @@ Page {
                 y: 16
                 spacing: 14
 
-                // Who the room is, above anything about who is in it.
+                // Who the room is, above anything about who is in it. Both
+                // cards stand down while the filter is up: they are about the
+                // room, and what is being asked for is a person - a screenful
+                // of subject would only push the matches off the top.
                 Card {
+                    objectName: "roomCard"
+                    visible: !page.filterMode
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 14
@@ -616,7 +626,7 @@ Page {
                 // above offers.
                 Card {
                     objectName: "youCard"
-                    visible: room.myNick !== ""
+                    visible: !page.filterMode && room.myNick !== ""
 
                     Text {
                         text: qsTr("You in this room")
