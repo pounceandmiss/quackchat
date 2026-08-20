@@ -29,9 +29,14 @@ Page {
         const kb = Qt.inputMethod.keyboardRectangle // qmllint disable missing-property
         if (kb.height <= 0)
             return 0
+        // Android measures the keyboard in physical pixels while the scene it
+        // covers is laid out in device-independent ones - the same correction
+        // SheetDialog makes.
+        const top = Qt.platform.os === "android"
+            ? kb.y / page.Screen.devicePixelRatio : kb.y
         // Overlap between the keyboard and this page, in window coordinates.
         const pageBottom = mapToItem(null, 0, height).y
-        return Math.max(0, Math.min(pageBottom - kb.y, height))
+        return Math.max(0, Math.min(pageBottom - top, height))
     }
 
     background: Rectangle {
