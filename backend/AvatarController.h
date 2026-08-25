@@ -3,10 +3,10 @@
 // current hash per (acc,jid) for cache invalidation, and bridging the async
 // `avatar data` fetch to an AvatarSink.
 //
-// Hashes arrive two ways: `avatar <Update>` pushes every change, and an
-// `avatar metadata` read answers for what the backend held before we started.
-// The read is what a frontend outlived by its backend needs - on Android the
-// interpreter belongs to a service the activity does not take with it.
+// Hashes arrive one way, as `avatar <Update>`. Marking a JID `visible` is what
+// asks for one, including for whatever the backend already held when this
+// frontend started - which on Android is every launch, the interpreter
+// belonging to a service the activity does not take with it.
 //
 // Core/Qml only, no QImage - the sink does the decoding, so the headless model
 // tests never pull in QtGui.
@@ -70,27 +70,13 @@ private slots:
 
 private:
     static QString key(const QString &acc, const QString &jid);
-    static QString normJid(const QString &jid);
     void ensureVisible(const QString &acc, const QString &jid);
-    // Records the hash and tells QML, from either route.
+    // Records the hash and tells QML.
     void applyHash(const QString &k, const QString &hash);
-    // tacky keeps its visible marks across a <Disconnect>, so a reconnect
-    // re-primes nothing on its own. Re-read the hashes instead: one may have
-    // moved while `acc` was offline, with no one here to hear the <Update>.
-    void resubscribe(const QString &acc);
-
-    // A fetch in flight: the sink to complete, and which JID's hash it is
-    // serving, since a hash the backend cannot serve has to be forgotten again.
-    struct Fetch {
-        AvatarSink *sink = nullptr;
-        QString key;
-        QString hash;
-    };
 
     TackyBackend *m_backend = nullptr;
-    QHash<QString, QString> m_hash;    // "acc\njid" -> hash
-    QHash<int, Fetch> m_pending;       // request token -> waiting fetch
-    QHash<int, QString> m_metaPending; // request token -> "acc\njid"
+    QHash<QString, QString> m_hash;      // "acc\njid" -> hash
+    QHash<int, AvatarSink *> m_pending;  // request token -> waiting fetch
     QSet<QString> m_visible;
     int m_rev = 0;
 };

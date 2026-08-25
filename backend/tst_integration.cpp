@@ -372,8 +372,8 @@ void TestIntegration::avatarBytesSurviveTheWire() {
 
 // The Android reopen: the interpreter belongs to a service the activity does
 // not take with it, so a second frontend meets JIDs the session already has
-// marked visible. That re-mark is a no-op with no <Update> behind it, leaving
-// the `metadata` read as the only thing carrying the hash across the restart.
+// marked visible. The re-mark is what carries the hash across the restart -
+// tacky primes an <Update> from its cache for every mark, not only the first.
 void TestIntegration::avatarHashSurvivesAFrontendRestart() {
     TackyBackend backend;
     QVERIFY(backend.start());
@@ -394,10 +394,9 @@ void TestIntegration::avatarHashSurvivesAFrontendRestart() {
     // The mark that run left behind.
     AvatarController first;
     first.setBackend(&backend);
-    first.hashFor("me@example.com", "bob@example.com"); // the read subscribes
+    first.hashFor("me@example.com", "bob@example.com"); // the read marks
     // Requests are answered in order, so a reply to a later one proves the mark
-    // has landed. It also pins the reply shape the controller reads: an object
-    // keyed by field, not a bare string.
+    // has landed.
     const int barrier =
         backend.request("avatar", "metadata",
                         QVariantMap{{"acc", "me@example.com"},

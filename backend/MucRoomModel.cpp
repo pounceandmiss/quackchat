@@ -26,15 +26,6 @@ int groupRank(const QString &group) {
         return 2;
     return 3;
 }
-
-// Chat JIDs carry a ?join suffix to mark them as a room's; the muc module keys
-// its rooms by the JID underneath, and would find nothing under the suffixed
-// form. Same cut AvatarController makes, for the same reason.
-QString stripJoin(const QString &jid) {
-    if (jid.endsWith(QLatin1String("?join")))
-        return jid.left(jid.size() - 5);
-    return jid;
-}
 } // namespace
 
 QString MucRoomModel::Occupant::group() const { return groupFor(role); }
@@ -120,7 +111,9 @@ void MucRoomModel::setJid(const QString &jid) {
     if (m_jid == jid)
         return;
     m_jid = jid;
-    m_roomJid = stripJoin(jid);
+    // The muc module keys its rooms by the JID under the suffix, and would
+    // find nothing under the suffixed form.
+    m_roomJid = jidWithoutJoin(jid);
     emit jidChanged();
     refresh();
 }

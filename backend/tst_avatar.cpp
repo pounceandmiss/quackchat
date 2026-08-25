@@ -117,10 +117,9 @@ private slots:
         QVERIFY(!r.errorString().isEmpty());
     }
 
-    // Every subscribe carries an `avatar metadata` read: tacky's visible marks
-    // outlive this process, so a re-mark is a no-op with no <Update> behind it,
-    // and without the read a restarted frontend has no hash at all.
-    void subscribeReadsTheCachedHash() {
+    // Subscribing is the mark and nothing else: tacky re-emits an <Update> from
+    // its cache for every one, so there is no `avatar metadata` read to make.
+    void subscribesWithTheMarkAlone() {
         TackyBackend backend;
         QVERIFY(backend.start());
         AvatarController c;
@@ -129,100 +128,24 @@ private slots:
         QSignalSpy sent(&backend, &TackyBackend::sent);
         c.hashFor("me@h", "bob@h");
         QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
-        QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{"bob@h"});
-
-        // One read per subscription, not one per binding evaluation.
-        sent.clear();
-        c.hashFor("me@h", "bob@h");
         QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{});
-    }
 
-    // A reconnect re-reads what it was showing: tacky keeps its visible marks,
-    // so nothing re-primes on its own, and a hash that moved while the account
-    // was offline had no one here to hear the <Update>.
-    void resubscribesOnReady() {
-        TackyBackend backend; // in-memory session
-        QVERIFY(backend.start());
-        AvatarController c;
-        c.setBackend(&backend);
-
-        QSignalSpy sent(&backend, &TackyBackend::sent);
-        c.hashFor("me@h", "bob@h"); // the read is what subscribes
-        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
-
-        // A second read must not re-ask while the subscription still stands.
+        // One mark per JID, not one per binding evaluation.
         sent.clear();
         c.hashFor("me@h", "bob@h");
         QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{});
-
-        sent.clear();
-        c.handleEvent("conn", "State",
-                      QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
-        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
-        QCOMPARE(jidsAsked(sent, "metadata", "me@h"), QStringList{"bob@h"});
     }
 
-    // <Ready> for one account must not disturb another's subscriptions.
-    void resubscribeIsPerAccount() {
+    // A JID starts unknown, and the <Update> the mark asked for fills it in.
+    void learnsTheHashFromAnUpdate() {
         TackyBackend backend;
         QVERIFY(backend.start());
         AvatarController c;
         c.setBackend(&backend);
-        c.hashFor("me@h", "bob@h");
-        c.hashFor("other@h", "eve@h");
 
-        QSignalSpy sent(&backend, &TackyBackend::sent);
-        c.handleEvent("conn", "State",
-                      QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
-        QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{"bob@h"});
-        QCOMPARE(jidsAsked(sent, "visible", "other@h"), QStringList{});
-    }
-
-    // `avatar metadata` reads the metadata row alone, so it can hand over a hash
-    // whose bytes tacky has not fetched yet. The empty `data` reply that follows
-    // has to unstick the hash: QML would otherwise keep an Image pointed at the
-    // one URL it has already failed on, and never reload it when the bytes land.
-    void forgetsAHashTheBackendCannotServe() {
-        TackyBackend backend;
-        QVERIFY(backend.start());
-        AvatarController c;
-        c.setBackend(&backend);
-        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
-
-        AvatarResponse r;
-        c.fetch("me@h", "bob@h", "abc", &r);
-        // request() hands out tokens in order, so the fetch's is the one before
-        // whatever the next request would get.
-        const int dataToken =
-            backend.request("avatar", "metadata", QVariantMap{}) - 1;
-        emit backend.result(dataToken, QString()); // "" == bytes not cached
-
-        QVERIFY(!r.errorString().isEmpty()); // the Image falls back
-        QCOMPARE(c.hashFor("me@h", "bob@h"), QString());
-
-        // The hash comes back when the backend's own fetch ends in an <Update>,
-        // and QML sees a URL it has not failed on.
+        QCOMPARE(c.hashFor("me@h", "bob@h"), QString()); // marks, knows nothing yet
         c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
         QCOMPARE(c.hashFor("me@h", "bob@h"), QString("abc"));
-    }
-
-    // Only the hash that went unserved is dropped: an <Update> that landed while
-    // the fetch was out is newer news than the reply to it.
-    void keepsAHashThatMovedDuringTheFetch() {
-        TackyBackend backend;
-        QVERIFY(backend.start());
-        AvatarController c;
-        c.setBackend(&backend);
-        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
-
-        AvatarResponse r;
-        c.fetch("me@h", "bob@h", "abc", &r);
-        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "def"));
-        const int dataToken =
-            backend.request("avatar", "metadata", QVariantMap{}) - 1;
-        emit backend.result(dataToken, QString());
-
-        QCOMPARE(c.hashFor("me@h", "bob@h"), QString("def"));
     }
 
     // Nothing times out an avatar request, so a backend that stops has to fail

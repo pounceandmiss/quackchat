@@ -42,4 +42,13 @@ inline bool sessionUp(const QString &module, const QString &name,
            a.value(QStringLiteral("acc")).toString() == account;
 }
 
+// A chat JID's `?join` suffix marks it as a room's and is not part of the JID
+// the room itself is keyed by: tacky cuts it on the way in and reports the cut
+// form back. The resource is kept, so MUC occupants stay distinct.
+inline QString jidWithoutJoin(const QString &jid) {
+    if (jid.endsWith(QLatin1String("?join")))
+        return jid.left(jid.size() - 5);
+    return jid;
+}
+
 #endif // BACKENDBINDING_H
