@@ -46,7 +46,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: cd5ac72cb686c263c6db15225ddb53d0210c0082
+        commit: fe32235251d0e79fe21a559a8aeea19f59b32c84
 
       # zippy's pins, generated and replaced wholesale rather than edited.
       # After a bump, in a tacky checkout:
