@@ -14,6 +14,9 @@ Page {
     id: page
     objectName: "conversationsPane"
     property string account: ""
+    // The chat the window is showing, so its row can say so. The shell's state
+    // rather than the list's: a pop-out leaves nothing selected here.
+    property string currentJid: ""
     signal openChat(string jid, string name, bool groupchat)
     signal popOutChat(string jid, string name, bool groupchat)
     // matches travels with the hit so the chat can mark the run the row marked.
@@ -269,6 +272,8 @@ Page {
             height: 64
             onClicked: page.openChat(jid, name, groupchat)
 
+            readonly property bool current: row.jid === page.currentJid
+
             // Right-click used to pop the chat out; that is one entry in this
             // menu now, where the rest of the row's verbs are. A touch point
             // carries no button for acceptedButtons to filter; touch has the
@@ -303,6 +308,27 @@ Page {
 
             background: Rectangle {
                 color: row.hovered ? Theme.menuHover : "transparent"
+
+                // The open chat, tinted the way a selected message is.
+                Rectangle {
+                    objectName: "currentChatTint"
+                    anchors.fill: parent
+                    color: Theme.selection
+                    opacity: row.current ? 0.45 : 0
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                }
+                // And the rail's current-account tab: the tint alone is easy to
+                // lose beside a hovered row.
+                Rectangle {
+                    objectName: "currentChatTab"
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 4
+                    height: row.current ? 44 : 0
+                    radius: 2
+                    color: Theme.accentDeep
+                    visible: height > 0
+                    Behavior on height { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                }
             }
 
             contentItem: RowLayout {

@@ -172,6 +172,7 @@ Item {
         // push lands, or there would be no list for the chat to slide over.
         visible: shell.wide || shell.listUp
         account: shell.currentAccount
+        currentJid: shell.currentChatJid
         onOpenAccounts: railDrawer.open()
         onOpenChat: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
         onPopOutChat: (jid, name, groupchat) => {

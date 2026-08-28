@@ -179,6 +179,84 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Without this the wide layout is a chat beside a list that never says
+    // which row it came from.
+    void theOpenChatIsMarkedInTheList() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","last_activity":300},
+            {"jid":"bob@example.com","name":"Bob","last_activity":200},
+            {"jid":"cy@example.com","name":"Cy","last_activity":100}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"currentJid", "bob@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 3);
+        win.grabWindow(); // force the delegates to lay out and bind
+
+        auto rowAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return item;
+        };
+        auto tint = [&](int i) { return findItem(rowAt(i), "currentChatTint"); };
+        auto tab = [&](int i) { return findItem(rowAt(i), "currentChatTab"); };
+
+        QVERIFY(tint(1));
+        // Over the whole row, not a sliver of it: an anchor that missed leaves
+        // a tint that is on but invisible.
+        QCOMPARE(itemRect(tint(1), rowAt(1)),
+                 QRectF(0, 0, rowAt(1)->width(), rowAt(1)->height()));
+        QVERIFY(rowAt(1)->height() > 0);
+        QTRY_VERIFY(tint(1)->opacity() > 0.3);
+        QVERIFY(tab(1)->isVisible());
+        QVERIFY(tab(1)->height() > 0);
+
+        // And on that row alone.
+        QCOMPARE(tint(0)->opacity(), 0.0);
+        QCOMPARE(tint(2)->opacity(), 0.0);
+        QVERIFY(!tab(0)->isVisible());
+        QVERIFY(!tab(2)->isVisible());
+
+        // The mark follows the open chat rather than staying where it was put.
+        page->setProperty("currentJid", "cy@example.com");
+        QTRY_VERIFY(tint(2)->opacity() > 0.3);
+        QTRY_COMPARE(tint(1)->opacity(), 0.0);
+        QTRY_VERIFY(tab(2)->isVisible());
+        QTRY_VERIFY(!tab(1)->isVisible());
+
+        // Nothing open marks nothing.
+        page->setProperty("currentJid", "");
+        QTRY_COMPARE(tint(2)->opacity(), 0.0);
+
+        e.assertNoErrors();
+    }
+
     // A touch point carries no button, so the row's right-click handler was
     // offered every tap: on a phone the menu came up over the chat it opened.
     void aTouchTapOnARowOnlyOpensTheChat() {
