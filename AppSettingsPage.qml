@@ -67,11 +67,15 @@ Page {
     // outgoing bubble.
     component ThemeChip: Rectangle {
         id: chip
-        required property string themeName
-        readonly property var pal: Theme.palettes[chip.themeName]
-        readonly property bool current: Theme.name === chip.themeName
+        // The palette this chip picks; empty is the system's own, drawn in
+        // whichever palette that resolves to.
+        property string themeName: ""
+        readonly property bool system: chip.themeName === ""
+        readonly property var pal: Theme.palettes[chip.system ? Theme.systemName : chip.themeName]
+        readonly property bool current: chip.system ? Theme.followSystem
+                                                    : !Theme.followSystem && Theme.name === chip.themeName
 
-        objectName: "theme_" + chip.themeName
+        objectName: "theme_" + (chip.system ? "system" : chip.themeName)
         implicitWidth: chipRow.implicitWidth + 20
         implicitHeight: 36
         radius: 10
@@ -97,7 +101,7 @@ Page {
                 border.color: chip.pal.hairline
             }
             Text {
-                text: chip.themeName
+                text: chip.system ? qsTr("system") : chip.themeName
                 color: chip.pal.textPrimary
                 font.pixelSize: 13
                 font.bold: chip.current
@@ -105,7 +109,9 @@ Page {
         }
 
         HoverHandler { cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: Theme.name = chip.themeName }
+        TapHandler {
+            onTapped: chip.system ? Theme.followSystem = true : Theme.choose(chip.themeName)
+        }
     }
 
     header: PageHeader {
@@ -206,6 +212,8 @@ Page {
                     Layout.fillWidth: true
                     spacing: 8
 
+                    ThemeChip {}
+
                     Repeater {
                         model: Object.keys(Theme.palettes)
                         delegate: ThemeChip {
@@ -218,7 +226,7 @@ Page {
                 // Nothing stores the pick yet.
                 Caption {
                     Layout.fillWidth: true
-                    text: qsTr("The app starts on its own theme each time.")
+                    text: qsTr("The app starts on the system's light or dark setting each time.")
                     wrapMode: Text.WordWrap
                 }
 

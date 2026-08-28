@@ -434,10 +434,16 @@ private slots:
         QVERIFY(selected("autofetchMax_0"));
         QVERIFY(!selected("autofetchMax_5242880"));
 
-        // The chips mark the theme in force, and a tap on one picks it.
+        // The chips mark the theme in force and a tap on one picks it. The
+        // system chip is one of them, marked while nothing has been picked.
         auto *appTheme = e.singletonInstance<QObject *>("Quack", "Theme");
         QVERIFY(appTheme);
-        appTheme->setProperty("name", "plum");
+        QQuickItem *systemChip = option("theme_system");
+        QVERIFY(systemChip);
+        QVERIFY(systemChip->property("current").toBool());
+
+        appTheme->setProperty("chosen", "plum");
+        appTheme->setProperty("followSystem", false);
         QCoreApplication::processEvents();
         QQuickItem *plum = option("theme_plum");
         QQuickItem *midnight = option("theme_midnight");
@@ -445,6 +451,7 @@ private slots:
         QVERIFY(midnight);
         QVERIFY(plum->property("current").toBool());
         QVERIFY(!midnight->property("current").toBool());
+        QVERIFY(!systemChip->property("current").toBool());
 
         const QPoint at = prefsWin->contentItem()
                               ->mapFromItem(midnight, QPointF(midnight->width() / 2,
@@ -459,6 +466,20 @@ private slots:
         QTRY_COMPARE(appTheme->property("name").toString(), QString("midnight"));
         QVERIFY(midnight->property("current").toBool());
         QVERIFY(!plum->property("current").toBool());
+
+        // And the system chip hands the theme back to the system.
+        const QPoint onSystem =
+            prefsWin->contentItem()
+                ->mapFromItem(systemChip, QPointF(systemChip->width() / 2,
+                                                  systemChip->height() / 2))
+                .toPoint();
+        QVERIFY(prefsWin->contentItem()->boundingRect().contains(onSystem));
+        QTest::mouseClick(prefsWin, Qt::LeftButton, Qt::NoModifier, onSystem);
+        QTRY_VERIFY(appTheme->property("followSystem").toBool());
+        QCOMPARE(appTheme->property("name").toString(),
+                 appTheme->property("systemName").toString());
+        QVERIFY(systemChip->property("current").toBool());
+        QVERIFY(!midnight->property("current").toBool());
 
         // Avatars in the feed share the card. On until something says
         // otherwise, so the box shows what is in force before anything is

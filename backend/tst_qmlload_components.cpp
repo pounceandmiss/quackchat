@@ -2,6 +2,8 @@
 #include <QtTest>
 #include <QJsonDocument>
 #include <QQmlComponent>
+#include <QScopeGuard>
+#include <QStyleHints>
 
 #include "AppController.h"
 #include "RegistrationController.h"
@@ -62,6 +64,70 @@ private slots:
                      qPrintable(QStringLiteral("palette \"%1\" has [%2], expected [%3]")
                                     .arg(it.key(), got.join(", "), want.join(", "))));
         }
+    }
+
+    // The two palettes the system's preferences name have to be palettes, and
+    // the failure is the silent one above: an unknown key leaves `p` undefined
+    // and every colour reads black. Renaming one breaks it from a third file.
+    void theSystemPalettesAreRealPalettes() {
+        Engine e;
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        const QVariantMap palettes = theme->property("palettes").toMap();
+        const QString light = theme->property("systemLight").toString();
+        const QString dark = theme->property("systemDark").toString();
+        QVERIFY2(palettes.contains(light), qPrintable("no palette named " + light));
+        QVERIFY2(palettes.contains(dark), qPrintable("no palette named " + dark));
+        QVERIFY(light != dark);
+    }
+
+    // The app starts on whichever of the two the system asks for and follows it
+    // while it runs, so a window already open repaints. A palette picked by
+    // hand stops that, the pick being an answer to the same question.
+    //
+    // The system's half only runs where there is a platform theme to ask:
+    // QStyleHints::setColorScheme goes through one, and the offscreen platform
+    // these tests use has none, so there the scheme is Unknown and immovable.
+    void themeFollowsTheDesktopUntilOneIsPicked() {
+        Engine e;
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        const QString light = theme->property("systemLight").toString();
+        const QString dark = theme->property("systemDark").toString();
+
+        QVERIFY(theme->property("followSystem").toBool());
+        QCOMPARE(theme->property("name").toString(), theme->property("systemName").toString());
+
+        QStyleHints *hints = QGuiApplication::styleHints();
+        const Qt::ColorScheme was = hints->colorScheme();
+        auto restore = qScopeGuard([&] { hints->setColorScheme(was); });
+        hints->setColorScheme(Qt::ColorScheme::Dark);
+        const bool schemeIsOurs = hints->colorScheme() == Qt::ColorScheme::Dark;
+        if (schemeIsOurs) {
+            QCOMPARE(theme->property("name").toString(), dark);
+            hints->setColorScheme(Qt::ColorScheme::Light);
+            QCOMPARE(theme->property("name").toString(), light);
+            // No preference is not a preference for dark.
+            hints->setColorScheme(Qt::ColorScheme::Unknown);
+            QCOMPARE(theme->property("name").toString(), light);
+        }
+
+        // A pick pins the palette against anything the system says after.
+        QVERIFY(QMetaObject::invokeMethod(theme, "choose", Q_ARG(QVariant, QString("plum"))));
+        QVERIFY(!theme->property("followSystem").toBool());
+        QCOMPARE(theme->property("name").toString(), QString("plum"));
+        if (schemeIsOurs) {
+            hints->setColorScheme(Qt::ColorScheme::Dark);
+            QCOMPARE(theme->property("name").toString(), QString("plum"));
+        }
+
+        // Ctrl+T cycles from whatever is showing, picking as it goes.
+        theme->setProperty("followSystem", true);
+        const QString showing = theme->property("name").toString();
+        QVERIFY(QMetaObject::invokeMethod(theme, "cycle"));
+        QVERIFY(!theme->property("followSystem").toBool());
+        QCOMPARE(theme->property("name").toString(), theme->property("chosen").toString());
+        QVERIFY(theme->property("name").toString() != showing);
     }
 
     // The device list is built from a plain JS array that gets replaced whole

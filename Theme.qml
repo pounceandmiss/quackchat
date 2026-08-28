@@ -1,14 +1,27 @@
 pragma Singleton
 import QtQuick
 
-// Central theme / palette. Set `name` to any key in `palettes` to change the
-// look; to add a theme, copy a block and give it new colors, keeping every key
-// present (the UI reads them all). Ctrl+T cycles the themes in a live window.
+// Central theme / palette. `name` is a key in `palettes`; to add a theme, copy
+// a block and give it new colors, keeping every key present (the UI reads them
+// all). Ctrl+T cycles the themes in a live window.
 QtObject {
     id: theme
 
-    // The active theme. Change this to swap the whole app's colors.
-    property string name: "conversations"
+    // The palettes the system's light and dark preferences ask for. Qt reads
+    // that preference from xdg-desktop-portal on Linux, from the OS elsewhere.
+    readonly property string systemLight: "conversations"
+    readonly property string systemDark: "midnight"
+    readonly property string systemName: Application.styleHints.colorScheme === Qt.ColorScheme.Dark
+                                         ? theme.systemDark : theme.systemLight
+
+    // Follow it, which is how the app starts. Nothing stores a pick, so one
+    // lasts until the app is closed.
+    property bool followSystem: true
+
+    // The palette picked by hand, in force once followSystem is off.
+    property string chosen: theme.systemLight
+
+    readonly property string name: theme.followSystem ? theme.systemName : theme.chosen
 
     // True on touch-first platforms. Desktop-only affordances (pop-out chat
     // windows, "New window") key off this, since Android/iOS are single-window.
@@ -252,9 +265,15 @@ QtObject {
     readonly property color selection:   p.selection
     readonly property color menuHover:   p.menuHover
 
+    // Picking a palette by hand is what stops following the system.
+    function choose(key) {
+        theme.chosen = key
+        theme.followSystem = false
+    }
+
     // Cycle to the next theme (bound to Ctrl+T in every window).
     function cycle() {
         const keys = Object.keys(palettes)
-        name = keys[(keys.indexOf(name) + 1) % keys.length]
+        theme.choose(keys[(keys.indexOf(theme.name) + 1) % keys.length])
     }
 }
