@@ -1,10 +1,12 @@
 // The app's own windows: the shell at either width, the account drawer and the
 // rail it carries, the backend notice, and the call windows a row brings up.
 #include <QtTest>
+#include <QJsonDocument>
 #include <QQmlComponent>
 
 #include "AppController.h"
 #include "CallsModel.h"
+#include "ChatListModel.h"
 #include "TackyTransport.h"
 
 #include "QmlTestSupport.h"
@@ -109,6 +111,67 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(mgr, "closeAll"));
         QCoreApplication::processEvents();
         QTRY_VERIFY2(held.isNull(), "the settings window outlived closeAll()");
+
+        e.assertNoErrors();
+    }
+
+    // Driven as keys rather than by calling what they are bound to: a Shortcut
+    // the key never reaches, or misses because Shift turns Tab into Backtab,
+    // leaves every other test here green.
+    void ctrlTabWalksTheConversationList() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        seedTwoAccounts(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","last_activity":300},
+            {"jid":"bob@example.com","name":"Bob","last_activity":200},
+            {"jid":"room@muc.example.com?join","name":"Room","groupchat":true,
+             "last_activity":100}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow *win = loadMain(e);
+        QVERIFY(win);
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+        win->requestActivate();
+        QVERIFY2(QTest::qWaitForWindowActive(win),
+                 "the window never took focus, so no shortcut could fire");
+
+        auto *shell = win->findChild<QQuickItem *>("appShell");
+        QVERIFY(shell);
+        // Named rather than left to the fallback, which takes the first account
+        // there is - alt@, whose list is empty.
+        shell->setProperty("currentAccount", "me@example.com");
+        auto jid = [&] { return shell->property("currentChatJid").toString(); };
+        QCOMPARE(jid(), QString());
+
+        QTest::keyClick(win, Qt::Key_Tab, Qt::ControlModifier);
+        QTRY_COMPARE(jid(), QString("amy@example.com"));
+        QTest::keyClick(win, Qt::Key_Tab, Qt::ControlModifier);
+        QTRY_COMPARE(jid(), QString("bob@example.com"));
+
+        // The row's kind travels with it: a room opened as a 1:1 chat talks to
+        // the JID instead of joining it.
+        QTest::keyClick(win, Qt::Key_Tab, Qt::ControlModifier);
+        QTRY_COMPARE(jid(), QString("room@muc.example.com?join"));
+        QCOMPARE(shell->property("currentChatName").toString(), QString("Room"));
+        QVERIFY(shell->property("currentChatGroupchat").toBool());
+
+        // Off the foot, round to the head.
+        QTest::keyClick(win, Qt::Key_Tab, Qt::ControlModifier);
+        QTRY_COMPARE(jid(), QString("amy@example.com"));
+
+        // Backward, as a real keyboard sends it: Shift+Tab arrives as Backtab,
+        // which is what the second sequence is registered for.
+        QTest::keyClick(win, Qt::Key_Backtab, Qt::ControlModifier | Qt::ShiftModifier);
+        QTRY_COMPARE(jid(), QString("room@muc.example.com?join"));
+        QTest::keyClick(win, Qt::Key_Backtab, Qt::ControlModifier | Qt::ShiftModifier);
+        QTRY_COMPARE(jid(), QString("bob@example.com"));
 
         e.assertNoErrors();
     }

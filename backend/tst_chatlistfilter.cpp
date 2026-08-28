@@ -39,6 +39,9 @@ private slots:
     void totalCountSeesPastTheFilter();
     void countFollowsTheFilterAndNotifies();
     void filteringOneViewLeavesTheModelAlone();
+    void steppingWrapsAtBothEnds();
+    void steppingCountsOnlyTheRowsOnShow();
+    void entryAtHandsBackTheWholeRow();
 };
 
 void TestChatListFilter::passesEverythingThroughByDefault() {
@@ -162,6 +165,78 @@ void TestChatListFilter::filteringOneViewLeavesTheModelAlone() {
     QCOMPARE(one.rowCount(), 1);
     QCOMPARE(m.rowCount(), 3);
     QCOMPARE(jids(two), QStringList({"zoe@h", "bob@h", "cy@h"}));
+}
+
+// Ctrl+Tab's walk over the list. Off either end is the other end.
+void TestChatListFilter::steppingWrapsAtBothEnds() {
+    ChatListModel m;
+    seed(m);
+    ChatListFilter f;
+    f.setSource(&m); // zoe@h, bob@h, cy@h
+
+    QCOMPARE(f.stepRow("zoe@h", 1), 1);
+    QCOMPARE(f.stepRow("bob@h", 1), 2);
+    QCOMPARE(f.stepRow("cy@h", 1), 0);   // off the foot, back to the head
+    QCOMPARE(f.stepRow("zoe@h", -1), 2); // and off the head, back to the foot
+    QCOMPARE(f.stepRow("cy@h", -1), 1);
+
+    // With no chat open the step comes in from the near end.
+    QCOMPARE(f.stepRow("", 1), 0);
+    QCOMPARE(f.stepRow("", -1), 2);
+
+    // The order stepped is the one on show, not the model's.
+    f.setSortMode(ChatListFilter::Name);
+    QCOMPARE(jids(f), QStringList({"zoe@h", "bob@h", "cy@h"})); // Amy, Bob, cy@h
+    QCOMPARE(f.stepRow("zoe@h", 1), 1);
+
+    // Nothing to step to: an empty list has no row to name.
+    ChatListModel empty;
+    ChatListFilter g;
+    g.setSource(&empty);
+    QCOMPARE(g.stepRow("", 1), -1);
+    QCOMPARE(g.stepRow("zoe@h", -1), -1);
+}
+
+// A chat the search box hides is counted from as if nothing were open, not
+// from where it used to sit.
+void TestChatListFilter::steppingCountsOnlyTheRowsOnShow() {
+    ChatListModel m;
+    seed(m);
+    ChatListFilter f;
+    f.setSource(&m);
+    f.setQuery("b"); // bob@h alone
+
+    QCOMPARE(f.rowCount(), 1);
+    QCOMPARE(f.stepRow("zoe@h", 1), 0);
+    QCOMPARE(f.stepRow("zoe@h", -1), 0);
+    // One row is its own neighbour in both directions.
+    QCOMPARE(f.stepRow("bob@h", 1), 0);
+    QCOMPARE(f.stepRow("bob@h", -1), 0);
+
+    f.setQuery("nothing matches this");
+    QCOMPARE(f.stepRow("bob@h", 1), -1);
+}
+
+// A chat is opened by JID, name and whether it is a room, so the whole entry
+// is what the view needs back.
+void TestChatListFilter::entryAtHandsBackTheWholeRow() {
+    ChatListModel m;
+    m.applyList(entriesFrom(R"([
+        {"jid":"room@conf.h","name":"Room","groupchat":true,"last_activity":300},
+        {"jid":"bob@h","name":"Bob","last_activity":200}
+    ])"));
+    ChatListFilter f;
+    f.setSource(&m);
+
+    const QVariantMap room = f.entryAt(0);
+    QCOMPARE(room.value("jid").toString(), QString("room@conf.h"));
+    QCOMPARE(room.value("name").toString(), QString("Room"));
+    QVERIFY(room.value("groupchat").toBool());
+    QCOMPARE(f.entryAt(1).value("jid").toString(), QString("bob@h"));
+
+    // Off either end is empty, not a crash.
+    QVERIFY(f.entryAt(-1).isEmpty());
+    QVERIFY(f.entryAt(2).isEmpty());
 }
 
 QTEST_MAIN(TestChatListFilter)

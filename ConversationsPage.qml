@@ -60,6 +60,18 @@ Page {
         searchField.selectAll()
     }
 
+    // Ctrl+Tab's step. Asked of the filter, not the shared model: the order and
+    // the surviving rows are this window's. Scrolled to, or the mark it opens
+    // lands off screen.
+    function cycleChat(delta) {
+        const row = visibleChats.stepRow(page.currentJid, delta)
+        if (row < 0)
+            return
+        const entry = visibleChats.entryAt(row)
+        listView.positionViewAtIndex(row, ListView.Contain)
+        page.openChat(entry.jid, entry.name ?? "", entry.groupchat === true)
+    }
+
     header: PageHeader {
         // Sized by what it holds - the title row and the filter under it - so
         // neither can change height without the header following.

@@ -89,3 +89,28 @@ bool ChatListFilter::lessThan(const QModelIndex &a, const QModelIndex &b) const 
     return a.data(ChatListModel::JidRole).toString()
          < b.data(ChatListModel::JidRole).toString();
 }
+
+int ChatListFilter::rowOfJid(const QString &jid) const {
+    for (int r = 0, n = rowCount(); r < n; ++r)
+        if (index(r, 0).data(ChatListModel::JidRole).toString() == jid)
+            return r;
+    return -1;
+}
+
+// -1 when there is nowhere to go. A chat the query hides is no place in this
+// list to count from, so it counts as none open and steps in from the near end.
+int ChatListFilter::stepRow(const QString &fromJid, int delta) const {
+    const int n = rowCount();
+    if (n == 0)
+        return -1;
+    const int from = rowOfJid(fromJid);
+    if (from < 0)
+        return delta >= 0 ? 0 : n - 1;
+    return ((from + delta) % n + n) % n; // % keeps the sign of its left side
+}
+
+QVariantMap ChatListFilter::entryAt(int row) const {
+    if (row < 0 || row >= rowCount())
+        return {};
+    return index(row, 0).data(MapListModel::RawRole).toMap();
+}

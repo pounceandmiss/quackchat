@@ -257,6 +257,108 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Ctrl+Tab's step: down the list as it stands, wrapping at the foot, and
+    // the row scrolled to - a mark off screen reads as the key doing nothing.
+    void cyclingWalksTheListAndScrollsToTheRow() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        QVariantList entries;
+        for (int i = 0; i < 12; ++i)
+            entries << QVariantMap{{"jid", QString("c%1@example.com").arg(i)},
+                                   {"name", QString("Chat %1").arg(i)},
+                                   {"last_activity", 1200 - i}};
+        chats->applyList(entries);
+
+        QQuickWindow win;
+        win.resize(360, 400); // room for fewer rows than there are chats
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 12);
+        win.grabWindow(); // force the delegates to lay out and bind
+
+        QSignalSpy opened(page, SIGNAL(openChat(QString, QString, bool)));
+        // The shell's binding, by hand: it is what makes each step count from
+        // where the last landed.
+        auto cycle = [&](int delta) {
+            QVERIFY(QMetaObject::invokeMethod(page, "cycleChat",
+                                              Q_ARG(QVariant, QVariant(delta))));
+            if (!opened.isEmpty())
+                page->setProperty("currentJid", opened.last().at(0).toString());
+        };
+
+        // Nothing open: forward starts at the head of the list.
+        cycle(1);
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c0@example.com"));
+        QCOMPARE(opened.last().at(1).toString(), QString("Chat 0"));
+        QCOMPARE(opened.last().at(2).toBool(), false);
+
+        cycle(1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c1@example.com"));
+        cycle(-1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c0@example.com"));
+        // Back off the head is the foot, which a viewport this short was not
+        // showing.
+        cycle(-1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c11@example.com"));
+
+        QQuickItem *last = nullptr;
+        QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, last),
+                                  Q_ARG(int, 11));
+        QVERIFY2(last, "the row cycled to was never brought into the view");
+        const QRectF seen = itemRect(last, list);
+        QVERIFY2(seen.top() >= 0 && seen.bottom() <= list->height() + 0.5,
+                 qPrintable(QString("row 11 sits at %1..%2 of a %3 viewport")
+                                .arg(seen.top())
+                                .arg(seen.bottom())
+                                .arg(list->height())));
+
+        // And forward off the foot is the head again.
+        cycle(1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c0@example.com"));
+
+        // What the search box hides is not on the walk.
+        QQuickItem *field = findItem(win.contentItem(), "searchField");
+        QVERIFY(field);
+        field->setProperty("text", "Chat 1");
+        QTRY_COMPARE(list->property("count").toInt(), 3); // 1, 10, 11
+        cycle(1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c1@example.com"));
+        cycle(1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c10@example.com"));
+        cycle(1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c11@example.com"));
+        cycle(1);
+        QCOMPARE(opened.last().at(0).toString(), QString("c1@example.com"));
+
+        // Nothing matching is nothing to step to, and no chat is opened.
+        field->setProperty("text", "nothing matches this");
+        QTRY_COMPARE(list->property("count").toInt(), 0);
+        const int before = opened.count();
+        cycle(1);
+        QCOMPARE(opened.count(), before);
+
+        e.assertNoErrors();
+    }
+
     // A touch point carries no button, so the row's right-click handler was
     // offered every tap: on a phone the menu came up over the chat it opened.
     void aTouchTapOnARowOnlyOpensTheChat() {

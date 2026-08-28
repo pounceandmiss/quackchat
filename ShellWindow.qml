@@ -22,6 +22,14 @@ AppWindow {
     // combination, and binding the singular takes only the first of them.
     Shortcut { sequences: [StandardKey.Find]; onActivated: shell.startFind() }
 
+    // Down the conversation list and back up it. Shift+Tab arrives as Backtab,
+    // and a shortcut matches the key that arrives, so back is bound to both.
+    Shortcut { sequence: "Ctrl+Tab"; onActivated: shell.cycleChat(1) }
+    Shortcut {
+        sequences: ["Ctrl+Shift+Tab", "Ctrl+Shift+Backtab"]
+        onActivated: shell.cycleChat(-1)
+    }
+
     // Also builds the AppWindows singleton now rather than on the first
     // pop-out, so an incoming call gets a window even if nothing else has
     // touched it.

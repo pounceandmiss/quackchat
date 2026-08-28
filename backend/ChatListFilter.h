@@ -11,6 +11,7 @@
 #include <QList>
 #include <QSortFilterProxyModel>
 #include <QString>
+#include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
 class ChatListFilter : public QSortFilterProxyModel {
@@ -46,6 +47,12 @@ public:
     void setQuery(const QString &query);
     void setSortMode(SortMode mode);
 
+    // Stepping the list: the row `delta` places from `fromJid`, wrapping at
+    // either end, and the whole entry for a row. Ctrl+Tab walks what this view
+    // shows, which is the proxy's alone to say.
+    Q_INVOKABLE int stepRow(const QString &fromJid, int delta) const;
+    Q_INVOKABLE QVariantMap entryAt(int row) const;
+
 signals:
     void sourceChanged();
     void queryChanged();
@@ -62,6 +69,7 @@ private:
     // what it sorts and matches under. The source model's rule.
     QString displayName(const QModelIndex &index) const;
     void applySortMode();
+    int rowOfJid(const QString &jid) const;
 
     QString m_query;
     SortMode m_sortMode = Recent;

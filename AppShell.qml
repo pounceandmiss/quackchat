@@ -113,6 +113,12 @@ Item {
         clearChat()
     }
 
+    // Where Ctrl+Tab lands. The step is the list's: it knows its own order and
+    // what the search box left.
+    function cycleChat(delta) {
+        conversations.cycleChat(delta)
+    }
+
     // Where Ctrl+F lands: an open conversation is what you are most likely
     // looking through, and the list's own box when there is none.
     function startFind() {
