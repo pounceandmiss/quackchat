@@ -29,6 +29,23 @@
 #include "QImageAvatarEncoder.h"
 
 int main(int argc, char *argv[]) {
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+    // A stock GNOME session exports neither of these (that is a Plasma-session
+    // habit), so unset they leave Qt on its bland generic-Unix theme and the
+    // Basic controls style: a hardcoded palette with no light/dark or accent
+    // awareness. "xdgdesktopportal" instead asks the XDG Desktop Portal for
+    // Settings, which xdg-desktop-portal-gnome answers from GNOME's own
+    // preferences - unlike the "gtk3" theme (see appimage/Dockerfile, which
+    // strips it for the GTK dependency it would otherwise drag in), this links
+    // no GTK. Fusion is the one bundled QQC2 style that actually paints from
+    // QGuiApplication::palette() rather than a style-defined one, so it is what
+    // turns that palette into control colours. Set only as a default: never
+    // override an environment that already chose.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME"))
+        qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE"))
+        qputenv("QT_QUICK_CONTROLS_STYLE", "Fusion");
+#endif
     QGuiApplication app(argc, argv);
     // The basename of icons/io.github.pounceandmiss.Quack.desktop, twice over:
     // the notifier posts it as the `desktop-entry` hint, which is how a daemon

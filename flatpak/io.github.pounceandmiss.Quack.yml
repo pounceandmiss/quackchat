@@ -19,6 +19,11 @@ finish-args:
   # the app runs on, silently.
   - --talk-name=org.freedesktop.Notifications
   - --filesystem=xdg-download  # received and sent attachments
+  # The KDE runtime's own default platform theme is Plasma-flavoured, which
+  # would outrank main.cpp's fallback on a GNOME host. Force the portal-backed
+  # theme instead, so a GNOME host's own accent colour and light/dark follow
+  # through the sandbox rather than a KDE palette.
+  - --env=QT_QPA_PLATFORMTHEME=xdgdesktopportal
 
 # The archive and header are build-time only; the app links them statically.
 cleanup:
