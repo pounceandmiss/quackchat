@@ -58,9 +58,6 @@ Item {
     // message tacky could not decrypt is encrypted too - its body is the
     // placeholder, and the padlock is honest about where it came from.
     property bool encrypted: false
-    // Whether the chat this message sits in is set to encrypt, which is what
-    // decides if an unencrypted one is worth pointing out.
-    property bool chatEncrypting: false
 
     // Both already folded by the page, as `status` is: the bubble draws the
     // choices, it does not work out which ones apply.
@@ -573,34 +570,7 @@ Item {
         Rectangle {
             id: bubble
             objectName: "bubbleBody"
-            // A message in the clear is only worth remarking on while the chat
-            // is set to encrypt - the same message in a chat with encryption
-            // turned off is exactly what was asked for, and looks ordinary.
-            readonly property color base: root.outgoing ? Theme.bubbleOut : Theme.bubbleIn
-            readonly property color exposed: Qt.tint(bubble.base,
-                                                     Qt.rgba(Theme.warning.r, Theme.warning.g,
-                                                             Theme.warning.b, 0.55))
-            readonly property bool flagged: !root.encrypted && root.chatEncrypting
-            readonly property color toColor: bubble.flagged ? bubble.exposed : bubble.base
-            readonly property color fromColor: bubble.flagged ? bubble.base : bubble.exposed
-
-            // 0 while the new colour is still crossing, 1 once it has arrived.
-            property real sweep: 1
-            onFlaggedChanged: sweepAnim.restart()
-            NumberAnimation {
-                id: sweepAnim
-                target: bubble
-                property: "sweep"
-                from: 0
-                to: 1
-                duration: 420
-                easing.type: Easing.InOutCubic
-            }
-
-            // A flat fill either side of the change. The gradient belongs to
-            // the wash below and goes with it - left on the bubble it would
-            // settle as a permanent two-tone ramp rather than a colour.
-            color: sweepAnim.running ? bubble.fromColor : bubble.toColor
+            color: root.outgoing ? Theme.bubbleOut : Theme.bubbleIn
             radius: 14
             anchors.right: root.outgoing ? parent.right : undefined
             anchors.left:  root.outgoing ? undefined : parent.left
@@ -617,28 +587,6 @@ Item {
                 color: "#000000"
                 opacity: 0.06
                 z: -1
-            }
-
-            // The new colour crossing the bubble from the left, over the old
-            // one underneath. Only around while it is moving, so what is left
-            // afterwards is the flat fill and not this. Its trailing edge fades
-            // by alpha alone - fading towards a colour would tint the middle of
-            // the sweep with whatever that colour was.
-            Rectangle {
-                id: wash
-                objectName: "bubbleWash"
-                anchors.fill: parent
-                radius: parent.radius
-                visible: sweepAnim.running
-                readonly property color faded: Qt.rgba(bubble.toColor.r, bubble.toColor.g,
-                                                       bubble.toColor.b, 0)
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0; color: bubble.toColor }
-                    GradientStop { position: bubble.sweep; color: bubble.toColor }
-                    GradientStop { position: Math.min(1, bubble.sweep + 0.18); color: wash.faded }
-                    GradientStop { position: 1; color: wash.faded }
-                }
             }
 
             ColumnLayout {
@@ -818,8 +766,7 @@ Item {
                         objectName: "lockBadge"
                         Layout.alignment: Qt.AlignVCenter
                         // Nothing to badge about a row in the clear - in a room
-                        // that is every row - and the ones worth remarking on
-                        // are tinted instead.
+                        // that is every row.
                         visible: root.encrypted
                         text: "🔒"
                         font.pixelSize: 16

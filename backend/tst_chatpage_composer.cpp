@@ -14,7 +14,6 @@ private slots:
     void replyingFromTheComposerThreadsTheTarget();
     void ticksFollowBothHops();
     void padlockFollowsTheRowStamp();
-    void exposedMessagesFollowTheChatsLock();
     void composerLockIsHiddenInRooms();
     void aTouchTapOnTheLockOnlyFlipsIt();
     void resendGatingFollowsTheRow();
@@ -36,12 +35,6 @@ void TestChatPageComposer::initTestCase() {
     // come back unstamped - every other send here is encrypted by default.
     setOmemo("clear@example.com", 0);
     send("clear@example.com", "in the open");
-
-    // mixed@ holds the combination that gets remarked on: a message sent while
-    // encryption was off, in a chat that has since been set to encrypt.
-    setOmemo("mixed@example.com", 0);
-    send("mixed@example.com", "sent before the lock went on");
-    setOmemo("mixed@example.com", 1);
 
     QCOMPARE(stored("quiet@example.com"), kQuiet);
 }
@@ -256,47 +249,6 @@ void TestChatPageComposer::padlockFollowsTheRowStamp() {
     QQuickItem *openLock = findItem(clear.row(0), "lockBadge");
     QVERIFY(openLock);
     QVERIFY(!openLock->isVisible());
-
-    // A chat with encryption turned off got what it asked for, so its messages
-    // look like any others - the badge is the only difference.
-    QQuickItem *encryptedBody = findItem(encrypted.row(0), "bubbleBody");
-    QQuickItem *clearBody = findItem(clear.row(0), "bubbleBody");
-    QVERIFY(encryptedBody);
-    QVERIFY(clearBody);
-    QVERIFY(!clearBody->property("flagged").toBool());
-    QCOMPARE(clearBody->property("toColor"), encryptedBody->property("toColor"));
-}
-
-// The same cleartext message is only worth remarking on while the chat is set
-// to encrypt, so the marking follows the switch rather than the message.
-void TestChatPageComposer::exposedMessagesFollowTheChatsLock() {
-    const Chat chat = open("mixed@example.com");
-    QVERIFY(chat.feed);
-    QTRY_COMPARE(chat.count(), 1);
-    QQuickItem *body = findItem(chat.row(0), "bubbleBody");
-    QVERIFY(body);
-    QTRY_VERIFY(body->property("flagged").toBool());
-    QVERIFY(body->property("toColor") != body->property("base"));
-    // Settled after the wash has crossed it: a flat fill of the new colour,
-    // with the gradient gone. Left on the bubble it would read as a permanent
-    // two-tone ramp instead of a colour change.
-    QTRY_COMPARE(body->property("sweep").toReal(), 1.0);
-    QCOMPARE(body->property("color"), body->property("toColor"));
-    QVERIFY(!body->property("gradient").value<QObject *>());
-    QQuickItem *wash = findItem(chat.row(0), "bubbleWash");
-    QVERIFY(wash);
-    QVERIFY(!wash->property("visible").toBool());
-    // Turning the chat's padlock off makes it ordinary again, and the colour
-    // travels rather than jumping.
-    auto *lock = chat.win()->findChild<QQuickItem *>("omemoToggle");
-    QVERIFY(lock);
-    QTest::mouseClick(chat.win(), Qt::LeftButton, Qt::NoModifier,
-                      lock->mapToScene(QPointF(lock->width() / 2, lock->height() / 2)).toPoint());
-    QTRY_VERIFY(!body->property("flagged").toBool());
-    QTRY_COMPARE(body->property("toColor"), body->property("base"));
-    QTRY_COMPARE(body->property("sweep").toReal(), 1.0);
-    QCOMPARE(body->property("color"), body->property("base"));
-    QVERIFY(!wash->property("visible").toBool());
 }
 
 // A room's messages go out in the clear whatever the switch says, so it has

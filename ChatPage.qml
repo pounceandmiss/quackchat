@@ -1310,8 +1310,6 @@ Page {
                     time: Stamp.when(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)
                     encrypted: wrap.encryption === "omemo"
-                    // A room never encrypts, so nothing in one is remarkable.
-                    chatEncrypting: page.canEncrypt && page.encryptOn
                     canRetry: page.canRetry(wrap.outgoing, status)
                     canResendPlain: page.canResendPlain(wrap.outgoing, status,
                                                         wrap.encryption, wrap.failReason)
