@@ -1,0 +1,117 @@
+# Build the release artifacts that need nothing but docker, and check them.
+#
+# Android is absent on purpose: its image is ~13 GB and does not fit on a hosted
+# runner beside a build tree. The Flatpak is absent because it wants
+# flatpak-builder and a KDE runtime rather than a container, which is a separate
+# job to write.
+#
+# The AppImage is reproducible, and the sha256 recorded below is a build on a
+# different machine - the one thing tools/repro-check.sh cannot prove by itself.
+# For a given commit it should equal the sha of a local build of that commit.
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/quack-build:common
+
+jobs:
+  appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm
+          df -h /
+
+      # Tagged as the local name run.sh expects. The label rides along with the
+      # image, so run.sh sees it already matches the Dockerfile and builds
+      # nothing. If the pull fails - no image published yet - run.sh builds it,
+      # slowly but correctly.
+      #
+      # The login is not optional: a package ghcr publishes for a repository is
+      # private until someone says otherwise, and an anonymous pull of one fails
+      # the same way a missing image does - so without this the fallback path
+      # runs every time and the published image is never used.
+      - name: Pull the toolchain image
+        continue-on-error: true
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "${IMAGE,,}" && docker tag "${IMAGE,,}" quack-build:common
+
+      - name: Build
+        run: ./appimage/build.sh
+
+      - name: Record the hash
+        run: |
+          set -eu
+          f=$(echo dist/quackchat-*-x86_64.AppImage)
+          sha=$(sha256sum "$f" | cut -d' ' -f1)
+          {
+            echo "### AppImage"
+            echo
+            echo '```'
+            echo "commit  $GITHUB_SHA"
+            echo "epoch   $(git log -1 --format=%ct)"
+            echo "sha256  $sha"
+            echo '```'
+            echo
+            echo "The AppImage is reproducible: a local build of this commit should match."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The check the build cannot make about itself - that it runs somewhere
+      # with no Qt installed.
+      - name: Smoke-test on other distros
+        run: ./appimage/smoke-test.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  windows:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm
+          df -h /
+
+      # Authenticated for the same reason as the job above.
+      - name: Pull the toolchain image
+        continue-on-error: true
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "${IMAGE,,}" && docker tag "${IMAGE,,}" quack-build:common
+
+      - name: Build
+        run: ./windows/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*-win64.zip
+            dist/*-win64.exe
+          if-no-files-found: error

@@ -1,0 +1,51 @@
+# Build the toolchain image once and publish it, so the build jobs pull it
+# instead of spending twenty minutes and two gigabytes of Qt rebuilding it each
+# time. Runs only when its Dockerfile moves, or by hand.
+#
+# docker/run.sh labels every image with the sha256 of the Dockerfile it came
+# from and skips the build when that matches, so a job that pulls this image and
+# tags it quack-build:common does no docker build at all.
+name: toolchain image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - docker/common.Dockerfile
+      - docker/run.sh
+      - .github/workflows/toolchain-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  common:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # The image is ~7 GB and the runner starts with little to spare.
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm
+          df -h /
+
+      # Through run.sh rather than docker build, so the image carries the label
+      # that lets a consumer skip rebuilding it.
+      - name: Build
+        run: docker/run.sh common true
+
+      - name: Push
+        run: |
+          set -eu
+          registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/quack-build
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag quack-build:common "$registry:common"
+          docker push "$registry:common"
+          echo "pushed $registry:common" >> "$GITHUB_STEP_SUMMARY"
