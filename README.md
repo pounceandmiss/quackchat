@@ -17,6 +17,10 @@ its own.
 
 ## What you need
 
+Two different answers, depending on what you are here for.
+
+**To build and run it**, on this machine, against what the distro gives you:
+
 * Qt 6.8 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
   QuickDialogs2, Test and LinguistTools. On Linux, Qt6 DBus carries the desktop
   notifications if it is there.
@@ -26,7 +30,14 @@ its own.
   at pinned versions, which costs a couple of gigabytes and a long first
   build. Later builds reuse it.
 
-`ccache` and `mold` are picked up when installed.
+**To build the release artifacts** - the AppImage, the Windows package, the apk:
+just `docker`, plus `flatpak-builder` for the Flatpak. No Qt kit, no MinGW, no
+Android SDK or NDK, no JDK, and nothing to configure; each target builds in a
+pinned container. See [Build containers](#build-containers).
+
+`ccache` and `mold` are picked up when installed. `-DQUACK_FAST_LINKER=OFF`
+leaves mold alone, which is what the release builds do so that their output does
+not depend on having it.
 
 ## Building
 
@@ -53,10 +64,55 @@ Debug builds compile QML to bytecode and Release builds compile it ahead of
 time to C++, trading build time for startup and binding speed. Override with
 `-DQUACK_QML_AOT=ON|OFF`.
 
+## Build containers
+
+The packaging targets build in pinned containers rather than against whatever
+the host happens to have, so the artifacts do not depend on this machine and
+anyone with docker can produce them.
+
+    docker/run.sh <profile> <command...>
+
+builds the image named by `<profile>` and runs the command with the checkout
+bind-mounted at `/src` as the invoking user, so nothing lands root-owned. There
+are two:
+
+    common    the AppImage and the Windows cross-build
+    android   the same, plus an NDK and an SDK - derived from common
+
+The AppImage and the Windows build share one image because they share nearly
+everything: the distro, the compiler, tacky's build tools, the native tcl 9.0 and
+Qt's Linux kit, which a cross build needs anyway to run moc and rcc as host
+tools. Splitting them duplicated all of that for the sake of a MinGW toolchain
+and wine.
+
+Android stays separate, and derives from `common` with `FROM`, because its NDK
+alone is ~5 GB unpacked - nobody building an AppImage should have to pull it.
+`docker/run.sh android` builds `common` first when it needs to.
+
+The per-target scripts below call it, so `./appimage/build.sh` is the normal way
+in. `docker/run.sh common bash` gives an interactive shell in the same toolchain,
+which is the way to work out why a build behaves differently there than here.
+
 ## Windows
 
-Cross-built from Linux against a MinGW Qt kit, no Windows host is involved.
-Windows installer is included.
+Cross-built from Linux, with no Windows host anywhere in the picture. Docker is
+the only thing this needs:
+
+    ./windows/build.sh
+
+leaving `dist/quackchat-<version>-win64.zip` and the NSIS installer beside it.
+Both come from one staged tree: the installer writes under Program Files and so
+asks for administrator, and the ZIP is what someone without it unpacks and runs
+in place. `--no-installer` skips NSIS; `--clean` drops the app's half of
+`build-win/` and keeps tacky's dependencies.
+
+NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
+so `docker/common.Dockerfile` builds it from source, along with the scons that
+builds it. That is more pinning than a distro package gives, not less: the
+compiler and the prebuilt stubs are each fixed by checksum.
+
+To build against the host's own toolchain instead, which wants a MinGW Qt kit,
+`wine`, `makensis` and a native tclsh 9.0 installed:
 
     make -C third_party/tacky win-lib
     cmake -B build-win -G Ninja \
@@ -70,7 +126,30 @@ Windows installer is included.
 
 ## Android
 
-tacky's archive is cross-compiled in Docker, so Docker is needed here:
+Docker is the only thing the host needs - no SDK, no NDK, no JDK, no Qt kit:
+
+    ./android/build.sh
+
+leaves `dist/quackchat-<version>-unsigned.apk`. Android installs nothing
+unsigned, so that file is an input to signing rather than something to hand out;
+`release.sh` signs it with the key named in `release.env`. `--debug` builds the
+debug-signed apk instead, which does install - for testing only, since nothing
+the debug key signed can ever be published.
+
+Signing happens in the container too, when `QUACK_ANDROID_KEYSTORE` and
+`QUACK_ANDROID_KEY_ALIAS` are set - `release.sh` reads them from `release.env`.
+The keystore is bind-mounted read-only, never copied into the checkout or into
+an image, and the password is passed by variable name rather than value so it
+stays out of the process table. Left unset, `apksigner` prompts.
+
+The image carries its own NDK, so tacky's Android targets are driven with
+`ANDROID_DOCKER=0`; left at the default they would start a second container from
+inside this one. `docker/android.Dockerfile` pins the NDK, the JDK and the
+command-line tools by checksum, but what `sdkmanager` fetches cannot be pinned -
+those packages publish none - and the versions it installs have to satisfy the
+Android Gradle Plugin that Qt chose, not one we pick.
+
+To build against a host toolchain instead:
 
     make -C third_party/tacky android-lib
     <qt>/android_arm64_v8a/bin/qt-cmake -S . -B build-android -G Ninja \
@@ -106,6 +185,14 @@ flatpak-builder cannot read a submodule, so it builds tacky from the commit
 pinned in the manifest instead. tacky and its dependencies are fetched from
 pinned sources and built with no network of their own.
 
+That is the form to use while working on the app - it installs what it builds.
+The release bundle has its own script, which checks both pins first and dates the
+build by the commit rather than by the manifest's mtime:
+
+    ./flatpak/build.sh
+
+leaving `dist/quackchat-<version>-x86_64.flatpak`.
+
 ## AppImage
 
 A single portable binary needing no Qt on the machine that runs it. Docker is
@@ -126,6 +213,25 @@ compile, which dominates the build.
 
 runs it on clean Ubuntu and Debian containers under a virtual X server, the only
 real check that it works without Qt installed.
+
+## Making a release
+
+    ./release.sh [--check] [<version>] [target...]
+
+builds every artifact into `dist/` and writes a `SHA256SUMS` over them. Targets
+are `windows`, `android`, `flatpak` and `appimage`; all four run when none are
+named. Nothing is uploaded - the release page is a separate, deliberate step.
+
+`<version>` is checked rather than applied: the version lives in
+`project(quack_qml VERSION)`, which is what CPack, the Android version code and
+the AppImage all read, so naming it here only asserts that the bump happened.
+
+Everything the selected targets need is checked before the first one builds -
+`--check` runs just that and stops, which is how to find out whether this
+machine can make a release without waiting for one. Three of the four targets
+need only docker; the Flatpak needs `flatpak-builder`. The one thing that cannot
+live in an image is the Android signing key, which comes from `release.env`,
+made by copying `release.env.sample`.
 
 ## Moving the tacky pin
 

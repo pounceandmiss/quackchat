@@ -11,3 +11,6 @@ CMakeUserPresets.json
 .qtcreator/
 .cache/
 aqtinstall.log
+# the Android signing key, read by release.sh
+release.env
+build-deps/

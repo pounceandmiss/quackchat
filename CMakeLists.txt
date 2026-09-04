@@ -18,7 +18,15 @@ endif()
 # The tests link one binary per suite, which no compiler cache covers, so the
 # linker is what a rebuild waits on. mold is ELF-only and the NDK already hands
 # us lld, so this is the desktop Linux kit alone; mingw and macOS keep theirs.
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+#
+# An option rather than plain detection, because which linker ran is visible in
+# the binary: detect it and two machines building one commit differ according to
+# what each has installed. Day-to-day builds want the speed and take the
+# default; the release builds turn it off so their output depends on the
+# checkout alone (appimage/in-image.sh, the Flatpak manifest).
+option(QUACK_FAST_LINKER "Link with mold when it is available" ON)
+if(QUACK_FAST_LINKER
+   AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     find_program(MOLD_PROGRAM mold)
     if(MOLD_PROGRAM)
@@ -595,13 +603,32 @@ if(WIN32 AND NOT _qt_core_type STREQUAL "STATIC_LIBRARY")
     # own DLLs resolve fine against a runtime later than the one they were built
     # against. To re-check the staged tree after a toolchain change, diff
     # `objdump -p` imports against exports for every binary in it.
-    set(_mingw_runtime_dir "${MINGW_SYSROOT}/bin")
+    # Where these sit differs by toolchain, and neither layout finds the other's:
+    #
+    #   Debian  gcc's own install dir, per threads model (12-posix beside
+    #           12-win32), with libwinpthread off in the sysroot's lib/. The
+    #           compiler knows all of it, so -print-file-name answers - and it
+    #           has to be the compiler that answers, because shipping the win32
+    #           copies to a -posix build would be quietly wrong.
+    #   Arch    the sysroot's bin/, which is not on any library search path, so
+    #           -print-file-name finds nothing and hands the name back unchanged.
+    #
+    # Hence both, in that order: ask the compiler, and fall back to the sysroot.
     foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libssp-0.dll)
-        if(EXISTS "${_mingw_runtime_dir}/${_dll}")
-            install(FILES "${_mingw_runtime_dir}/${_dll}" DESTINATION .)
+        execute_process(
+            COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=${_dll}
+            OUTPUT_VARIABLE _dll_path
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET)
+        if(NOT IS_ABSOLUTE "${_dll_path}")
+            set(_dll_path "${MINGW_SYSROOT}/bin/${_dll}")
+        endif()
+        if(EXISTS "${_dll_path}")
+            install(FILES "${_dll_path}" DESTINATION .)
         else()
-            message(WARNING "${_dll} not found in ${_mingw_runtime_dir}; the "
-                "package will carry Qt's copy, which the exe may outrun.")
+            message(WARNING "cannot find ${_dll} by asking ${CMAKE_CXX_COMPILER} "
+                "or under ${MINGW_SYSROOT}/bin; the package will carry Qt's "
+                "copy, which the exe may outrun.")
         endif()
     endforeach()
 endif()

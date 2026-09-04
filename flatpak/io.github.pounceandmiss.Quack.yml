@@ -1,5 +1,13 @@
 # Qt comes from the KDE runtime, so only tacky and the app itself are built
 # here.
+#
+# runtime-version is a branch, not a version: org.kde.Sdk//6.11 gets updates, and
+# a manifest has nowhere to name the commit it was built against. So the commit
+# is recorded outside the manifest, in flatpak/runtime.pin, and
+# flatpak/check-runtime-pin.sh holds the installed sdk to it - the same
+# arrangement as check-pin.sh and the tacky commit, and for the same reason: the
+# one input this build does not compile itself should not be able to move without
+# leaving a trace. flatpak/build.sh checks the pin before it builds.
 
 app-id: io.github.pounceandmiss.Quack
 runtime: org.kde.Platform
@@ -136,9 +144,25 @@ modules:
 
   - name: quack
     buildsystem: cmake-ninja
+    build-options:
+      env:
+        # QHash seeds itself randomly per process, and moc, rcc and
+        # qmltyperegistrar all walk hashed containers on their way to generating
+        # code. SOURCE_DATE_EPOCH is already in the environment here -
+        # flatpak/build.sh passes --override-source-date-epoch - and rcc reads
+        # it from there.
+        QT_HASH_SEED: '0'
+        TZ: UTC
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
       - -DTACKY_ROOT=/app/lib/tacky
+      # Nothing here runs the tests, and QUACK_BUILD_TESTS defaults on for a
+      # native build, so without this `ninja` links thirty-odd test binaries
+      # that are then thrown away with the build dir.
+      - -DQUACK_BUILD_TESTS=OFF
+      # Which linker ran shows up in the binary, so it must not depend on
+      # whether the sdk happens to carry mold. See CMakeLists.txt.
+      - -DQUACK_FAST_LINKER=OFF
     sources:
       # The working tree, until there is a repository to name instead.
       - type: dir
@@ -149,7 +173,11 @@ modules:
           - .git
           - build
           - build-android
+          - build-appimage
           - build-win
+          # This release's own artifacts and the last one's, which have no
+          # business being copied into the build of the next.
+          - dist
           - flatpak
           # The submodule, whose own build tree runs to gigabytes. tacky is
           # built by the module above from its pinned sources instead.
