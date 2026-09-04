@@ -233,6 +233,33 @@ need only docker; the Flatpak needs `flatpak-builder`. The one thing that cannot
 live in an image is the Android signing key, which comes from `release.env`,
 made by copying `release.env.sample`.
 
+## Reproducible builds
+
+The AppImage is reproducible: the same commit gives the same bytes, so a binary
+from a release page is one anybody can rebuild and check against the source. The
+clock and the checkout's file mtimes are replaced by the commit date, the uid and
+the linker are fixed rather than inherited from the build host, and the whole
+toolchain is pinned by digest and checksum in `docker/common.Dockerfile`.
+
+Checked from a fresh clone rather than a rebuild in place: a rebuild reuses its
+build tree and can agree with itself for reasons that would not survive
+somebody else's checkout.
+
+    tools/repro-check.sh
+
+builds a second copy from a fresh clone of HEAD and compares. `diffoscope` is
+worth having installed before a mismatch turns up. Both builds run on one
+machine, so it catches the clock, the path and the mtimes; only a rebuild
+somewhere else proves the rest.
+
+The other three are not held to it. All of them now build from the same pinned
+toolchain, so the ingredients are fixed, but nothing checks that their output
+settles: `tools/repro-check.sh flatpak` would settle the Flatpak, whose remaining
+unknown is the KDE sdk it builds against - a binary runtime nobody here compiles,
+recorded in `flatpak/runtime.pin` rather than built. Windows and Android have no
+such check at all, and the apk in particular goes through gradle, which would
+have to be made deterministic first.
+
 ## Moving the tacky pin
 
     git -C third_party/tacky fetch origin
