@@ -59,30 +59,32 @@ if [ ! -e "$project/third_party/tacky/embed/tacky.h" ]; then
     exit 1
 fi
 
-# The common image first, when this profile derives from it: docker resolves a
-# FROM against images it already has and will not go and build that itself.
-#
-# Only when it is missing or its Dockerfile has moved. Docker stamps a fresh
-# config on every export, so rebuilding common gives it a new digest even when
-# every layer was cached, and the derived image's FROM resolves to that digest -
-# so rebuilding it unconditionally invalidates everything downstream every run,
-# `aqt install-qt` and its two gigabytes included. The Dockerfile's hash rides
-# along as a label so the check needs nothing kept outside docker.
+# Build an image, unless the one already here is the one its Dockerfile
+# describes. The condition matters: docker stamps a fresh config on every export,
+# so rebuilding gives an image a new digest even when every layer was cached, and
+# a derived image's FROM resolves to that digest - so rebuilding unconditionally
+# invalidates everything below it every run, `aqt install-qt` and its two
+# gigabytes included. The Dockerfile's hash rides along as a label, so
+# the check needs nothing kept outside docker, and a runner that pulled a
+# prebuilt image and tagged it skips the build entirely.
 #
 # Build chatter to stderr, leaving stdout to the build's own progress.
+build_image() {
+    local tag=$1 file=$2 want have
+    want=$(sha256sum "$file" | cut -d' ' -f1)
+    have=$(docker image inspect -f '{{index .Config.Labels "quack.dockerfile"}}' \
+        "$tag" 2>/dev/null || true)
+    [ "$want" = "$have" ] && return 0
+    DOCKER_BUILDKIT=1 docker build -t "$tag" \
+        --label "quack.dockerfile=$want" -f "$file" "$here" >&2
+}
+
+# The common image first, when this profile derives from it: docker resolves a
+# FROM against images it already has and will not go and build that itself.
 if grep -q '^FROM quack-build:common' "$dockerfile"; then
-    common_sha=$(sha256sum "$here/common.Dockerfile" | cut -d' ' -f1)
-    common_had=$(docker image inspect \
-        -f '{{index .Config.Labels "quack.common.dockerfile"}}' \
-        quack-build:common 2>/dev/null || true)
-    if [ "$common_had" != "$common_sha" ]; then
-        DOCKER_BUILDKIT=1 docker build -t quack-build:common \
-            --label "quack.common.dockerfile=$common_sha" \
-            -f "$here/common.Dockerfile" "$here" >&2
-    fi
+    build_image quack-build:common "$here/common.Dockerfile"
 fi
-DOCKER_BUILDKIT=1 docker build -t "quack-build:$profile" \
-    -f "$dockerfile" "$here" >&2
+build_image "quack-build:$profile" "$dockerfile"
 
 # -e NAME with no value passes the host's through. Names only: a value on the
 # command line is readable from /proc for as long as docker runs, and one of
