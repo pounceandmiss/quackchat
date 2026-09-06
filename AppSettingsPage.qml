@@ -261,6 +261,111 @@ Page {
                 }
             }
 
+            // Nothing here takes effect now: both actions only request a
+            // migration, which tacky runs at the next startup before any
+            // account connects. StorageGate collects the passphrase there.
+            Card {
+                id: storageCard
+                objectName: "storageCard"
+
+                readonly property string status: App.storage.status
+                readonly property bool pending: storageCard.status.startsWith("pending-")
+
+                SectionTitle { text: qsTr("Local storage") }
+
+                Text {
+                    objectName: "storageStatus"
+                    Layout.fillWidth: true
+                    text: {
+                        // Not yet answered, which is not an unencrypted store.
+                        if (storageCard.status === "")
+                            return qsTr("Checking…")
+                        if (storageCard.status === "plaintext"
+                                || storageCard.status === "pending-encrypt")
+                            return qsTr("Messages and accounts on this device are not encrypted.")
+                        return qsTr("Messages and accounts on this device are encrypted.")
+                    }
+                    color: Theme.textPrimary
+                    font.pixelSize: 14
+                    wrapMode: Text.WordWrap
+                }
+
+                Caption {
+                    objectName: "storageDetail"
+                    Layout.fillWidth: true
+                    text: {
+                        switch (storageCard.status) {
+                        case "plaintext":
+                            return qsTr("Encrypting sets a passphrase you will be asked for every time Quack starts. There is no way to recover the data if you forget it. Takes effect the next time Quack starts.")
+                        case "unlocked":
+                            return qsTr("Removing encryption writes everything back out as plaintext. Takes effect the next time Quack starts.")
+                        case "pending-encrypt":
+                            return qsTr("Encryption is set to be enabled the next time Quack starts.")
+                        case "pending-decrypt":
+                            return qsTr("Removing encryption is set to happen the next time Quack starts.")
+                        default:
+                            return ""
+                        }
+                    }
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    objectName: "storageError"
+                    Layout.fillWidth: true
+                    visible: App.storage.error !== ""
+                    text: App.storage.error
+                    color: Theme.negative
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                }
+
+                Button {
+                    id: storageAction
+                    objectName: "storageActionButton"
+                    // Nothing to offer until the status is known, and a locked
+                    // store never reaches this page - the gate is in front of
+                    // it.
+                    visible: storageCard.status !== ""
+                             && storageCard.status !== "locked"
+                    enabled: !App.storage.busy
+                    flat: true
+                    padding: 0
+                    text: {
+                        switch (storageCard.status) {
+                        case "plaintext":
+                            return qsTr("Encrypt local storage…")
+                        case "unlocked":
+                            return qsTr("Remove encryption…")
+                        case "pending-encrypt":
+                            return qsTr("Cancel pending encryption")
+                        case "pending-decrypt":
+                            return qsTr("Cancel pending removal")
+                        default:
+                            return ""
+                        }
+                    }
+                    onClicked: {
+                        if (storageCard.pending)
+                            App.storage.cancelPending()
+                        else if (storageCard.status === "plaintext")
+                            storageConfirm.ask(
+                                "encrypt",
+                                qsTr("You will be asked to set a passphrase the next time Quack starts. There is no way to recover your data if you forget it. Continue?"))
+                        else
+                            storageConfirm.ask(
+                                "decrypt",
+                                qsTr("Local storage will be written back out as plaintext the next time Quack starts. Continue?"))
+                    }
+                    contentItem: Text {
+                        text: storageAction.text
+                        color: Theme.accent
+                        font.pixelSize: 14
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+            }
+
             Card {
                 SectionTitle { text: qsTr("Diagnostics") }
 
@@ -393,6 +498,36 @@ Page {
             }
 
             Item { Layout.preferredHeight: 4 }
+        }
+    }
+
+    // Both storage actions are worth asking about twice: one costs the data if
+    // the passphrase is lost, the other gives up the protection. `subject`
+    // carries which one, the way the other pages' shared confirmations do.
+    ConfirmDialog {
+        id: storageConfirm
+        objectName: "storageConfirm"
+        // Read off the page, not off the dialog. SheetDialog's own
+        // `parent: Overlay.overlay` asks the dialog which window it is in, and
+        // a Popup only knows that from the parent being assigned - so with
+        // Preferences in a window of its own the answer came back as the
+        // shell's overlay and the question appeared over the wrong window. The
+        // page is an item and always knows.
+        parent: page.Overlay.overlay
+        title: subject === "encrypt" ? qsTr("Encrypt local storage")
+                                     : qsTr("Remove encryption")
+
+        function ask(direction, text) {
+            subject = direction
+            message = text
+            open()
+        }
+
+        onAccepted: {
+            if (storageConfirm.subject === "encrypt")
+                App.storage.requestEncrypt()
+            else
+                App.storage.requestDecrypt()
         }
     }
 }

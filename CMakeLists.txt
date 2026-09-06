@@ -232,6 +232,7 @@ qt_add_qml_module(quack
         JoinRoomSheet.qml
         TextPromptDialog.qml
         ConfirmDialog.qml
+        StorageGate.qml
         MessageHits.qml
         SectionLabel.qml
         ThinScrollBar.qml
@@ -462,7 +463,7 @@ set_tests_properties(tst_avatarencoder PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 # One suite per area of the app, over backend/QmlTestSupport.h.
 foreach(t tst_qmlload_shell tst_qmlload_search tst_qmlload_transfers
           tst_qmlload_settings tst_qmlload_muc tst_qmlload_chatlist
-          tst_qmlload_components)
+          tst_qmlload_components tst_qmlload_storage)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE
         quack Qt6::Test Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)

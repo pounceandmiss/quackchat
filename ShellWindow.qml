@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quack
 
 // Both the primary window (Main.qml) and what "New window" spawns, so
@@ -50,6 +51,12 @@ AppWindow {
         id: shell
         anchors.fill: parent
     }
+
+    // Covers the shell until local storage is unlocked or a requested migration
+    // has run; nothing behind it works until then. The overlay is read off the
+    // shell rather than off the dialog, so a second window's gate cannot land
+    // on the first window - see the note in AppSettingsPage.
+    StorageGate { parent: shell.Overlay.overlay }
 
     edgeToEdge: BackendNotice {}
 }
