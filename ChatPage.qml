@@ -922,6 +922,17 @@ Page {
                 Layout.fillWidth: true
                 placeholderText: qsTr("Search this chat")
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+                // As in the conversation list: the glyph is what says "search"
+                // once the frame round the field is a quiet one.
+                leftPadding: chatSearchGlyph.x + chatSearchGlyph.width + 6
+                Glyph {
+                    id: chatSearchGlyph
+                    x: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    path: Icons.search
+                    color: Theme.textDim
+                    size: 16
+                }
                 onTextChanged: {
                     if (searchInput.text === "")
                         page.dropHits()

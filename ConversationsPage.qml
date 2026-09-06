@@ -164,10 +164,22 @@ Page {
                 placeholderText: qsTr("Search chats and messages")
                 enabled: page.account !== ""
                 inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-                // Room for the button overlaid on the right; the near side is
-                // whatever the style pads by, so the far side matches it.
+                // Room for the glyph overlaid on the left and the button
+                // overlaid on the right; with no button there, the far side
+                // matches the near one.
+                leftPadding: searchGlyph.x + searchGlyph.width + 6
                 rightPadding: clearSearch.visible ? clearSearch.width + 6
                                                   : leftPadding
+                // Says what the field is for, now that its frame is a quiet
+                // one; it also balances the clear button across from it.
+                Glyph {
+                    id: searchGlyph
+                    x: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    path: Icons.search
+                    color: Theme.textDim
+                    size: 16
+                }
                 IconButton {
                     id: clearSearch
                     objectName: "clearSearchButton"
