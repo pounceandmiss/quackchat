@@ -271,6 +271,47 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Controls the app has not drawn itself - the search entry among them - are
+    // drawn by the style out of the window's palette. Left at the system's,
+    // that entry came out in the desktop's colours in the middle of a themed
+    // app. The field's own palette is what is checked rather than the colours
+    // its background ended up with: whether a style reads a role is the style's
+    // business (Fusion builds the whole field out of them, Material paints from
+    // its attached properties instead), while what this window owes every one
+    // of them is the theme.
+    void theWindowsPaletteReachesTheSearchEntry() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *theme = e.singletonInstance<QObject *>("Quack", "Theme");
+        QVERIFY(theme);
+        seedTwoAccounts(app); // the entry is disabled until there is an account
+
+        QQmlComponent comp(&e, "Quack", "ShellWindow");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> holder(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"}}));
+        auto *win = qobject_cast<QQuickWindow *>(holder.data());
+        QVERIFY(win);
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem *field = findItem(win->contentItem(), "searchField");
+        QVERIFY(field);
+        QVERIFY(field->property("enabled").toBool());
+        auto *pal = field->property("palette").value<QObject *>();
+        QVERIFY(pal);
+        QCOMPARE(pal->property("base").value<QColor>(),
+                 theme->property("field").value<QColor>());
+        QCOMPARE(pal->property("text").value<QColor>(),
+                 theme->property("textPrimary").value<QColor>());
+        QCOMPARE(pal->property("placeholderText").value<QColor>(),
+                 theme->property("textDim").value<QColor>());
+        QCOMPARE(pal->property("highlight").value<QColor>(),
+                 theme->property("accent").value<QColor>());
+
+        e.assertNoErrors();
+    }
+
     // Call windows are never asked for: they follow a CallsModel row, with the
     // roles arriving as the delegate's required properties. This is the part
     // that no C++ test can reach, so drive canned events through the real
