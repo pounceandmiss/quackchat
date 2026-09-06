@@ -4,8 +4,10 @@
 //
 // Every value is a string and an unset key reads as an empty one, so tacky's
 // own defaults are repeated here, as they are in the Tk client's setting menu
-// (`variable autofetchVar "everyone"`). A control showing what is in force
-// cannot show "" for a setting quietly behaving as `everyone`.
+// (`variable autofetchVar "contacts"`). A control showing what is in force
+// cannot show "" for a setting quietly behaving as `contacts`. They are tacky's
+// to change, so each one names where it comes from: this is `file.tcl`'s
+// AUTOFETCH_DEFAULT.
 #ifndef APPSETTINGS_H
 #define APPSETTINGS_H
 
@@ -80,7 +82,7 @@ private:
 
     TackyBackend *m_backend = nullptr;
     // tacky's own defaults, in force until a stored value replaces them.
-    QString m_autofetch = QStringLiteral("everyone");
+    QString m_autofetch = QStringLiteral("contacts");
     qlonglong m_autofetchMax = 5242880;
     bool m_logToFile = false;
     QString m_logLevel = QStringLiteral("warning");

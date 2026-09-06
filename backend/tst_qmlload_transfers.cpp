@@ -419,14 +419,14 @@ private slots:
 
         // Nothing stored yet, so the dots show the defaults tacky is applying.
         QVERIFY(option("autofetch_everyone"));
-        QVERIFY(selected("autofetch_everyone"));
-        QVERIFY(!selected("autofetch_contacts"));
-        QVERIFY(selected("autofetchMax_5242880"));
-
-        QVERIFY(QMetaObject::invokeMethod(option("autofetch_contacts"), "clicked"));
-        QCOMPARE(app->settings()->attachmentAutofetch(), QString("contacts"));
         QVERIFY(selected("autofetch_contacts"));
         QVERIFY(!selected("autofetch_everyone"));
+        QVERIFY(selected("autofetchMax_5242880"));
+
+        QVERIFY(QMetaObject::invokeMethod(option("autofetch_everyone"), "clicked"));
+        QCOMPARE(app->settings()->attachmentAutofetch(), QString("everyone"));
+        QVERIFY(selected("autofetch_everyone"));
+        QVERIFY(!selected("autofetch_contacts"));
 
         // No cap is a cap of 0, which is picked like any other value.
         QVERIFY(QMetaObject::invokeMethod(option("autofetchMax_0"), "clicked"));

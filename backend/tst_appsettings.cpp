@@ -47,10 +47,10 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
 }
 
 // The store holds nothing until something is written, and "" is not a policy
-// the backend has: unset, it is behaving as `everyone`.
+// the backend has: unset, it is behaving as `contacts`.
 void TestAppSettings::unsetKeysReadAsTackysOwnDefaults() {
     AppSettings s;
-    QCOMPARE(s.attachmentAutofetch(), QString("everyone"));
+    QCOMPARE(s.attachmentAutofetch(), QString("contacts"));
     QCOMPARE(s.attachmentAutofetchMax(), 5242880LL);
 
     QSignalSpy changed(&s, &AppSettings::attachmentAutofetchChanged);
@@ -61,7 +61,7 @@ void TestAppSettings::unsetKeysReadAsTackysOwnDefaults() {
     s.refresh(); // no backend, so no tokens are handed out
     feed(s, R"(["event","setting","Changed",
         {"key":"attachment_autofetch","value":""}])");
-    QCOMPARE(s.attachmentAutofetch(), QString("everyone"));
+    QCOMPARE(s.attachmentAutofetch(), QString("contacts"));
     QCOMPARE(changed.count(), 0);
 }
 
@@ -95,13 +95,13 @@ void TestAppSettings::changedEventsAreGlobal() {
 
     // No acc on the event: these belong to the app, not to an account.
     feed(s, R"(["event","setting","Changed",
-        {"key":"attachment_autofetch","value":"contacts"}])");
-    QCOMPARE(s.attachmentAutofetch(), QString("contacts"));
+        {"key":"attachment_autofetch","value":"never"}])");
+    QCOMPARE(s.attachmentAutofetch(), QString("never"));
     QCOMPARE(policy.count(), 1);
 
     // Repeating a value must not churn the bindings behind the ticks.
     feed(s, R"(["event","setting","Changed",
-        {"key":"attachment_autofetch","value":"contacts"}])");
+        {"key":"attachment_autofetch","value":"never"}])");
     QCOMPARE(policy.count(), 1);
 
     // 0 is a real cap - no cap at all - not an unwritten key.
