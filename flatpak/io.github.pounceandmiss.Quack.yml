@@ -51,7 +51,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: fe32235251d0e79fe21a559a8aeea19f59b32c84
+        commit: 6585053415e065cd2d8a1479d23e533f9a713dfb
 
       # zippy's pins, generated and replaced wholesale rather than edited.
       # After a bump, in a tacky checkout:
@@ -115,16 +115,24 @@ modules:
         dest: build/deps/git/rtc-ma-07442896dce38ccc150c5b396bbd6b39cbcf3545
       - type: git
         url: https://github.com/pounceandmiss/picomemo-tcl.git
-        commit: 9523cb71d85510f61f342c84b1fc8176aff8797f
-        dest: build/deps/git/picomemo-tcl-9523cb71d85510f61f342c84b1fc8176aff8797f
+        commit: 254ce9899878a159a8a5bcce575b6ab7437177b5
+        dest: build/deps/git/picomemo-tcl-254ce9899878a159a8a5bcce575b6ab7437177b5
       - type: git
         url: https://github.com/pounceandmiss/tclwuffs.git
-        commit: ddd4721499e2a2ad5f6ee0568c816591fbaf7e1b
-        dest: build/deps/git/tclwuffs-ddd4721499e2a2ad5f6ee0568c816591fbaf7e1b
+        commit: d83096c91137102062a95adb431865b9b4ce9017
+        dest: build/deps/git/tclwuffs-d83096c91137102062a95adb431865b9b4ce9017
       - type: git
         url: https://github.com/petasis/tkdnd.git
         commit: 6efca37a22b93b2336dc973f2b4a9ba1e3feceaf
         dest: build/deps/git/tkdnd-6efca37a22b93b2336dc973f2b4a9ba1e3feceaf
+      - type: git
+        url: https://github.com/sqlcipher/sqlcipher.git
+        commit: 63697beb0fafcb61faa7a3e6fd267036548ab11b
+        dest: build/deps/git/sqlcipher-63697beb0fafcb61faa7a3e6fd267036548ab11b
+      - type: git
+        url: https://github.com/libtom/libtomcrypt.git
+        commit: 7e7eb695d581782f04b24dc444cbfde86af59853
+        dest: build/deps/git/libtomcrypt-7e7eb695d581782f04b24dc444cbfde86af59853
 
   - name: quack
     buildsystem: cmake-ninja
