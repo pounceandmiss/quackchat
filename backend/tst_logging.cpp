@@ -35,6 +35,22 @@ static QVariantList logCalls(const QSignalSpy &sent, const char *method) {
     return out;
 }
 
+// A backend that is up *and* past its storage gate, which is when the log
+// settings can be pushed at it: while local storage is locked, tacky has
+// installed no `log` module, and these are notifies, whose error has no token
+// to land on.
+//
+// Tokens go out in order, so a throwaway request names the one the refresh is
+// about to get - the connect sets every other model asking too, so counting
+// frames would not.
+static void openBackend(AppController &app) {
+    emit app.backend()->connected();
+    const int probe = app.backend()->request(QStringLiteral("storage"),
+                                             QStringLiteral("status"));
+    app.storage()->refresh();
+    app.storage()->handleResult(probe + 1, QStringLiteral("plaintext"));
+}
+
 // Feed the model the stored value the way the backend announces one.
 static void store(AppSettings *settings, const QString &key,
                   const QString &value) {
@@ -92,7 +108,7 @@ void TestLogging::theToggleReachesTheBackend() {
     AppController app;
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
-    emit app.backend()->connected();
+    openBackend(app);
     QCOMPARE(logCalls(sent, "setenabled").size(), 1);
     QCOMPARE(logCalls(sent, "setenabled").first().toMap().value("enabled").toBool(),
              false);
@@ -111,7 +127,7 @@ void TestLogging::theLevelReachesTheBackend() {
     AppController app;
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
-    emit app.backend()->connected();
+    openBackend(app);
     QCOMPARE(logCalls(sent, "setlevel").size(), 1);
     // tacky's own default, until something stored says otherwise.
     QCOMPARE(logCalls(sent, "setlevel").first().toMap().value("level").toString(),
@@ -130,7 +146,7 @@ void TestLogging::theWebrtcSwitchBecomesANativeLevel() {
     AppController app;
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
-    emit app.backend()->connected();
+    openBackend(app);
     QCOMPARE(
         logCalls(sent, "setnativelevel").first().toMap().value("level").toString(),
         QString("none"));
@@ -152,7 +168,7 @@ void TestLogging::eachDebugFlagOwnsOnlyItsOwnSetting() {
     app.setDebugArgs({QStringLiteral("debug"), {}, {}, {}});
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
-    emit app.backend()->connected();
+    openBackend(app);
     QCOMPARE(logCalls(sent, "setlevel").size(), 0);
     QCOMPARE(logCalls(sent, "setenabled").size(), 1);
     QCOMPARE(logCalls(sent, "setnativelevel").size(), 1);
@@ -160,7 +176,7 @@ void TestLogging::eachDebugFlagOwnsOnlyItsOwnSetting() {
     AppController native;
     native.setDebugArgs({{}, {}, QStringLiteral("info"), {}});
     QSignalSpy nativeSent(native.backend(), &TackyBackend::sent);
-    emit native.backend()->connected();
+    openBackend(native);
     QCOMPARE(logCalls(nativeSent, "setnativelevel").size(), 0);
     QCOMPARE(logCalls(nativeSent, "setlevel").size(), 1);
 }
@@ -172,7 +188,7 @@ void TestLogging::anExplicitDebugFileOwnsTheSink() {
     app.setDebugArgs({{}, QStringLiteral("/tmp/quack-test.log"), {}, {}});
     QSignalSpy sent(app.backend(), &TackyBackend::sent);
 
-    emit app.backend()->connected();
+    openBackend(app);
     store(app.settings(), QStringLiteral("log_to_file"), QStringLiteral("1"));
     QCOMPARE(logCalls(sent, "setenabled").size(), 0);
 }

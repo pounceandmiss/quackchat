@@ -22,6 +22,7 @@
 #include "ChatListModel.h"
 #include "ChatSession.h"
 #include "NotificationController.h"
+#include "StorageController.h"
 #include "TackyBackend.h"
 
 class AppController : public QObject {
@@ -38,6 +39,10 @@ class AppController : public QObject {
     // The preferences that are the app's rather than an account's; tacky keeps
     // them in one store with no acc on it.
     Q_PROPERTY(AppSettings *settings READ settings CONSTANT)
+    // Local storage encryption. Read before anything else at startup: while the
+    // store is locked or a migration is pending, tacky has installed no other
+    // module, so nothing else here works yet.
+    Q_PROPERTY(StorageController *storage READ storage CONSTANT)
     // Where the backend is writing its log, empty while it is writing to
     // stderr - so also whether there is anything to hand over.
     Q_PROPERTY(QString logPath READ logPath NOTIFY logPathChanged)
@@ -59,6 +64,7 @@ public:
     CallsModel *calls() { return &m_calls; }
     AudioDevices *audio() { return &m_audio; }
     AppSettings *settings() { return &m_settings; }
+    StorageController *storage() { return &m_storage; }
     QString logPath() const { return m_logPath; }
     NotificationController *notifications() { return &m_notifications; }
     bool backendStartFailed() const { return m_startFailed; }
@@ -123,6 +129,12 @@ signals:
 private:
     // Drop what was cached for an account that has been removed.
     void forget(const QString &acc);
+    // Everything that has to wait for `storage status`. While the store is
+    // locked or a migration is pending, tacky has installed neither `log` nor
+    // `account` nor `setting`, so asking any of them is an error - and the log
+    // calls below are notifies, whose errors have no token to land on and come
+    // back as a background failure the whole app reports.
+    void applyStoredPreferences();
     // Push the stored logging preferences at the backend. Re-sent on every
     // connect: the settings are stored, but what they drive is per process.
     void applyLogToFile();
@@ -137,6 +149,7 @@ private:
     CallsModel m_calls;
     AudioDevices m_audio;
     AppSettings m_settings;
+    StorageController m_storage;
     NotificationController m_notifications;
     const AvatarEncoder *m_encoder = nullptr;
     DebugArgs m_debug;

@@ -24,6 +24,7 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     m_calls.setBackend(&m_backend);
     m_audio.setBackend(&m_backend);
     m_settings.setBackend(&m_backend);
+    m_storage.setBackend(&m_backend);
     m_notifications.setBackend(&m_backend);
     // The per-account models are cached for as long as the account is here, and
     // no longer: an account that has been removed has a roster nobody can reach
@@ -35,11 +36,11 @@ AppController::AppController(QObject *parent) : QObject(parent) {
             &AppController::applyLogLevel);
     connect(&m_settings, &AppSettings::logNativeChanged, this,
             &AppController::applyLogNative);
-    connect(&m_backend, &TackyBackend::connected, this, [this] {
-        applyLogToFile();
-        applyLogLevel();
-        applyLogNative();
-    });
+    // Not on `connected`: a locked store has no `log` module to talk to yet.
+    // StorageController is bound to `connected` itself, so its status answer is
+    // the later signal and the only one that means the backend is open.
+    connect(&m_storage, &StorageController::statusChanged, this,
+            &AppController::applyStoredPreferences);
     connect(&m_backend, &TackyBackend::result, this, &AppController::onResult);
     connect(&m_backend, &TackyBackend::event, this, &AppController::onEvent);
 }
@@ -59,6 +60,24 @@ void AppController::onEvent(const QString &module, const QString &,
 
 void AppController::setDebugArgs(const DebugArgs &args) {
     m_debug = args;
+}
+
+// The reads and pushes only a backend past its storage gate can answer. On
+// every status change, not just the first: on Android the interpreter lives in
+// a service the UI reattaches to, so the link comes back each launch.
+//
+// Accounts already on disk auto-connect but never re-emit <Added>, so the rail
+// only sees them if we enumerate; the audio and app preferences are stored
+// rather than announced, so they want asking too.
+void AppController::applyStoredPreferences() {
+    if (!m_storage.ready())
+        return;
+    applyLogToFile();
+    applyLogLevel();
+    applyLogNative();
+    m_accounts.refresh();
+    m_audio.refresh();
+    m_settings.refresh();
 }
 
 void AppController::applyLogToFile() {
@@ -254,12 +273,8 @@ void AppController::startFromEnvironment() {
                          QVariantMap{{QStringLiteral("acc"), acc}});
     }
 
-    // Accounts already on disk auto-connect but never re-emit <Added>, so the
-    // rail only sees them if we enumerate; same for the audio prefs and the
-    // app's own, which are persisted settings rather than events. On Android
-    // the socket is still coming up here, so these can go nowhere - each of
-    // them also re-asks on the connected edge, which is what delivers.
-    m_accounts.refresh();
-    m_audio.refresh();
-    m_settings.refresh();
+    // Nothing else is asked for here: `storage status` decides when the rest of
+    // the backend exists, and applyStoredPreferences does the asking once it
+    // answers. StorageController is bound to the connected edge, so on Android,
+    // where the socket is still coming up at this point, it re-asks by itself.
 }

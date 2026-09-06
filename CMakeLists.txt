@@ -281,6 +281,7 @@ qt_add_qml_module(quack
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
         backend/AppSettings.cpp backend/AppSettings.h
+        backend/StorageController.cpp backend/StorageController.h
         backend/AvatarEncoder.h
         backend/AvatarSink.h)
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
@@ -424,7 +425,7 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
           tst_calls tst_audiodevices tst_appsettings tst_notifications
-          tst_registration tst_i18n tst_logging)
+          tst_registration tst_i18n tst_logging tst_storage)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})
