@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
-# Run the built AppImage on distros other than this one.
+# Run the built AppImage on a distro other than the one it was built in.
 #
-#   appimage/smoke-test.sh [image ...]     (default: ubuntu:22.04 debian:12)
+#   appimage/smoke-test.sh [image ...]     (default: ubuntu:22.04)
 #
-# This is the check the build cannot make about itself: that the binary resolves
-# against an older glibc, on a machine with no Qt. Each image starts clean, gets
-# the packages below and nothing else, and runs the AppImage under a virtual X
-# server.
+# This is the check the build cannot make about itself: that the app starts on a
+# machine with no Qt - that the bundled platform plugin loads, that QML resolves,
+# and that the graphics stack linuxdeploy deliberately leaves to the host is
+# satisfied. The image starts clean, gets the packages below and nothing else,
+# and runs the AppImage under a virtual X server.
+#
+# Not the glibc floor: appimage/in-image.sh checks that statically against the
+# AppDir, and every image runnable here is newer than the 2.34 the build sits on,
+# so none could fail for that reason. One image rather than several for the same
+# reason - a second apt distro tests nearly the same thing. Ubuntu 22.04 is the
+# one kept because it is the oldest the README claims, which makes its *host*
+# libraries the binding case, not just its libc.
+#
+# The dependency install below is apt, so an image named here has to be
+# Debian-family. The README's RHEL 9 claim is not testable this way.
 #
 # Still running when the timeout fires is a pass. A Qt that cannot find its
 # platform plugin, or QML that fails to load, exits at once - main.cpp returns
@@ -18,7 +29,7 @@ project=$(cd "$here/.." && pwd)
 
 images=("$@")
 if [ "${#images[@]}" -eq 0 ]; then
-    images=(ubuntu:22.04 debian:12)
+    images=(ubuntu:22.04)
 fi
 
 shopt -s nullglob

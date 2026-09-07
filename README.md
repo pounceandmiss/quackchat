@@ -211,8 +211,8 @@ compile, which dominates the build.
 
     ./appimage/smoke-test.sh
 
-runs it on clean Ubuntu and Debian containers under a virtual X server, the only
-real check that it works without Qt installed.
+runs it on a clean Ubuntu container under a virtual X server, the only real
+check that it works without Qt installed.
 
 ## Making a release
 
