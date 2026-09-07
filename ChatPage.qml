@@ -320,6 +320,7 @@ Page {
     readonly property bool replying: page.session ? page.session.replying : false
     readonly property string replyBody: page.session ? page.session.replyBody : ""
     readonly property bool replyOutgoing: page.session ? page.session.replyOutgoing : false
+    readonly property bool editing: page.session ? page.session.editing : false
 
     function startReply(ts, body, outgoing) {
         if (!page.session)
@@ -330,6 +331,27 @@ Page {
     function cancelReply() {
         if (page.session)
             page.session.cancelReply()
+    }
+
+    // The field is seeded from the draft rather than bound to it, so both of
+    // these have to catch it up by hand - the same reason sendCurrent() clears
+    // it itself. The session holds what the edit displaced and hands it back.
+    function startEdit(ts, body) {
+        if (!page.session)
+            return
+        page.session.editMessage(ts, body)
+        input.text = page.session.draft
+        input.forceActiveFocus()
+    }
+    function cancelEdit() {
+        if (!page.session)
+            return
+        page.session.cancelEdit()
+        input.text = page.session.draft
+    }
+    function confirmDelete(ts) {
+        deleteConfirm.target = ts
+        deleteConfirm.open()
     }
 
     // The row a jump landed on, tinted until the timer below clears it.
@@ -408,6 +430,23 @@ Page {
             color: Theme.textPrimary
             wrapMode: Text.WordWrap
         }
+    }
+
+    // A retraction cannot be undone, and it is the one thing this menu offers
+    // that reaches everyone who already has the message.
+    ConfirmDialog {
+        id: deleteConfirm
+        objectName: "deleteConfirm"
+        // The row it is out for. A property of its own rather than `subject`,
+        // which is a string: a microsecond timestamp is the row's id and has no
+        // business making the trip as text.
+        property real target: 0
+        // Read off the page: with the chat in a window of its own, asking the
+        // dialog which overlay it belongs to answers the shell's.
+        parent: page.Overlay.overlay
+        title: qsTr("Delete message")
+        message: qsTr("Delete this message? This cannot be undone.")
+        onAccepted: if (page.chatModel) page.chatModel.retract(deleteConfirm.target)
     }
 
     // No filters: tacky puts up whatever it is handed.
@@ -651,6 +690,20 @@ Page {
             && encryption === "omemo" && failReason === "encrypt"
     }
 
+    // Our own messages, and not one already withdrawn - a retraction is sticky
+    // and tacky will not let an edit past it. A message still on its way out
+    // qualifies: the correction rides the same anchor as the original.
+    function canEditMessage(outgoing, retracted) {
+        return outgoing && !retracted
+    }
+    // Deleting splits by chat kind. Withdrawing your own message is the 1:1
+    // path; a room's is moderation, which asks the service to retract anyone's
+    // and is not offered here - so in a room there is nothing to show rather
+    // than a button tacky would ignore.
+    function canDeleteMessage(outgoing, retracted) {
+        return outgoing && !retracted && !page.chatGroupchat
+    }
+
     // Which of the two retries a row wants, from the direction tacky gave the
     // transfer that failed rather than from anything read off the row itself.
     // An upload that did not land has no message for `resend` to send.
@@ -699,9 +752,11 @@ Page {
         if (!page.session)
             return
         // The session holds the draft and the reply it answers, so it does the
-        // whole send and clears both; the field only has to catch up.
+        // whole send and clears both; the field only has to catch up. Read the
+        // draft back rather than blanking it: sending an edit puts back
+        // whatever the edit displaced, and that belongs in the field.
         page.session.sendDraft()
-        input.clear()
+        input.text = page.session.draft
     }
 
     // The field is seeded from the session's draft and writes back to it, rather
@@ -1268,6 +1323,8 @@ Page {
                 required property string remoteStatus
                 required property string encryption
                 required property string failReason
+                required property bool retracted
+                required property bool edited
                 required property var timestamp
                 required property var reactions
                 required property var attachments
@@ -1324,8 +1381,14 @@ Page {
                     canRetry: page.canRetry(wrap.outgoing, status)
                     canResendPlain: page.canResendPlain(wrap.outgoing, status,
                                                         wrap.encryption, wrap.failReason)
+                    retracted: wrap.retracted
+                    edited: wrap.edited
+                    canEdit: page.canEditMessage(wrap.outgoing, wrap.retracted)
+                    canDelete: page.canDeleteMessage(wrap.outgoing, wrap.retracted)
                     onRetryRequested: page.retryMessage(wrap.timestamp, wrap.attachments)
                     onResendPlainRequested: page.chatModel.resend(wrap.timestamp, true)
+                    onEditRequested: page.startEdit(wrap.timestamp, wrap.body)
+                    onDeleteRequested: page.confirmDelete(wrap.timestamp)
                     selectionMode: page.selectionMode
                     selected: page.isSelected(wrap.timestamp)
                     textSelecting: page.textSelectTs === wrap.timestamp
@@ -1495,10 +1558,14 @@ Page {
             }
         }
 
+        // One strip for both of the things the composer can be doing to a
+        // message that already exists. The session keeps them exclusive, so
+        // there is never a second one to draw.
         Rectangle {
-            id: replyBanner
+            id: composerBanner
+            objectName: "composerBanner"
             Layout.fillWidth: true
-            Layout.preferredHeight: page.replying ? 52 : 0
+            Layout.preferredHeight: page.replying || page.editing ? 52 : 0
             clip: true
             visible: Layout.preferredHeight > 0
             color: Theme.surface
@@ -1526,7 +1593,10 @@ Page {
                     Layout.fillWidth: true
                     spacing: 1
                     Text {
-                        text: page.replyOutgoing
+                        objectName: "bannerTitle"
+                        text: page.editing
+                            ? qsTr("Editing message")
+                            : page.replyOutgoing
                             ? qsTr("Reply to You")
                             : qsTr("Reply to %1").arg(page.chatName !== ""
                                                       ? page.chatName : page.chatJid)
@@ -1537,6 +1607,9 @@ Page {
                         Layout.fillWidth: true
                     }
                     Text {
+                        // An edit's words are in the field itself, so the
+                        // second line has nothing left to preview.
+                        visible: !page.editing
                         text: page.replyBody
                         color: Theme.textDim
                         font.pixelSize: 13
@@ -1546,11 +1619,14 @@ Page {
                     }
                 }
                 IconButton {
+                    objectName: "bannerCancel"
                     iconPath: Icons.close
                     iconSize: 16
-                    Accessible.name: qsTr("Cancel reply")
+                    Accessible.name: page.editing ? qsTr("Cancel edit")
+                                                  : qsTr("Cancel reply")
                     glyphColor: Theme.textDim
-                    onClicked: page.cancelReply()
+                    onClicked: if (page.editing) page.cancelEdit()
+                               else page.cancelReply()
                 }
             }
         }

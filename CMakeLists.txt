@@ -431,7 +431,7 @@ option(QUACK_BUILD_TESTS "Build the test executables" ${_tests_default})
 if(QUACK_BUILD_TESTS AND NOT ANDROID)
 enable_testing()
 
-foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_authornames
+foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_chatsession tst_authornames
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport

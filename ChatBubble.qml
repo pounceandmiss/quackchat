@@ -63,6 +63,16 @@ Item {
     // choices, it does not work out which ones apply.
     property bool canRetry: false
     property bool canResendPlain: false
+    property bool canEdit: false
+    property bool canDelete: false
+
+    // Withdrawn by its sender: the row is kept so paging and replies still
+    // resolve, but there is no content left to draw. Everything the message
+    // used to carry - its reactions, the quote it answered, the padlock - is
+    // still on the row, and is deliberately not drawn.
+    property bool retracted: false
+    // Corrected since it was sent. Says so; the body is already the new one.
+    property bool edited: false
 
     property bool selected: false
     property bool selectionMode: false
@@ -123,6 +133,8 @@ Item {
     signal reactRequested(string emoji)
     signal retryRequested()
     signal resendPlainRequested()
+    signal editRequested()
+    signal deleteRequested()
     signal viewXmlRequested()
     // Tapping the quote jumps to the message it previews.
     signal quoteTapped()
@@ -177,7 +189,7 @@ Item {
     // for the drag threshold so a plain tap still opens the menu.
     DragHandler {
         id: swipe
-        enabled: !root.selectionMode
+        enabled: !root.selectionMode && !root.retracted
         // Touch only, leaving the mouse drag to the body's text selection.
         // Device rather than Qt.platform.os, so a touchscreen laptop gets both.
         acceptedDevices: PointerDevice.TouchScreen
@@ -257,7 +269,9 @@ Item {
     function openMenu(pos, keyboard) {
         ctxMenu.focus = keyboard
         ctxMenu.popup(root, pos.x, pos.y)
-        reactionBar.open()
+        // Not over a tombstone: there is nothing left to react to.
+        if (!root.retracted)
+            reactionBar.open()
         root.menuOpened()
     }
 
@@ -300,9 +314,12 @@ Item {
         objectName: "bubbleMenu"
         width: 180
 
+        // A tombstone answers none of these: there is no body to reply to,
+        // copy, or pick words out of. Only View XML survives it.
         MenuEntry {
             objectName: "replyEntry"
             text: qsTr("Reply")
+            offered: !root.retracted
             onTriggered: root.take(root.replyRequested)
         }
         // The hand-over floats a Copy pill over the words it picks out. A
@@ -317,6 +334,7 @@ Item {
             objectName: "copyEntry"
             // Says which of the two it is, but only while both are offered.
             text: bodyText.selectedText !== "" ? qsTr("Copy message") : qsTr("Copy")
+            offered: !root.retracted
             onTriggered: root.take(root.copyRequested)
         }
         // The way in for the mouse, which has no long press. Never on a message
@@ -324,8 +342,22 @@ Item {
         MenuEntry {
             objectName: "selectEntry"
             text: qsTr("Select")
-            offered: !root.selected
+            offered: !root.selected && !root.retracted
             onTriggered: root.toggleRequested()
+        }
+        MenuEntry {
+            objectName: "editEntry"
+            text: qsTr("Edit")
+            offered: root.canEdit
+            onTriggered: root.take(root.editRequested)
+        }
+        MenuEntry {
+            objectName: "deleteEntry"
+            text: qsTr("Delete")
+            // The one entry here that cannot be taken back.
+            labelColor: Theme.negative
+            offered: root.canDelete
+            onTriggered: root.take(root.deleteRequested)
         }
         // Only offered on a message that needs them.
         MenuEntry {
@@ -614,7 +646,7 @@ Item {
                 RowLayout {
                     id: replyQuote
                     objectName: "replyQuote"
-                    visible: root.isReply
+                    visible: root.isReply && !root.retracted
                     spacing: 7
                     Layout.maximumWidth: root.maxBubbleWidth
                     Layout.bottomMargin: 3
@@ -670,6 +702,20 @@ Item {
                         onLoadRequested: root.attachmentLoadRequested(att.index)
                         onMenuRequested: attMenu.openFor(att.index, att.modelData)
                     }
+                }
+
+                // What the row says instead of its content once it is gone.
+                // The header around it stays, so the tombstone still reads as
+                // "this person, at this time, said something since withdrawn".
+                Text {
+                    objectName: "tombstone"
+                    visible: root.retracted
+                    text: qsTr("This message was deleted")
+                    color: Theme.textDim
+                    font.pixelSize: 14
+                    font.italic: true
+                    Layout.maximumWidth: root.maxBubbleWidth
+                    wrapMode: Text.Wrap
                 }
 
                 TextEdit {
@@ -766,10 +812,23 @@ Item {
                         objectName: "lockBadge"
                         Layout.alignment: Qt.AlignVCenter
                         // Nothing to badge about a row in the clear - in a room
-                        // that is every row.
-                        visible: root.encrypted
+                        // that is every row. A tombstone keeps the encryption
+                        // of the message it replaces, which is no longer
+                        // anything to say.
+                        visible: root.encrypted && !root.retracted
                         text: "🔒"
                         font.pixelSize: 16
+                    }
+                    // Beside the time rather than after the words: the body is
+                    // a rich-text document built from the markup, and this is
+                    // not part of what was said.
+                    Text {
+                        objectName: "editedMark"
+                        visible: root.edited && !root.retracted
+                        text: qsTr("edited")
+                        color: Theme.textDim
+                        font.pixelSize: 11
+                        font.italic: true
                     }
                     Text {
                         text: root.time
@@ -778,7 +837,7 @@ Item {
                     }
                     Glyph {
                         objectName: "statusTick"
-                        visible: root.outgoing
+                        visible: root.outgoing && !root.retracted
                         path: root.status === "pending" ? Icons.schedule
                             : root.status === "failed" ? Icons.close
                             : root.status === "sent" ? Icons.check : Icons.doneAll
@@ -820,7 +879,7 @@ Item {
         Row {
             id: reactionRow
             objectName: "reactionRow"
-            visible: root.reactionKeys.length > 0
+            visible: root.reactionKeys.length > 0 && !root.retracted
             anchors.top: bubble.bottom
             anchors.topMargin: -11
             anchors.right: root.outgoing ? bubble.right : undefined

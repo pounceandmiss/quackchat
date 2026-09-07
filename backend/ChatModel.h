@@ -59,6 +59,7 @@ public:
         RemoteStatusRole, // and the hop after it: none/delivered/read
         FromRole,
         RetractedRole,   // tombstone: render the deleted-message placeholder
+        EditedRole,      // corrected since it was sent, per XEP-0308
         ReactionsRole,   // aggregated map: emoji -> {reactors, mine}
         ReplyBodyRole,   // one-line preview of the message this one answers
         ReplyAuthorRole, // and who wrote it; both empty when this is no reply
@@ -136,6 +137,13 @@ public:
     Q_INVOKABLE void resend(qlonglong ts, bool plaintext = false);
     Q_INVOKABLE void react(qlonglong ts, const QString &emoji);
     Q_INVOKABLE void reactClear(qlonglong ts);
+    // Correct one of our own messages (XEP-0308), and withdraw one (XEP-0424).
+    // Both are asks, like react: tacky swaps its store and answers with an
+    // <Edited> or <Retracted> without waiting for the echo, so the row changes
+    // on the way back rather than here. retract is 1:1 only - on a room tacky
+    // does nothing, and the room path is moderation, which we do not offer.
+    Q_INVOKABLE void edit(qlonglong ts, const QString &body);
+    Q_INVOKABLE void retract(qlonglong ts);
     Q_INVOKABLE void cullOld(int count);          // view dropped oldest rows
     Q_INVOKABLE void cullNew(int count);          // view dropped newest rows
 

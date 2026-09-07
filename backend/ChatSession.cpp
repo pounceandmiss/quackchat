@@ -31,6 +31,9 @@ void ChatSession::setDraft(const QString &text) {
 
 void ChatSession::replyToMessage(qlonglong ts, const QString &body,
                                  bool outgoing) {
+    // The composer can only be doing one of the two: an edit owns the field,
+    // and a reply would be answering the message being corrected.
+    cancelEdit();
     m_replyTo = ts;
     m_replyBody = body;
     m_replyOutgoing = outgoing;
@@ -46,10 +49,47 @@ void ChatSession::cancelReply() {
     emit replyChanged();
 }
 
+void ChatSession::editMessage(qlonglong ts, const QString &body) {
+    if (ts == 0)
+        return;
+    cancelReply();
+    // Moving from one edit to another keeps the first stash: what it displaced
+    // is still the sentence that was being written.
+    if (!m_stashed) {
+        m_stashedDraft = m_draft;
+        m_stashed = true;
+    }
+    m_editing = ts;
+    emit editChanged();
+    setDraft(body);
+}
+
+void ChatSession::cancelEdit() {
+    if (m_editing == 0)
+        return;
+    m_editing = 0;
+    restoreStash();
+    emit editChanged();
+}
+
+void ChatSession::restoreStash() {
+    if (!m_stashed)
+        return;
+    const QString back = m_stashedDraft;
+    m_stashedDraft.clear();
+    m_stashed = false;
+    setDraft(back);
+}
+
 void ChatSession::sendDraft() {
     const QString body = m_draft.trimmed();
     if (body.isEmpty())
         return;
+    if (m_editing != 0) {
+        m_messages.edit(m_editing, body);
+        cancelEdit();
+        return;
+    }
     m_messages.send(body, m_replyTo);
     setDraft(QString());
     cancelReply();

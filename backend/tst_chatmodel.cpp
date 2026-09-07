@@ -57,6 +57,8 @@ private slots:
     void statusFieldUpdate();
     void confirmedTimestampMove();
     void retractedTombstone();
+    void editedMarksTheRow();
+    void editAndRetractOnlyAsk();
     void cullNewClearsTail();
     void cullOldKeepsTail();
     void loadedSignalReportsAdded();
@@ -220,7 +222,8 @@ void TestChatModel::retractedTombstone() {
     ChatModel m;
     m.setAccount("me@h");
     m.setChat("a@h");
-    m.applyBatch(msgs(R"([{"timestamp":300,
+    m.applyBatch(msgs(R"([{"timestamp":300,"encryption":"omemo",
+        "reply_body":"the question","reactions":{"👍":{"reactors":["b@h"],"mine":false}},
         "content":{"type":"text","body":"oops"}}])"));
     QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
     feedEvent(m, R"(["event","message","Retracted",
@@ -229,6 +232,78 @@ void TestChatModel::retractedTombstone() {
     QCOMPARE(chg.count(), 1);
     QVERIFY(m.data(m.index(0), ChatModel::RetractedRole).toBool());
     QCOMPARE(m.data(m.index(0), ChatModel::BodyRole).toString(), QString());
+    // Only the content goes. Everything else the message carried is still on
+    // the row - the same row refetched from tacky's store keeps them too - so
+    // the tombstone is drawn by not drawing them, not by clearing them here.
+    QCOMPARE(m.data(m.index(0), ChatModel::EncryptionRole).toString(),
+             QString("omemo"));
+    QCOMPARE(m.data(m.index(0), ChatModel::ReplyBodyRole).toString(),
+             QString("the question"));
+    QVERIFY(!m.data(m.index(0), ChatModel::ReactionsRole).toMap().isEmpty());
+}
+
+// The flag rides in on the row, so it works the same on a page of history as
+// on the correction that arrives while the chat is open.
+void TestChatModel::editedMarksTheRow() {
+    ChatModel m;
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300,"edited":true,
+                           "content":{"type":"text","body":"fixed"}},
+                          {"timestamp":200,
+                           "content":{"type":"text","body":"as sent"}}])"));
+    QVERIFY(m.data(m.index(0), ChatModel::EditedRole).toBool());
+    QVERIFY(!m.data(m.index(1), ChatModel::EditedRole).toBool());
+
+    // An <Edited> re-sends the whole row, so the body and the flag land at once.
+    feedEvent(m, R"(["event","message","Edited",
+        {"acc":"me@h","jid":"a@h","message":{"timestamp":200,"edited":true,
+         "content":{"type":"text","body":"corrected"}}}])");
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(m.data(m.index(1), ChatModel::BodyRole).toString(),
+             QString("corrected"));
+    QVERIFY(m.data(m.index(1), ChatModel::EditedRole).toBool());
+}
+
+// Both are asks: tacky swaps its own store and answers with an event, so
+// nothing about the row changes at the point of asking.
+void TestChatModel::editAndRetractOnlyAsk() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.applyBatch(msgs(R"([{"timestamp":300,"is_outgoing":true,
+        "content":{"type":"text","body":"teh cat"}}])"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.edit(300, "the cat");
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("message"));
+    QCOMPARE(sent.first().at(1).toString(), QString("edit"));
+    QVariantMap args = sent.first().at(2).toMap();
+    QCOMPARE(args.value("acc").toString(), QString("me@h"));
+    QCOMPARE(args.value("chat").toString(), QString("a@h"));
+    QCOMPARE(args.value("timestamp").toLongLong(), 300LL);
+    QCOMPARE(args.value("body").toString(), QString("the cat"));
+    // Still the old words until the <Edited> comes back.
+    QCOMPARE(m.data(m.index(0), ChatModel::BodyRole).toString(),
+             QString("teh cat"));
+    QVERIFY(!m.data(m.index(0), ChatModel::EditedRole).toBool());
+
+    sent.clear();
+    m.retract(300);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(1).toString(), QString("retract"));
+    args = sent.first().at(2).toMap();
+    QCOMPARE(args.value("timestamp").toLongLong(), 300LL);
+    QVERIFY(!args.contains("body"));
+    QVERIFY(!m.data(m.index(0), ChatModel::RetractedRole).toBool());
+
+    // An empty correction is not one; tacky drops it on the far side anyway.
+    sent.clear();
+    m.edit(300, "");
+    QCOMPARE(sent.count(), 0);
 }
 
 void TestChatModel::cullNewClearsTail() {

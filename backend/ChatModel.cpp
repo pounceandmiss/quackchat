@@ -152,7 +152,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case RemoteStatusRole:
         return m.value(QStringLiteral("remote_status")).toString();
     case FromRole:         return m.value(QStringLiteral("from_jid"));
-    case RetractedRole:    return m.value(QStringLiteral("retracted"));
+    case RetractedRole:    return m.value(QStringLiteral("retracted")).toBool();
+    case EditedRole:       return m.value(QStringLiteral("edited")).toBool();
     case ReactionsRole:    return m.value(QStringLiteral("reactions")).toMap();
     // Coerced, not passed through: these keys are absent on an ordinary
     // message, and a missing QVariant reaches QML as undefined, which a string
@@ -181,6 +182,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {RemoteStatusRole, "remoteStatus"},
         {FromRole, "from"},
         {RetractedRole, "retracted"},
+        {EditedRole, "edited"},
         {ReactionsRole, "reactions"},
         {ReplyBodyRole, "replyBody"},
         {ReplyAuthorRole, "replyAuthor"},
@@ -575,6 +577,27 @@ void ChatModel::reactClear(qlonglong ts) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
         return;
     m_backend->notify(QStringLiteral("message"), QStringLiteral("reactClear"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts}});
+}
+
+// Also asks rather than applies: the correction and the tombstone arrive as
+// <Edited> and <Retracted>, which the event path already knows how to draw.
+void ChatModel::edit(qlonglong ts, const QString &body) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty() || body.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("edit"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts},
+                                  {QStringLiteral("body"), body}});
+}
+
+void ChatModel::retract(qlonglong ts) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("retract"),
                       QVariantMap{{QStringLiteral("acc"), m_account},
                                   {QStringLiteral("chat"), m_chat},
                                   {QStringLiteral("timestamp"), ts}});

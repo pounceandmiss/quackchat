@@ -34,6 +34,10 @@ class ChatSession : public QObject {
     Q_PROPERTY(QString replyBody READ replyBody NOTIFY replyChanged)
     Q_PROPERTY(bool replyOutgoing READ replyOutgoing NOTIFY replyChanged)
     Q_PROPERTY(bool replying READ replying NOTIFY replyChanged)
+    // Whether the composer is correcting a message already sent rather than
+    // writing a new one. Its timestamp stays in here for the same reason the
+    // reply's does: the send is the only thing that needs it.
+    Q_PROPERTY(bool editing READ editing NOTIFY editChanged)
 
 public:
     ChatSession(TackyBackend *backend, const QString &acc, const QString &jid,
@@ -51,25 +55,43 @@ public:
     bool replyOutgoing() const { return m_replyOutgoing; }
     bool replying() const { return m_replyTo != 0; }
 
+    bool editing() const { return m_editing != 0; }
+
     Q_INVOKABLE void replyToMessage(qlonglong ts, const QString &body,
                                     bool outgoing);
     Q_INVOKABLE void cancelReply();
 
+    // Put a message back in the composer to correct it. The draft it displaces
+    // is kept and comes back when the edit is sent or dropped - unlike a reply,
+    // an edit fills the field, and half a sentence typed for this chat should
+    // not be the price of fixing a typo.
+    Q_INVOKABLE void editMessage(qlonglong ts, const QString &body);
+    Q_INVOKABLE void cancelEdit();
+
     // Send the draft, clearing it and the reply along with it. No-op when the
-    // draft is blank, which is also what an empty composer press means.
+    // draft is blank, which is also what an empty composer press means. While
+    // editing this corrects that message instead of sending a new one.
     Q_INVOKABLE void sendDraft();
 
 signals:
     void draftChanged();
     void replyChanged();
+    void editChanged();
 
 private:
+    void restoreStash();
+
     ChatModel m_messages;
     OmemoChat m_omemo;
     QString m_draft;
     qlonglong m_replyTo = 0;
     QString m_replyBody;
     bool m_replyOutgoing = false;
+    qlonglong m_editing = 0;
+    // What was in the composer before the edit took it over. Its own flag: a
+    // blank draft is worth restoring, and is not the same as nothing stashed.
+    QString m_stashedDraft;
+    bool m_stashed = false;
 };
 
 #endif // CHATSESSION_H
