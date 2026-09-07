@@ -34,9 +34,9 @@ class ChatSession : public QObject {
     Q_PROPERTY(QString replyBody READ replyBody NOTIFY replyChanged)
     Q_PROPERTY(bool replyOutgoing READ replyOutgoing NOTIFY replyChanged)
     Q_PROPERTY(bool replying READ replying NOTIFY replyChanged)
-    // Whether the composer is correcting a message already sent rather than
-    // writing a new one. Its timestamp stays in here for the same reason the
-    // reply's does: the send is the only thing that needs it.
+    // Whether the composer is correcting a message rather than writing one. Its
+    // timestamp stays in here for the reason the reply's does: only the send
+    // needs it.
     Q_PROPERTY(bool editing READ editing NOTIFY editChanged)
 
 public:
@@ -61,10 +61,8 @@ public:
                                     bool outgoing);
     Q_INVOKABLE void cancelReply();
 
-    // Put a message back in the composer to correct it. The draft it displaces
-    // is kept and comes back when the edit is sent or dropped - unlike a reply,
-    // an edit fills the field, and half a sentence typed for this chat should
-    // not be the price of fixing a typo.
+    // Put a message back in the composer to correct it. An edit fills the
+    // field, so the draft it displaces is kept and comes back after either.
     Q_INVOKABLE void editMessage(qlonglong ts, const QString &body);
     Q_INVOKABLE void cancelEdit();
 
@@ -88,8 +86,8 @@ private:
     QString m_replyBody;
     bool m_replyOutgoing = false;
     qlonglong m_editing = 0;
-    // What was in the composer before the edit took it over. Its own flag: a
-    // blank draft is worth restoring, and is not the same as nothing stashed.
+    // What the edit displaced. Its own flag, since a stashed blank draft is
+    // not the same as nothing stashed.
     QString m_stashedDraft;
     bool m_stashed = false;
 };

@@ -47,7 +47,7 @@ void TestChatPageComposer::initTestCase() {
     send("room@example.com", "who said that");
     send("edit@example.com", "teh cat");
     send("delete@example.com", "said too much");
-    send("tombstone@example.com", "gone by the end of this test");
+    send("tombstone@example.com", "withdrawn below");
 
     // clear@ turns OMEMO off before its send, so it is the one chat whose rows
     // come back unstamped - every other send here is encrypted by default.
@@ -423,8 +423,8 @@ void TestChatPageComposer::editingPutsTheMessageBackInTheComposer() {
     QVERIFY(QMetaObject::invokeMethod(page, "cancelEdit"));
     QVERIFY(!page->property("editing").toBool());
     // Shut rather than exactly zero: the strip animates its layout height, and
-    // the last pass can leave a fraction of a pixel behind with nothing left to
-    // trigger another. 52 against under a pixel is the difference that matters.
+    // the last pass can leave a fraction of a pixel with nothing left to
+    // trigger another.
     QTRY_VERIFY(banner->height() < 1.0);
     QCOMPARE(input->property("text").toString(), QString("half a sentence"));
 }
@@ -534,7 +534,7 @@ void TestChatPageComposer::aTombstoneDrawsAPlaceholderAndOffersNothing() {
     const qlonglong ts =
         model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
     // Stamped and reacted to first, so what the tombstone stops drawing was
-    // demonstrably being drawn a moment earlier.
+    // being drawn a moment earlier.
     model->applyFields(ts, QVariantMap{
         {"encryption", "omemo"},
         {"reactions", QVariantMap{{"👍", QVariantMap{{"reactors", QVariantList{"b@h"}},

@@ -138,10 +138,8 @@ public:
     Q_INVOKABLE void react(qlonglong ts, const QString &emoji);
     Q_INVOKABLE void reactClear(qlonglong ts);
     // Correct one of our own messages (XEP-0308), and withdraw one (XEP-0424).
-    // Both are asks, like react: tacky swaps its store and answers with an
-    // <Edited> or <Retracted> without waiting for the echo, so the row changes
-    // on the way back rather than here. retract is 1:1 only - on a room tacky
-    // does nothing, and the room path is moderation, which we do not offer.
+    // Asks, like react: the row changes when the <Edited> or <Retracted> comes
+    // back. retract is 1:1 only - a room's deletion is moderation, unoffered.
     Q_INVOKABLE void edit(qlonglong ts, const QString &body);
     Q_INVOKABLE void retract(qlonglong ts);
     Q_INVOKABLE void cullOld(int count);          // view dropped oldest rows

@@ -66,10 +66,10 @@ Item {
     property bool canEdit: false
     property bool canDelete: false
 
-    // Withdrawn by its sender: the row is kept so paging and replies still
-    // resolve, but there is no content left to draw. Everything the message
-    // used to carry - its reactions, the quote it answered, the padlock - is
-    // still on the row, and is deliberately not drawn.
+    // Withdrawn by its sender. The row is kept so paging and replies still
+    // resolve, and everything it carried - reactions, the quote it answered,
+    // the padlock - is still on it, which is why each is suppressed by hand
+    // below rather than being absent.
     property bool retracted: false
     // Corrected since it was sent. Says so; the body is already the new one.
     property bool edited: false
@@ -704,9 +704,8 @@ Item {
                     }
                 }
 
-                // What the row says instead of its content once it is gone.
-                // The header around it stays, so the tombstone still reads as
-                // "this person, at this time, said something since withdrawn".
+                // What stands in for the content. The header around it stays,
+                // so the row still says who and when.
                 Text {
                     objectName: "tombstone"
                     visible: root.retracted
@@ -812,16 +811,15 @@ Item {
                         objectName: "lockBadge"
                         Layout.alignment: Qt.AlignVCenter
                         // Nothing to badge about a row in the clear - in a room
-                        // that is every row. A tombstone keeps the encryption
-                        // of the message it replaces, which is no longer
-                        // anything to say.
+                        // that is every row. A tombstone keeps the stamp of the
+                        // message it replaces, and has nothing to badge.
                         visible: root.encrypted && !root.retracted
                         text: "🔒"
                         font.pixelSize: 16
                     }
-                    // Beside the time rather than after the words: the body is
-                    // a rich-text document built from the markup, and this is
-                    // not part of what was said.
+                    // Beside the time, not after the words: the body is a rich
+                    // text document built from the markup, and this is not part
+                    // of what was said.
                     Text {
                         objectName: "editedMark"
                         visible: root.edited && !root.retracted

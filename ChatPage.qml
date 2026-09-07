@@ -334,8 +334,7 @@ Page {
     }
 
     // The field is seeded from the draft rather than bound to it, so both of
-    // these have to catch it up by hand - the same reason sendCurrent() clears
-    // it itself. The session holds what the edit displaced and hands it back.
+    // these catch it up by hand, as sendCurrent() does.
     function startEdit(ts, body) {
         if (!page.session)
             return
@@ -432,14 +431,13 @@ Page {
         }
     }
 
-    // A retraction cannot be undone, and it is the one thing this menu offers
-    // that reaches everyone who already has the message.
+    // The one thing this menu offers that cannot be undone, and that reaches
+    // everyone who already has the message.
     ConfirmDialog {
         id: deleteConfirm
         objectName: "deleteConfirm"
-        // The row it is out for. A property of its own rather than `subject`,
-        // which is a string: a microsecond timestamp is the row's id and has no
-        // business making the trip as text.
+        // The row it is out for. Its own property rather than `subject`, which
+        // is a string, and a microsecond timestamp has no business as text.
         property real target: 0
         // Read off the page: with the chat in a window of its own, asking the
         // dialog which overlay it belongs to answers the shell's.
@@ -690,16 +688,13 @@ Page {
             && encryption === "omemo" && failReason === "encrypt"
     }
 
-    // Our own messages, and not one already withdrawn - a retraction is sticky
-    // and tacky will not let an edit past it. A message still on its way out
-    // qualifies: the correction rides the same anchor as the original.
+    // Our own, and not already withdrawn: a retraction is sticky, and tacky
+    // will not let an edit past one. A row still on its way out qualifies.
     function canEditMessage(outgoing, retracted) {
         return outgoing && !retracted
     }
-    // Deleting splits by chat kind. Withdrawing your own message is the 1:1
-    // path; a room's is moderation, which asks the service to retract anyone's
-    // and is not offered here - so in a room there is nothing to show rather
-    // than a button tacky would ignore.
+    // Hidden rather than refused in a room, where deleting is moderation: a
+    // retract sent for one is something tacky would ignore.
     function canDeleteMessage(outgoing, retracted) {
         return outgoing && !retracted && !page.chatGroupchat
     }
@@ -753,8 +748,8 @@ Page {
             return
         // The session holds the draft and the reply it answers, so it does the
         // whole send and clears both; the field only has to catch up. Read the
-        // draft back rather than blanking it: sending an edit puts back
-        // whatever the edit displaced, and that belongs in the field.
+        // draft back rather than blanking it, since sending an edit restores
+        // the one it displaced.
         page.session.sendDraft()
         input.text = page.session.draft
     }
@@ -1558,9 +1553,8 @@ Page {
             }
         }
 
-        // One strip for both of the things the composer can be doing to a
-        // message that already exists. The session keeps them exclusive, so
-        // there is never a second one to draw.
+        // One strip for both: the session keeps a reply and an edit exclusive,
+        // so there is never a second to draw.
         Rectangle {
             id: composerBanner
             objectName: "composerBanner"
@@ -1607,8 +1601,7 @@ Page {
                         Layout.fillWidth: true
                     }
                     Text {
-                        // An edit's words are in the field itself, so the
-                        // second line has nothing left to preview.
+                        // An edit's words are in the field, not up here.
                         visible: !page.editing
                         text: page.replyBody
                         color: Theme.textDim

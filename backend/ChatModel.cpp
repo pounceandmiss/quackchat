@@ -582,8 +582,6 @@ void ChatModel::reactClear(qlonglong ts) {
                                   {QStringLiteral("timestamp"), ts}});
 }
 
-// Also asks rather than applies: the correction and the tombstone arrive as
-// <Edited> and <Retracted>, which the event path already knows how to draw.
 void ChatModel::edit(qlonglong ts, const QString &body) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty() || body.isEmpty())
         return;

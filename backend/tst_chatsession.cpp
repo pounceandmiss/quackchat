@@ -1,6 +1,5 @@
-// The composer's state machine, which the session owns rather than the view:
-// the draft, the message being answered, and the message being corrected. The
-// last two are exclusive, and an edit borrows the field the draft was in.
+// What the composer is doing, which the session owns rather than the view: a
+// reply and an edit are exclusive, and an edit borrows the field the draft had.
 #include <QtTest>
 #include <QSignalSpy>
 
@@ -17,12 +16,15 @@ private slots:
     void replyAndEditTurnEachOtherOff();
 };
 
-// What went out, as (method, args) for the message module only.
-static QList<QVariant> lastCall(const QSignalSpy &spy) {
-    for (int i = spy.count() - 1; i >= 0; --i)
-        if (spy.at(i).at(0).toString() == QLatin1String("message"))
-            return spy.at(i);
-    return {};
+// The args of the last `message <method>` the spy saw, empty when there was
+// none. By method, since setting the chat issues a history call over the same
+// module.
+static QVariantMap lastArgs(const QSignalSpy &spy, const char *method) {
+    QVariantMap out;
+    for (const QList<QVariant> &call : spy)
+        if (call.at(1).toString() == QLatin1String(method))
+            out = call.at(2).toMap();
+    return out;
 }
 
 void TestChatSession::sendingWhileEditingCorrectsInstead() {
@@ -37,10 +39,11 @@ void TestChatSession::sendingWhileEditingCorrectsInstead() {
     s.setDraft("the cat");
     s.sendDraft();
 
-    const QList<QVariant> call = lastCall(sent);
-    QCOMPARE(call.at(1).toString(), QString("edit"));
-    QCOMPARE(call.at(2).toMap().value("timestamp").toLongLong(), 300LL);
-    QCOMPARE(call.at(2).toMap().value("body").toString(), QString("the cat"));
+    const QVariantMap args = lastArgs(sent, "edit");
+    QCOMPARE(args.value("timestamp").toLongLong(), 300LL);
+    QCOMPARE(args.value("body").toString(), QString("the cat"));
+    // A correction instead of a send, not as well as one.
+    QVERIFY(lastArgs(sent, "send").isEmpty());
     // And the composer is out of edit mode, not still armed at that row.
     QVERIFY(!s.editing());
 }
@@ -97,7 +100,7 @@ void TestChatSession::replyAndEditTurnEachOtherOff() {
     QVERIFY(s.replying());
     s.editMessage(400, "teh cat");
     QVERIFY(s.editing());
-    QVERIFY(!s.replying()); // answering the message being corrected makes no sense
+    QVERIFY(!s.replying());
 
     s.replyToMessage(300, "the question", false);
     QVERIFY(s.replying());
