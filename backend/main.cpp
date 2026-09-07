@@ -16,6 +16,10 @@
 #include <algorithm>
 #include <utility>
 #endif
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+#include <QFileInfo>
+#include <QStandardPaths>
+#endif
 #include <QGuiApplication>
 #include <QIcon>
 #include <QLibraryInfo>
@@ -28,17 +32,34 @@
 #include "LogBridge.h"
 #include "QImageAvatarEncoder.h"
 
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+// Read off disk rather than asked over D-Bus: this has to answer before
+// QGuiApplication exists, and a session bus opened that early warns about it.
+static bool hasXdgPortal() {
+    // Flatpak always has one, and leaves no activation file to find it by.
+    if (QFileInfo::exists(QStringLiteral("/.flatpak-info")))
+        return true;
+    for (const QString &dir :
+         QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation)) {
+        if (QFileInfo::exists(
+                dir + QStringLiteral(
+                          "/dbus-1/services/org.freedesktop.portal.Desktop.service")))
+            return true;
+    }
+    return false;
+}
+#endif
+
 int main(int argc, char *argv[]) {
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
-    // A stock GNOME session exports no QT_QPA_PLATFORMTHEME (that is a
-    // Plasma-session habit), so unset it leaves Qt on its bland generic-Unix
-    // theme: a hardcoded palette with no light/dark or accent awareness.
-    // "xdgdesktopportal" instead asks the XDG Desktop Portal for Settings,
-    // which xdg-desktop-portal-gnome answers from GNOME's own preferences -
-    // unlike the "gtk3" theme (see appimage/Dockerfile, which strips it for the
-    // GTK dependency it would otherwise drag in), this links no GTK. Set only
-    // as a default: never override an environment that already chose.
-    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME"))
+    // Unset, Qt reads GTK's settings through its own "gtk3" theme, but the
+    // AppImage strips that plugin for the GTK dependency it drags in (see
+    // appimage/Dockerfile) and falls back to a hardcoded palette with no
+    // light/dark or accent awareness; the portal answers both and links no GTK.
+    // Only where one is installed to answer, though: without one it wraps the
+    // theme Qt would have picked anyway and fails two calls per start. A
+    // default, not an override.
+    if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME") && hasXdgPortal())
         qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
 #endif
 #if (defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)) || defined(Q_OS_MACOS)
