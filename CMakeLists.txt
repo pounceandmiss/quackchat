@@ -26,7 +26,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
     endif()
 endif()
 
-find_package(Qt6 6.8 REQUIRED
+# A floor, not a preference: ChatListFilter uses endFilterChange() (6.10) and the
+# QML uses the SafeArea attached type (6.9). On 6.8 every SafeArea binding throws
+# and the padding it feeds falls back to a style default.
+find_package(Qt6 6.10 REQUIRED
     COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test
                LinguistTools)
 # Desktop notifications on Linux go over the session bus. Optional: without it
@@ -36,9 +39,9 @@ find_package(Qt6 6.8 REQUIRED
 # because the Windows and macOS kits do ship Qt6DBus: QUIET alone would pick the
 # FreeDesktop notifier there and address a session bus that is not running.
 if(NOT ANDROID AND NOT WIN32 AND NOT APPLE)
-    find_package(Qt6 6.8 QUIET COMPONENTS DBus)
+    find_package(Qt6 6.10 QUIET COMPONENTS DBus)
 endif()
-qt_standard_project_setup(REQUIRES 6.8 I18N_SOURCE_LANGUAGE en)
+qt_standard_project_setup(REQUIRES 6.10 I18N_SOURCE_LANGUAGE en)
 
 # tacky has its own (non-CMake) make, so we find what it drops in <root>/dist
 # instead of building it. Normally that is the third_party/tacky submodule,
@@ -141,6 +144,13 @@ else()
     if(NOT ANDROID)
         # bionic has pthreads in libc
         target_link_libraries(tacky INTERFACE pthread)
+    endif()
+    if(APPLE)
+        # The subset of tacky's own KITSH_SYSLIBS the archive still reaches for
+        # on macOS: CoreFoundation for Tcl's CFRunLoop notifier, Security for the
+        # mbedTLS trust store (SecTrustSettingsCopyCertificates, SecItemExport).
+        target_link_libraries(tacky INTERFACE
+            "-framework CoreFoundation" "-framework Security")
     endif()
 endif()
 
