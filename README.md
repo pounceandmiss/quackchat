@@ -21,9 +21,10 @@ Two different answers, depending on what you are here for.
 
 **To build and run it**, on this machine, against what the distro gives you:
 
-* Qt 6.8 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
+* Qt 6.10 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
   QuickDialogs2, Test and LinguistTools. On Linux, Qt6 DBus carries the desktop
-  notifications if it is there.
+  notifications if it is there. A floor, not a preference: ChatListFilter uses
+  endFilterChange() (6.10) and the QML uses the SafeArea attached type (6.9).
 * CMake 3.21+, Ninja, and a C++17 compiler.
 * For tacky: a POSIX toolchain and `make`. Its own dependencies (Tcl, mbedTLS,
   libdatachannel, opus and the rest) are downloaded and built by its makefile
