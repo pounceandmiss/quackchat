@@ -100,6 +100,28 @@ VERSION=$(sed -n 's/.*project(quack_qml VERSION \([0-9.]*\).*/\1/p' /src/CMakeLi
 cd "$build"
 linuxdeploy --appdir "$appdir" --plugin qt
 
+# The glibc floor, checked rather than assumed. Everything in the AppDir was
+# built or bundled by this image, so nothing should reference a symbol newer
+# than the image's own glibc - but a moved vault snapshot, or a library that
+# came from EPEL rather than the vault, could raise it without anyone noticing,
+# and the AppImage would then refuse to start on the distros the README names.
+#
+# The AppDir rather than the finished file: an AppImage begins with a static
+# runtime stub, so objdump on that reports no glibc dependency at all and looks
+# like a pass whatever is inside.
+floor_max=GLIBC_2.34
+floor=$(find "$appdir" -type f \( -name '*.so*' -o -perm -u+x \) \
+    -exec objdump -T {} + 2>/dev/null \
+    | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
+echo "==> glibc floor: ${floor:-none found}"
+if [ -n "$floor" ] &&
+   [ "$(printf '%s\n%s\n' "$floor" "$floor_max" | sort -V | tail -1)" != "$floor_max" ]; then
+    echo "in-image.sh: the AppImage needs $floor, above the $floor_max floor." >&2
+    echo "    Something in docker/common.Dockerfile moved. The distros the" >&2
+    echo "    README names would no longer run this." >&2
+    exit 1
+fi
+
 # An AppImage is a squashfs, which records a timestamp and an owner for every
 # entry, plus one for the filesystem itself. Left alone those come from the
 # checkout's mtimes and from whichever uid docker was told to run as - so the

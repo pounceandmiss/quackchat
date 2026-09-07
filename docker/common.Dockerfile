@@ -39,15 +39,9 @@ FROM rockylinux:9@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed689288965
 # stream runs ahead of any vault snapshot and dnf refuses the split dependency.
 #
 # The snapshot always lags by a point release: Rocky vaults 9.x once 9.x+1 ships.
-# glibc does not move across them - it is 2.34 throughout Rocky 9 - but check the
-# floor after moving the number, reading the extracted tree rather than the
-# AppImage, whose leading runtime stub makes objdump report no glibc dependency
-# at all:
-#
-#   ./dist/quackchat-*.AppImage --appimage-extract >/dev/null
-#   find squashfs-root -type f \( -name '*.so*' -o -perm -u+x \) \
-#     -exec objdump -T {} + 2>/dev/null \
-#     | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -3
+# glibc does not move across them - it is 2.34 throughout Rocky 9 - and after
+# moving the number appimage/in-image.sh checks the floor for you, failing the
+# build if anything in the AppDir needs something newer.
 ARG ROCKY_VAULT=9.7
 RUN vault=https://dl.rockylinux.org/vault/rocky/${ROCKY_VAULT} \
     && for r in BaseOS AppStream CRB extras; do \
