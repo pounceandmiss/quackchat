@@ -125,7 +125,7 @@ if [ -n "${QUACK_ANDROID_KEYSTORE_PASS-}" ]; then
 fi
 "$tools/apksigner" sign \
     --ks "$QUACK_ANDROID_KEYSTORE" --ks-key-alias "$QUACK_ANDROID_KEY_ALIAS" \
-    "${pass_args[@]+"${pass_args[@]}"}" \
+    "${pass_args[@]}" \
     --out "$signed" "$aligned"
 "$tools/apksigner" verify --print-certs "$signed"
 

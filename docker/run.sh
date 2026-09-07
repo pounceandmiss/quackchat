@@ -119,6 +119,6 @@ exec docker run --rm "${tty_flags[@]}" \
     -e HOME=/tmp \
     "${env_args[@]}" \
     -v "$project:/src" \
-    "${mount_args[@]+"${mount_args[@]}"}" \
+    "${mount_args[@]}" \
     -w /src \
     "quack-build:$profile" "$@"

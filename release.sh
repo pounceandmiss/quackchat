@@ -204,7 +204,7 @@ build_windows() {
     local args=()
     if [ "$clean" -eq 1 ]; then args=(--clean); fi
     # Writes dist/quackchat-<version>-win64.{zip,exe} itself.
-    run_logged windows ./windows/build.sh "${args[@]+"${args[@]}"}"
+    run_logged windows ./windows/build.sh "${args[@]}"
 }
 
 build_android() {
@@ -218,7 +218,7 @@ build_android() {
     run_logged android env \
         QUACK_ANDROID_KEYSTORE="$QUACK_ANDROID_KEYSTORE" \
         QUACK_ANDROID_KEY_ALIAS="$QUACK_ANDROID_KEY_ALIAS" \
-        ./android/build.sh "${args[@]+"${args[@]}"}"
+        ./android/build.sh "${args[@]}"
 }
 
 build_flatpak() {
@@ -231,7 +231,7 @@ build_appimage() {
     local args=()
     if [ "$clean" -eq 1 ]; then args=(--clean); fi
     # Writes dist/quackchat-<version>-x86_64.AppImage itself.
-    run_logged appimage ./appimage/build.sh "${args[@]+"${args[@]}"}"
+    run_logged appimage ./appimage/build.sh "${args[@]}"
 }
 
 # -------------------------------------------------------------------- drive
