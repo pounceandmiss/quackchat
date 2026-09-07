@@ -51,7 +51,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: 6585053415e065cd2d8a1479d23e533f9a713dfb
+        commit: 78f3d97f7ba0f94eb8b15ab0fc037e192d83cbe6
 
       # zippy's pins, generated and replaced wholesale rather than edited.
       # After a bump, in a tacky checkout:
@@ -111,8 +111,8 @@ modules:
         dest: build/deps/git/libdatachannel-c47f5d77c124c35c31ac8378ad613295a124d354
       - type: git
         url: https://github.com/pounceandmiss/rtc-ma.git
-        commit: 07442896dce38ccc150c5b396bbd6b39cbcf3545
-        dest: build/deps/git/rtc-ma-07442896dce38ccc150c5b396bbd6b39cbcf3545
+        commit: bf6e012ba36f6dc9a4611f1c0c54ad875489a265
+        dest: build/deps/git/rtc-ma-bf6e012ba36f6dc9a4611f1c0c54ad875489a265
       - type: git
         url: https://github.com/pounceandmiss/picomemo-tcl.git
         commit: 254ce9899878a159a8a5bcce575b6ab7437177b5
