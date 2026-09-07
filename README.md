@@ -15,11 +15,157 @@ After a plain clone, or when the pin moves:
 `--recursive` matters: tacky carries zippy, its build system, as a submodule of
 its own.
 
-## What you need
+There are two ways to build from here, and they need entirely different things.
+The packaging builds - the AppImage, the Windows package, the apk and the
+Flatpak - each run in a pinned container that carries its own toolchain, so they
+need almost nothing installed. A host build uses the Qt and the compiler this
+machine already has. It is the quick one, and the only one that builds the
+tests. They are described in that order below.
 
-Two different answers, depending on what you are here for.
+## What you need to build the packages
 
-**To build and run it**, on this machine, against what the distro gives you:
+`docker`, and `flatpak-builder` for the Flatpak. That is the whole list: no Qt
+kit, no MinGW, no Android SDK, etc etc, and nothing to configure. Each target
+builds in a pinned container that carries its own toolchain, so the artifacts do
+not depend on this machine and anyone with docker can produce them.
+
+## Building every package at once
+
+    ./release.sh [--check] [<version>] [target...]
+
+builds every artifact into `dist/` and writes a `SHA256SUMS` over them. Targets
+are `windows`, `android`, `flatpak` and `appimage` - all four run when none are
+named. Each leg is logged to `dist/logs/<target>.log` as well as the terminal.
+
+`<version>` is checked rather than applied: the version lives in
+`project(quack_qml VERSION)`, which is what CPack, the Android version code and
+the AppImage all read, so naming it here only asserts that the bump happened.
+
+Everything the selected targets need is checked before the first one builds -
+`--check` runs just that and stops, which is how to find out whether this
+machine can make a release without waiting for one.
+
+The per-target sections below are for building one on its own. `release.sh`
+calls exactly those scripts.
+
+## How the build containers work
+
+    docker/run.sh <profile> <command...>
+
+builds the image named by `<profile>` and runs the command with the checkout
+bind-mounted at `/src` as the invoking user, so nothing lands root-owned. There
+are two profiles: `common` for the AppImage and the Windows cross-build, and
+`android`, which derives from it and adds an NDK and an SDK.
+
+The per-target scripts below call it, so `./appimage/build.sh` is the normal way
+in. `docker/run.sh common bash` gives a shell in the same toolchain, which is how
+to work out why a build behaves differently there than here. The Dockerfiles say
+why the two are split the way they are.
+
+## The Linux AppImage
+
+A single portable binary needing no Qt on the machine that runs it:
+
+    ./appimage/build.sh
+
+The result is `dist/quackchat-<version>-x86_64.AppImage`, built in Rocky 9 for
+its glibc 2.34 - the floor Qt's own binaries set - so it runs on Ubuntu 22.04,
+Debian 12, RHEL 9 and newer. It carries Qt and tacky, and leaves the graphics
+stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
+
+`--clean` rebuilds the app but keeps tacky's deps which takes long to compile -
+delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
+compile, which dominates the build.
+
+    ./appimage/smoke-test.sh
+
+runs it on a clean Ubuntu container under a virtual X server, the only real
+check that it works without Qt installed.
+
+## The Windows package
+
+Cross-built from Linux, with no Windows host anywhere in the picture:
+
+    ./windows/build.sh
+
+leaving `dist/quackchat-<version>-win64.zip` and the NSIS installer beside it.
+Both come from one staged tree: the installer writes under Program Files and so
+asks for administrator, and the ZIP is what someone without it unpacks and runs
+in place. `--no-installer` skips NSIS. `--clean` drops the app's half of
+`build-win/` and keeps tacky's dependencies.
+
+NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
+so `docker/common.Dockerfile` builds it from source, along with the scons that
+builds it. That is more pinning than a distro package gives, not less: the
+compiler and the prebuilt stubs are each fixed by checksum.
+
+## The Android apk
+
+    ./android/build.sh
+
+leaves `dist/quackchat-<version>-unsigned.apk`. Android installs nothing
+unsigned, so that file is an input to signing rather than something to hand out.
+`release.sh` signs it with the key named in `release.env`. `--debug` builds the
+debug-signed apk instead, which does install - for testing only, since nothing
+the debug key signed can ever be published.
+
+Signing happens in the container too, when `QUACK_ANDROID_KEYSTORE` and
+`QUACK_ANDROID_KEY_ALIAS` are set - `release.sh` reads them from `release.env`.
+The keystore is bind-mounted read-only, never copied into the checkout or into
+an image, and the password is passed by variable name rather than value so it
+stays out of the process table. Left unset, `apksigner` prompts.
+
+The image carries its own NDK, so tacky's Android targets are driven with
+`ANDROID_DOCKER=0`. Left at the default they would start a second container from
+inside this one. `docker/android.Dockerfile` pins the NDK, the JDK and the
+command-line tools by checksum, but what `sdkmanager` fetches cannot be pinned -
+those packages publish none - and the versions it installs have to satisfy the
+Android Gradle Plugin that Qt chose, not one we pick.
+
+## The Flatpak
+
+    ./flatpak/build.sh
+
+leaves `dist/quackchat-<version>-x86_64.flatpak`, after checking both pins and
+dating the build by the commit rather than by the manifest's mtime.
+flatpak-builder cannot read a submodule, so it builds tacky from the commit
+pinned in the manifest instead. tacky and its dependencies are fetched from
+pinned sources and built with no network of their own.
+
+While working on the app, the form that installs what it builds is more useful:
+
+    cd flatpak
+    flatpak-builder --user --ccache --force-clean --install \
+        build-dir io.github.pounceandmiss.Quack.yml
+
+## Reproducible builds
+
+The AppImage is reproducible: the same commit gives the same bytes, so a binary
+from a release page is one anybody can rebuild and check against the source. The
+clock and the checkout's file mtimes are replaced by the commit date, the uid and
+the linker are fixed rather than inherited from the build host, and the whole
+toolchain is pinned by digest and checksum in `docker/common.Dockerfile`.
+
+Checked from a fresh clone rather than a rebuild in place: a rebuild reuses its
+build tree and can agree with itself for reasons that would not survive
+somebody else's checkout.
+
+    tools/repro-check.sh
+
+builds a second copy from a fresh clone of HEAD and compares. `diffoscope` is
+worth having installed before a mismatch turns up. Both builds run on one
+machine, so it catches the clock, the path and the mtimes. Only a rebuild
+somewhere else proves the rest.
+
+The other three are not held to it. All of them now build from the same pinned
+toolchain, so the ingredients are fixed, but nothing checks that their output
+settles: `tools/repro-check.sh flatpak` would settle the Flatpak, whose remaining
+unknown is the KDE sdk it builds against - a binary runtime nobody here compiles,
+recorded in `flatpak/runtime.pin` rather than built. Windows and Android have no
+such check at all, and the apk in particular goes through gradle, which would
+have to be made deterministic first.
+
+## What a host build needs
 
 * Qt 6.10 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
   QuickDialogs2, Test and LinguistTools. On Linux, Qt6 DBus carries the desktop
@@ -31,16 +177,11 @@ Two different answers, depending on what you are here for.
   at pinned versions, which costs a couple of gigabytes and a long first
   build. Later builds reuse it.
 
-**To build the release artifacts** - the AppImage, the Windows package, the apk:
-just `docker`, plus `flatpak-builder` for the Flatpak. No Qt kit, no MinGW, no
-Android SDK or NDK, no JDK, and nothing to configure; each target builds in a
-pinned container. See [Build containers](#build-containers).
-
 `ccache` and `mold` are picked up when installed. `-DQUACK_FAST_LINKER=OFF`
 leaves mold alone, which is what the release builds do so that their output does
 not depend on having it.
 
-## Building
+## Building and testing on the host
 
 tacky is a separate build system and nothing here drives it, so its archive
 comes first:
@@ -65,55 +206,16 @@ Debug builds compile QML to bytecode and Release builds compile it ahead of
 time to C++, trading build time for startup and binding speed. Override with
 `-DQUACK_QML_AOT=ON|OFF`.
 
-## Build containers
+## Building a package without the containers
 
-The packaging targets build in pinned containers rather than against whatever
-the host happens to have, so the artifacts do not depend on this machine and
-anyone with docker can produce them.
+Both cross builds can be driven against a host toolchain instead, which is what
+this repository did before the containers. Nothing below is reproducible - the
+output depends on which compiler, kit and linker the machine happens to carry,
+which is the reason the containers exist - so it is for working on the packaging
+itself rather than for producing anything to hand out.
 
-    docker/run.sh <profile> <command...>
-
-builds the image named by `<profile>` and runs the command with the checkout
-bind-mounted at `/src` as the invoking user, so nothing lands root-owned. There
-are two:
-
-    common    the AppImage and the Windows cross-build
-    android   the same, plus an NDK and an SDK - derived from common
-
-The AppImage and the Windows build share one image because they share nearly
-everything: the distro, the compiler, tacky's build tools, the native tcl 9.0 and
-Qt's Linux kit, which a cross build needs anyway to run moc and rcc as host
-tools. Splitting them duplicated all of that for the sake of a MinGW toolchain
-and wine.
-
-Android stays separate, and derives from `common` with `FROM`, because its NDK
-alone is ~5 GB unpacked - nobody building an AppImage should have to pull it.
-`docker/run.sh android` builds `common` first when it needs to.
-
-The per-target scripts below call it, so `./appimage/build.sh` is the normal way
-in. `docker/run.sh common bash` gives an interactive shell in the same toolchain,
-which is the way to work out why a build behaves differently there than here.
-
-## Windows
-
-Cross-built from Linux, with no Windows host anywhere in the picture. Docker is
-the only thing this needs:
-
-    ./windows/build.sh
-
-leaving `dist/quackchat-<version>-win64.zip` and the NSIS installer beside it.
-Both come from one staged tree: the installer writes under Program Files and so
-asks for administrator, and the ZIP is what someone without it unpacks and runs
-in place. `--no-installer` skips NSIS; `--clean` drops the app's half of
-`build-win/` and keeps tacky's dependencies.
-
-NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
-so `docker/common.Dockerfile` builds it from source, along with the scons that
-builds it. That is more pinning than a distro package gives, not less: the
-compiler and the prebuilt stubs are each fixed by checksum.
-
-To build against the host's own toolchain instead, which wants a MinGW Qt kit,
-`wine`, `makensis` and a native tclsh 9.0 installed:
+Windows wants a MinGW Qt kit, `wine`, `makensis` and a native tclsh 9.0
+installed:
 
     make -C third_party/tacky win-lib
     cmake -B build-win -G Ninja \
@@ -125,32 +227,7 @@ To build against the host's own toolchain instead, which wants a MinGW Qt kit,
 `cpack -G ZIP` or `cpack -G NSIS` from the build directory packages it, with
 `windeployqt` running under wine. NSIS is only needed for the installer.
 
-## Android
-
-Docker is the only thing the host needs - no SDK, no NDK, no JDK, no Qt kit:
-
-    ./android/build.sh
-
-leaves `dist/quackchat-<version>-unsigned.apk`. Android installs nothing
-unsigned, so that file is an input to signing rather than something to hand out;
-`release.sh` signs it with the key named in `release.env`. `--debug` builds the
-debug-signed apk instead, which does install - for testing only, since nothing
-the debug key signed can ever be published.
-
-Signing happens in the container too, when `QUACK_ANDROID_KEYSTORE` and
-`QUACK_ANDROID_KEY_ALIAS` are set - `release.sh` reads them from `release.env`.
-The keystore is bind-mounted read-only, never copied into the checkout or into
-an image, and the password is passed by variable name rather than value so it
-stays out of the process table. Left unset, `apksigner` prompts.
-
-The image carries its own NDK, so tacky's Android targets are driven with
-`ANDROID_DOCKER=0`; left at the default they would start a second container from
-inside this one. `docker/android.Dockerfile` pins the NDK, the JDK and the
-command-line tools by checksum, but what `sdkmanager` fetches cannot be pinned -
-those packages publish none - and the versions it installs have to satisfy the
-Android Gradle Plugin that Qt chose, not one we pick.
-
-To build against a host toolchain instead:
+Android wants the SDK, NDK r29, JDK 21 and the Android Qt kit:
 
     make -C third_party/tacky android-lib
     <qt>/android_arm64_v8a/bin/qt-cmake -S . -B build-android -G Ninja \
@@ -175,91 +252,6 @@ keystore. Release leaves the apk unsigned - the signing key is the packager's to
 supply, and Android takes nothing unsigned - so for a release build that still
 goes on a device, add `-DQT_ANDROID_DEPLOYMENT_TYPE=Debug`. Nothing the debug
 key signed can be published.
-
-## Flatpak
-
-    cd flatpak
-    flatpak-builder --user --ccache --force-clean --install \
-        build-dir io.github.pounceandmiss.Quack.yml
-
-flatpak-builder cannot read a submodule, so it builds tacky from the commit
-pinned in the manifest instead. tacky and its dependencies are fetched from
-pinned sources and built with no network of their own.
-
-That is the form to use while working on the app - it installs what it builds.
-The release bundle has its own script, which checks both pins first and dates the
-build by the commit rather than by the manifest's mtime:
-
-    ./flatpak/build.sh
-
-leaving `dist/quackchat-<version>-x86_64.flatpak`.
-
-## AppImage
-
-A single portable binary needing no Qt on the machine that runs it. Docker is
-the only thing the host has to have:
-
-    ./appimage/build.sh
-
-The result is `dist/quackchat-<version>-x86_64.AppImage`, built in Rocky 9 for
-its glibc 2.34 - the floor Qt's own binaries set - so it runs on Ubuntu 22.04,
-Debian 12, RHEL 9 and newer. It carries Qt and tacky, and leaves the graphics
-stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
-
-`--clean` rebuilds the app but keeps tacky's deps which takes long to compile -
-delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
-compile, which dominates the build.
-
-    ./appimage/smoke-test.sh
-
-runs it on a clean Ubuntu container under a virtual X server, the only real
-check that it works without Qt installed.
-
-## Making a release
-
-    ./release.sh [--check] [<version>] [target...]
-
-builds every artifact into `dist/` and writes a `SHA256SUMS` over them. Targets
-are `windows`, `android`, `flatpak` and `appimage`; all four run when none are
-named. Nothing is uploaded - the release page is a separate, deliberate step.
-
-`<version>` is checked rather than applied: the version lives in
-`project(quack_qml VERSION)`, which is what CPack, the Android version code and
-the AppImage all read, so naming it here only asserts that the bump happened.
-
-Everything the selected targets need is checked before the first one builds -
-`--check` runs just that and stops, which is how to find out whether this
-machine can make a release without waiting for one. Three of the four targets
-need only docker; the Flatpak needs `flatpak-builder`. The one thing that cannot
-live in an image is the Android signing key, which comes from `release.env`,
-made by copying `release.env.sample`.
-
-## Reproducible builds
-
-The AppImage is reproducible: the same commit gives the same bytes, so a binary
-from a release page is one anybody can rebuild and check against the source. The
-clock and the checkout's file mtimes are replaced by the commit date, the uid and
-the linker are fixed rather than inherited from the build host, and the whole
-toolchain is pinned by digest and checksum in `docker/common.Dockerfile`.
-
-Checked from a fresh clone rather than a rebuild in place: a rebuild reuses its
-build tree and can agree with itself for reasons that would not survive
-somebody else's checkout.
-
-    tools/repro-check.sh
-
-builds a second copy from a fresh clone of HEAD and compares. `diffoscope` is
-worth having installed before a mismatch turns up. Both builds run on one
-machine, so it catches the clock, the path and the mtimes; only a rebuild
-somewhere else proves the rest.
-
-The other three are not held to it. All of them now build from the same pinned
-toolchain, so the ingredients are fixed, but nothing checks that their output
-settles: `tools/repro-check.sh flatpak` would settle the Flatpak, whose remaining
-unknown is the KDE sdk it builds against - a binary runtime nobody here compiles,
-recorded in `flatpak/runtime.pin` rather than built. Windows and Android have no
-such check at all, and the apk in particular goes through gradle, which would
-have to be made deterministic first.
 
 ## Moving the tacky pin
 
