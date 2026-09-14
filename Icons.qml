@@ -113,6 +113,14 @@ QtObject {
         "c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3z" +
         "M12 4L9.91 6.09 12 8.18V4z"
 
+    // Camera on / off for the call window's video toggle.
+    readonly property string videoCam:
+        "M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12" +
+        "c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"
+    readonly property string videoCamOff:
+        "M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4" +
+        "c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z"
+
     // The handset pair every dialer draws: upright to answer, tipped over to
     // hang up. These two came in with the call windows and keep the older
     // call/call_end artwork they were pasted from, so those windows look as

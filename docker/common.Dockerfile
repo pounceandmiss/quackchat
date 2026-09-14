@@ -85,7 +85,7 @@ RUN dnf -y --disablerepo='*' --enablerepo='vault-*' --enablerepo=epel install \
         gcc gcc-c++ libstdc++-static make patch cmake ninja-build \
         git file zip unzip xz bzip2 tar ca-certificates pkgconf-pkg-config ccache \
         python3 python3-pip \
-        zlib-devel speexdsp-devel \
+        zlib-devel speexdsp-devel nasm diffutils which \
         libX11-devel libXext-devel libXScrnSaver-devel libXft-devel \
         libXcursor-devel fontconfig-devel \
         mesa-libGL-devel mesa-libEGL-devel libglvnd-devel \
@@ -143,9 +143,9 @@ RUN python3 -m venv /opt/aqt \
     && sed -i 's|^        elif architecture.startswith("android_") and is_version_ge_6:$|        elif architecture.startswith("win64_") and is_version_ge_6:\n            return architecture[len("win64_") :]\n&|' "$meta" \
     && /opt/aqt/bin/python -c 'import aqt.metadata'
 RUN /opt/aqt/bin/aqt install-qt linux desktop ${QT_VERSION} linux_gcc_64 \
-        --outputdir /opt/Qt \
+        --outputdir /opt/Qt -m qtmultimedia \
     && /opt/aqt/bin/aqt install-qt windows desktop ${QT_VERSION} win64_mingw \
-        --outputdir /opt/Qt \
+        --outputdir /opt/Qt -m qtmultimedia \
     && rm -rf /root/.cache
 
 # Three SQL drivers and the GTK platform theme, none of which the app uses and

@@ -3,6 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtMultimedia
 import Quack
 
 // The call itself: who you are talking to, how it is going, and the way out.
@@ -25,16 +26,30 @@ ApplicationWindow {
     required property string warning
     required property string reason
     required property bool terminal
+    required property bool offeredVideo
+    required property bool hasRemoteVideo
+    required property bool sendingVideo
+    required property var remoteVideo
+    required property var preview
+
+    // Local intent to send camera. Starts true whenever this call has a
+    // preview ring (i.e. video was negotiated); the toggle drives setVideo.
+    property bool cameraOn: sendingVideo
 
     // The dialog has a call while it rings, so this window is not normally up
     // then - but leave() is the single exit path, and a ringing call is
     // declined rather than hung up.
     readonly property bool ringingIn: state === "incoming"
 
-    width: 380
-    height: 460
-    minimumWidth: 320
-    minimumHeight: 380
+    // Video needs a taller layout to fit the button row below it; sized
+    // before <VideoTrack>/<VideoPreview> land by offeredVideo (incoming) or
+    // grown once sendingVideo/hasRemoteVideo turns true (outgoing).
+    readonly property bool videoActive: win.offeredVideo || win.hasRemoteVideo || win.sendingVideo
+
+    width: videoActive ? 480 : 380
+    height: videoActive ? 640 : 460
+    minimumWidth: videoActive ? 400 : 320
+    minimumHeight: videoActive ? 560 : 380
     title: qsTr("Call — %1").arg(peer)
     color: Theme.background
 
@@ -87,14 +102,49 @@ ApplicationWindow {
 
         Item { Layout.fillHeight: true }
 
-        Avatar {
+        // Remote video when it is flowing, the avatar otherwise, with a
+        // mirrored self-view tucked bottom-right while the camera is on.
+        Item {
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: 96
-            Layout.preferredHeight: 96
-            account: win.account
-            jid: win.peer
-            label: win.peer
-            initialsPixelSize: 38
+            Layout.fillWidth: win.hasRemoteVideo
+            Layout.preferredWidth: win.hasRemoteVideo ? -1 : 96
+            Layout.preferredHeight: win.hasRemoteVideo ? 260 : 96
+
+            Avatar {
+                anchors.centerIn: parent
+                width: 96; height: 96
+                visible: !win.hasRemoteVideo
+                account: win.account
+                jid: win.peer
+                label: win.peer
+                initialsPixelSize: 38
+            }
+
+            VideoOutput {
+                id: remoteOut
+                anchors.fill: parent
+                visible: win.hasRemoteVideo
+                fillMode: VideoOutput.PreserveAspectFit
+                VideoSurface {
+                    videoSink: remoteOut.videoSink
+                    channel: win.remoteVideo || ({})
+                }
+            }
+
+            VideoOutput {
+                id: previewOut
+                width: 96; height: 72
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 6
+                visible: win.sendingVideo
+                fillMode: VideoOutput.PreserveAspectCrop
+                transform: Scale { origin.x: previewOut.width / 2; xScale: -1 }
+                VideoSurface {
+                    videoSink: previewOut.videoSink
+                    channel: win.preview || ({})
+                }
+            }
         }
 
         Text {
@@ -182,6 +232,18 @@ ApplicationWindow {
                 onClicked: {
                     App.calls.start(win.account, win.peer)
                     App.calls.dismiss(win.account, win.sid)
+                }
+            }
+
+            // Camera on/off, shown once this call has video negotiated.
+            CallButton {
+                visible: !win.terminal && (win.sendingVideo || win.preview)
+                iconPath: win.cameraOn ? Icons.videoCam : Icons.videoCamOff
+                fill: win.cameraOn ? Theme.positive : Theme.textDim
+                text: win.cameraOn ? qsTr("Camera off") : qsTr("Camera on")
+                onClicked: {
+                    win.cameraOn = !win.cameraOn
+                    App.calls.setVideo(win.account, win.sid, win.cameraOn)
                 }
             }
 

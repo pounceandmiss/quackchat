@@ -1,5 +1,5 @@
 # The KDE runtime commits the Flatpak was last built and tested against.
 # Written by flatpak/check-runtime-pin.sh --sync.
 branch 6.11
-org.kde.Sdk 94e029e5b32c7d8bb1a44ff4492eca273c9886e55e33d7dba273c75e678353ca
-org.kde.Platform 3adaa41de78d95076617f743099ec3851b5ae4fcdadbaaa8b7df1412c705c56c
+org.kde.Sdk 260215c6d1e480fa1afd8c313e5f7c3cb53987bbd09723455c0f831c9d8cde2d
+org.kde.Platform 4da4797cdce707e1db7bc25720ac5e1f56818c087621f3737ea5482b0ed53c18

@@ -19,6 +19,7 @@ ApplicationWindow {
     required property string sid
     required property string account
     required property string peer
+    property bool offeredVideo: false
 
     width: 340
     height: 250
@@ -54,7 +55,8 @@ ApplicationWindow {
         Text {
             Layout.fillWidth: true
             Layout.topMargin: 10
-            text: qsTr("Incoming call from")
+            text: dlg.offeredVideo ? qsTr("Incoming video call from")
+                                   : qsTr("Incoming call from")
             color: Theme.textDim
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter

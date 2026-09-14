@@ -19,6 +19,7 @@
 #include "AudioDevices.h"
 #include "AvatarController.h"
 #include "CallsModel.h"
+#include "CameraDevices.h"
 #include "ChatListModel.h"
 #include "ChatSession.h"
 #include "NotificationController.h"
@@ -36,6 +37,7 @@ class AppController : public QObject {
     // there is no way to re-enumerate one from the backend.
     Q_PROPERTY(CallsModel *calls READ calls CONSTANT)
     Q_PROPERTY(AudioDevices *audio READ audio CONSTANT)
+    Q_PROPERTY(CameraDevices *video READ video CONSTANT)
     // The preferences that are the app's rather than an account's; tacky keeps
     // them in one store with no acc on it.
     Q_PROPERTY(AppSettings *settings READ settings CONSTANT)
@@ -63,6 +65,7 @@ public:
     AvatarController *avatars() { return &m_avatars; }
     CallsModel *calls() { return &m_calls; }
     AudioDevices *audio() { return &m_audio; }
+    CameraDevices *video() { return &m_video; }
     AppSettings *settings() { return &m_settings; }
     StorageController *storage() { return &m_storage; }
     QString logPath() const { return m_logPath; }
@@ -148,6 +151,7 @@ private:
     AvatarController m_avatars;
     CallsModel m_calls;
     AudioDevices m_audio;
+    CameraDevices m_video;
     AppSettings m_settings;
     StorageController m_storage;
     NotificationController m_notifications;

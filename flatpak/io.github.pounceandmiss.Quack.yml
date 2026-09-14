@@ -59,7 +59,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: 78f3d97f7ba0f94eb8b15ab0fc037e192d83cbe6
+        commit: 07e1902ab28ea45c795687b88fb40a5eaf979a53
 
       # zippy's pins, generated and replaced wholesale rather than edited.
       # After a bump, in a tacky checkout:
@@ -101,6 +101,11 @@ modules:
         sha256: 6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1
         dest: build/deps
         dest-filename: opus-1.6.1.tar.gz
+      - type: file
+        url: https://github.com/webmproject/libvpx/archive/refs/tags/v1.15.2.tar.gz
+        sha256: 26fcd3db88045dee380e581862a6ef106f49b74b6396ee95c2993a260b4636aa
+        dest: build/deps
+        dest-filename: libvpx-1.15.2.tar.gz
       - type: git
         url: https://github.com/pounceandmiss/tclmtls.git
         commit: 0d4055aa3f9bb5ef827e2ee76281102f54c7eca0
@@ -121,6 +126,10 @@ modules:
         url: https://github.com/pounceandmiss/rtc-ma.git
         commit: bf6e012ba36f6dc9a4611f1c0c54ad875489a265
         dest: build/deps/git/rtc-ma-bf6e012ba36f6dc9a4611f1c0c54ad875489a265
+      - type: git
+        url: https://codeberg.org/another-im/rtc-mv.git
+        commit: a9fc8d6e54eb568a3405066e582618cc68804484
+        dest: build/deps/git/rtc-mv-a9fc8d6e54eb568a3405066e582618cc68804484
       - type: git
         url: https://github.com/pounceandmiss/picomemo-tcl.git
         commit: 254ce9899878a159a8a5bcce575b6ab7437177b5

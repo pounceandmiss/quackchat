@@ -85,6 +85,11 @@ QtObject {
             required property string warning
             required property string reason
             required property bool terminal
+            required property bool offeredVideo
+            required property bool hasRemoteVideo
+            required property bool sendingVideo
+            required property var remoteVideo
+            required property var preview
 
             readonly property string key: mgr._callKey(row.account, row.sid)
 
@@ -102,6 +107,7 @@ QtObject {
                 sid: row.sid
                 account: row.account
                 peer: row.peer
+                offeredVideo: row.offeredVideo
             }
 
             property CallWindow window: CallWindow {
@@ -114,6 +120,11 @@ QtObject {
                 warning: row.warning
                 reason: row.reason
                 terminal: row.terminal
+                offeredVideo: row.offeredVideo
+                hasRemoteVideo: row.hasRemoteVideo
+                sendingVideo: row.sendingVideo
+                remoteVideo: row.remoteVideo
+                preview: row.preview
             }
         }
     }

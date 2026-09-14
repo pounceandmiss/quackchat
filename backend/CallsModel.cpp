@@ -37,6 +37,11 @@ QVariant CallsModel::data(const QModelIndex &index, int role) const {
     case WarningRole:   return c.warning;
     case ReasonRole:    return c.reason;
     case TerminalRole:  return isTerminal(c.state);
+    case OfferedVideoRole:   return c.offeredVideo;
+    case HasRemoteVideoRole: return c.hasRemoteVideo;
+    case SendingVideoRole:    return c.sendingVideo;
+    case RemoteVideoRole:     return c.remoteVideo;
+    case PreviewRole:         return c.preview;
     default:            return {};
     }
 }
@@ -49,7 +54,12 @@ QHash<int, QByteArray> CallsModel::roleNames() const {
             {StateRole, "state"},
             {WarningRole, "warning"},
             {ReasonRole, "reason"},
-            {TerminalRole, "terminal"}};
+            {TerminalRole, "terminal"},
+            {OfferedVideoRole, "offeredVideo"},
+            {HasRemoteVideoRole, "hasRemoteVideo"},
+            {SendingVideoRole, "sendingVideo"},
+            {RemoteVideoRole, "remoteVideo"},
+            {PreviewRole, "preview"}};
 }
 
 bool CallsModel::isTerminal(const QString &state) {
@@ -151,8 +161,38 @@ void CallsModel::handleEvent(const QString &module, const QString &name,
         insertCall({sid, acc, a.value(QStringLiteral("to")).toString(), kOutgoing,
                     QStringLiteral("calling"), {}, {}});
     } else if (name == QLatin1String("Incoming")) {
-        insertCall({sid, acc, a.value(QStringLiteral("from")).toString(), kIncoming,
-                    QStringLiteral("incoming"), {}, {}});
+        Call c{sid, acc, a.value(QStringLiteral("from")).toString(), kIncoming,
+               QStringLiteral("incoming"), {}, {}};
+        c.offeredVideo = a.value(QStringLiteral("video")).toString() == QLatin1String("1")
+                      || a.value(QStringLiteral("video")).toBool();
+        insertCall(std::move(c));
+    } else if (name == QLatin1String("VideoTrack")) {
+        const int i = indexOf(acc, sid);
+        if (i >= 0) {
+            m_calls[i].remoteVideo = a;
+            m_calls[i].hasRemoteVideo = true;
+            const QModelIndex mi = index(i);
+            emit dataChanged(mi, mi, {RemoteVideoRole, HasRemoteVideoRole});
+        }
+    } else if (name == QLatin1String("VideoPreview")) {
+        const int i = indexOf(acc, sid);
+        if (i >= 0) {
+            m_calls[i].preview = a;
+            m_calls[i].sendingVideo = true;
+            const QModelIndex mi = index(i);
+            emit dataChanged(mi, mi, {PreviewRole, SendingVideoRole});
+        }
+    } else if (name == QLatin1String("VideoEnded")) {
+        const int i = indexOf(acc, sid);
+        if (i >= 0) {
+            m_calls[i].remoteVideo.clear();
+            m_calls[i].preview.clear();
+            m_calls[i].hasRemoteVideo = false;
+            m_calls[i].sendingVideo = false;
+            const QModelIndex mi = index(i);
+            emit dataChanged(mi, mi, {RemoteVideoRole, PreviewRole,
+                                      HasRemoteVideoRole, SendingVideoRole});
+        }
     } else if (name == QLatin1String("Ringing")) {
         // Caller side only, and it can repeat once per answering device.
         const int i = indexOf(acc, sid);
@@ -332,18 +372,25 @@ void CallsModel::withMicrophone(const QString &acc, const QString &peer,
 #endif
 }
 
-void CallsModel::start(const QString &acc, const QString &to) {
+void CallsModel::start(const QString &acc, const QString &to, bool video) {
     if (!m_backend || acc.isEmpty() || to.isEmpty())
         return;
-    withMicrophone(acc, to, [this, acc, to] {
+    withMicrophone(acc, to, [this, acc, to, video] {
         // A token only so a refusal ("not connected", no such account) has
         // somewhere to land - the sid comes from <Outgoing>, which the backend
         // emits before this ever replies.
         const int token = m_backend->request(
             QStringLiteral("calls"), QStringLiteral("start"),
-            QVariantMap{{QStringLiteral("acc"), acc}, {QStringLiteral("to"), to}});
+            QVariantMap{{QStringLiteral("acc"), acc},
+                        {QStringLiteral("to"), to},
+                        {QStringLiteral("video"), video ? 1 : 0}});
         m_startTokens.insert(token, {acc, to});
     });
+}
+
+void CallsModel::setVideo(const QString &acc, const QString &sid, bool on) {
+    sendFor(acc, sid, QStringLiteral("setVideo"),
+            {{QStringLiteral("on"), on ? 1 : 0}});
 }
 
 void CallsModel::sendFor(const QString &acc, const QString &sid,

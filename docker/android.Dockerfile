@@ -28,7 +28,7 @@ ENV JAVA_HOME=${QUACK_ANDROID_JDK}
 ARG QT_VERSION=6.11.1
 ENV QUACK_QT_ANDROID=/opt/Qt/${QT_VERSION}/android_arm64_v8a
 RUN /opt/aqt/bin/aqt install-qt linux android ${QT_VERSION} android_arm64_v8a \
-        --outputdir /opt/Qt \
+        --outputdir /opt/Qt -m qtmultimedia \
     && rm -rf /root/.cache
 
 # NDK r29. It has to be r29: libtacky-android.a is built against it, r27's

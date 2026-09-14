@@ -39,7 +39,7 @@ endif()
 # and the padding it feeds falls back to a style default.
 find_package(Qt6 6.10 REQUIRED
     COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test
-               LinguistTools)
+               LinguistTools Multimedia)
 # Desktop notifications on Linux go over the session bus. Optional: without it
 # the app builds and runs exactly as before, just silently. Android posts its
 # own from the backend service (android/.../Notifications.java), so it is never
@@ -150,8 +150,15 @@ if(WIN32)
 else()
     target_link_libraries(tacky INTERFACE dl z m)
     if(NOT ANDROID)
+        # bionic has no separate librt (its symbols are in libc).
+        target_link_libraries(tacky INTERFACE rt)
         # bionic has pthreads in libc
         target_link_libraries(tacky INTERFACE pthread)
+    endif()
+    if(ANDROID)
+        # sqlite3's sqlcipher build logs through __android_log_write/_print
+        # on this platform - liblog is where bionic puts those.
+        target_link_libraries(tacky INTERFACE log)
     endif()
     if(APPLE)
         # The subset of tacky's own KITSH_SYSLIBS the archive still reaches for
@@ -299,6 +306,9 @@ qt_add_qml_module(quack
         backend/BackendBinding.h
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
+        backend/CameraDevices.cpp backend/CameraDevices.h
+        backend/FrameChannel.cpp backend/FrameChannel.h
+        backend/VideoSurface.cpp backend/VideoSurface.h
         backend/AppSettings.cpp backend/AppSettings.h
         backend/StorageController.cpp backend/StorageController.h
         backend/AvatarEncoder.h
@@ -307,7 +317,7 @@ target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
 # Core/Qml PUBLIC so the headless tests get the headers without linking QtGui.
 target_link_libraries(quack
     PUBLIC Qt6::Core Qt6::Network Qt6::Qml
-    PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::QuickDialogs2)
+    PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::QuickDialogs2 Qt6::Multimedia)
 if(ANDROID)
     # The interpreter belongs to the backend service's process, reached over a
     # socket. Linking it here too would put a second writer on tacky's store.
@@ -333,7 +343,7 @@ qt_add_resources(quack "appicon"
 qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp
                             backend/QImageAvatarEncoder.cpp)
 target_link_libraries(quackchat PRIVATE
-    quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2)
+    quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Multimedia)
 
 # Nearly every translatable string is in `quack`, which owns the QML files and
 # most of the C++; quackchat carries the rest. The compiled catalogues go into

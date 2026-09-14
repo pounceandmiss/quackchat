@@ -60,6 +60,11 @@ public:
         WarningRole,  // last <Warning> reason; the call carried on
         ReasonRole,   // <Failed> reason
         TerminalRole, // state is ended or failed
+        OfferedVideoRole,   // the incoming propose advertised video
+        HasRemoteVideoRole, // a <VideoTrack> ring is live
+        SendingVideoRole,   // a local-preview ring is live
+        RemoteVideoRole,    // <VideoTrack> arg map (name + geometry + channel)
+        PreviewRole,        // <VideoPreview> arg map
     };
     Q_ENUM(Role)
 
@@ -74,7 +79,11 @@ public:
     // Ring `to` from `acc`. The row appears when <Outgoing> lands (the doc's
     // "reliable source no matter the transport"), not here; a backend refusal
     // arrives as startFailed().
-    Q_INVOKABLE void start(const QString &acc, const QString &to);
+    Q_INVOKABLE void start(const QString &acc, const QString &to,
+                           bool video = false);
+
+    // Mute / unmute the local camera on a live video call.
+    Q_INVOKABLE void setVideo(const QString &acc, const QString &sid, bool on);
 
     // acc as well as sid, for the reason at the top: a sid alone can name two
     // rows.
@@ -130,6 +139,11 @@ private:
         QString state;
         QString warning;
         QString reason;
+        bool offeredVideo = false;
+        bool hasRemoteVideo = false;
+        bool sendingVideo = false;
+        QVariantMap remoteVideo; // <VideoTrack> args
+        QVariantMap preview;     // <VideoPreview> args
         // Insert order, so a reconcile can tell a row older than the request it
         // answers from one that arrived while that request was out.
         quint64 seq = 0;

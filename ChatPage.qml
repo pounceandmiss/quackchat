@@ -865,6 +865,14 @@ Page {
                 onClicked: App.calls.start(page.account, page.chatJid)
             }
             IconButton {
+                visible: page.hasChat && !page.chatGroupchat
+                Accessible.name: qsTr("Video call")
+                iconPath: Icons.videoCam
+                iconSize: 20
+                glyphColor: Theme.positive
+                onClicked: App.calls.start(page.account, page.chatJid, true)
+            }
+            IconButton {
                 objectName: "chatSearchButton"
                 iconPath: Icons.search
                 iconSize: 20

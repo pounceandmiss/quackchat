@@ -23,6 +23,7 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     m_avatars.setBackend(&m_backend);
     m_calls.setBackend(&m_backend);
     m_audio.setBackend(&m_backend);
+    m_video.setBackend(&m_backend);
     m_settings.setBackend(&m_backend);
     m_storage.setBackend(&m_backend);
     m_notifications.setBackend(&m_backend);
