@@ -169,6 +169,20 @@ else()
     endif()
 endif()
 
+# Optional webrtc media backend beside libtacky.a. A shared library: it carries
+# its own libc++.
+if(NOT ANDROID AND NOT WIN32)
+    cmake_path(GET TACKY_LIB PARENT_PATH _tacky_dist)
+    set(TACKY_WEBRTC_LIB
+        "${_tacky_dist}/libtacky_webrtc${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    if(EXISTS "${TACKY_WEBRTC_LIB}")
+        message(STATUS "webrtc media backend: ${TACKY_WEBRTC_LIB}")
+    else()
+        message(STATUS "no webrtc media backend beside ${TACKY_LIB}; rtc only")
+        set(TACKY_WEBRTC_LIB "")
+    endif()
+endif()
+
 # The embedded transport is the only thing that calls into libtacky directly,
 # so on Android - where the interpreter lives in the service - it is left out
 # entirely rather than linked against an archive this process must not open.
@@ -344,6 +358,20 @@ qt_add_executable(quackchat backend/main.cpp backend/AvatarImageProvider.cpp
                             backend/QImageAvatarEncoder.cpp)
 target_link_libraries(quackchat PRIVATE
     quack Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Multimedia)
+
+# Staged beside the binary, keyed to the file so a newer .so restages.
+if(TACKY_WEBRTC_LIB)
+    set(_webrtc_staged
+        "${CMAKE_CURRENT_BINARY_DIR}/libtacky_webrtc${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    add_custom_command(
+        OUTPUT "${_webrtc_staged}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${TACKY_WEBRTC_LIB}" "${_webrtc_staged}"
+        DEPENDS "${TACKY_WEBRTC_LIB}"
+        COMMENT "Staging the webrtc media backend beside quackchat")
+    add_custom_target(stage_webrtc_backend DEPENDS "${_webrtc_staged}")
+    add_dependencies(quackchat stage_webrtc_backend)
+endif()
 
 # Nearly every translatable string is in `quack`, which owns the QML files and
 # most of the C++; quackchat carries the rest. The compiled catalogues go into
@@ -540,6 +568,11 @@ else()
     set(_bindir ".")
 endif()
 install(TARGETS quackchat RUNTIME DESTINATION "${_bindir}" BUNDLE DESTINATION .)
+
+# Beside the executable, as in the build tree.
+if(TACKY_WEBRTC_LIB)
+    install(PROGRAMS "${TACKY_WEBRTC_LIB}" DESTINATION "${_bindir}")
+endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux|.*BSD|DragonFly|GNU")
     # Named for the app id throughout, because that is the one name that ties

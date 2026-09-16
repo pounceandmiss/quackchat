@@ -367,6 +367,30 @@ Page {
             }
 
             Card {
+                SectionTitle { text: qsTr("Calls") }
+
+                Caption { text: qsTr("Media backend") }
+                Repeater {
+                    model: [
+                        { label: qsTr("Built in"), value: "rtc" },
+                        { label: qsTr("libwebrtc"), value: "webrtc" }
+                    ]
+                    delegate: OptionRow {
+                        required property var modelData
+                        objectName: "mediaBackend_" + modelData.value
+                        text: modelData.label
+                        selected: App.settings.mediaBackend === modelData.value
+                        onClicked: App.settings.setMediaBackend(modelData.value)
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("Takes effect at the next start.")
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Card {
                 SectionTitle { text: qsTr("Diagnostics") }
 
                 CheckBox {

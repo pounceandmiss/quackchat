@@ -58,6 +58,20 @@ make -C /src/third_party/tacky lib \
     LINUX_BUILD="$build/tacky" \
     DEPS_DIR=/src/build-deps
 
+# Optional webrtc media backend (see README.md), built before CMake looks for it.
+echo "==> tacky webrtc backend"
+if [ -z "${QUACK_WEBRTC_SRC-}" ]; then
+    echo "    QUACK_WEBRTC_SRC is unset; rtc backend only"
+elif ! make -C /src/third_party/tacky -n webrtc-so >/dev/null 2>&1; then
+    echo "    the pinned tacky has no webrtc-so target; rtc backend only"
+else
+    make -C /src/third_party/tacky webrtc-so \
+        LINUX_BUILD="$build/tacky" \
+        DEPS_DIR=/src/build-deps \
+        WEBRTC_SRC="$QUACK_WEBRTC_SRC" \
+        WEBRTC_BUILD="$build/webrtc"
+fi
+
 # Prefix /usr with DESTDIR into the AppDir is the layout linuxdeploy expects: it
 # takes the desktop entry and the hicolor icon out of usr/share itself.
 #

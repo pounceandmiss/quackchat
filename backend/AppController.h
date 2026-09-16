@@ -10,6 +10,7 @@
 #include <QHash>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include <QtQml/qqmlregistration.h>
 
@@ -114,8 +115,15 @@ public:
         QString file;
         QString libdatachannelLevel;
         QString rtcmaLevel;
+        QString webrtcLevel;
+        QString rtcmvLevel;
     };
     void setDebugArgs(const DebugArgs &args);
+    // For this run only; empty uses the setting.
+    void setMediaBackendOverride(const QString &name);
+
+    // What a desktop start passes to taco_type; public for tests.
+    QStringList tacoArgs() const;
 
     // Start a persistent on-disk backend and sign in TACKY_ACC if it is set.
     // No-op once started.
@@ -143,6 +151,9 @@ private:
     void applyLogToFile();
     void applyLogLevel();
     void applyLogNative();
+    QStringList tacoArgs(const QString &mediaBackend) const;
+    // --media-backend, else the setting.
+    QString mediaBackend() const;
     void onResult(int token, const QVariant &data);
     void onEvent(const QString &module, const QString &name, const QVariant &args);
 
@@ -157,6 +168,7 @@ private:
     NotificationController m_notifications;
     const AvatarEncoder *m_encoder = nullptr;
     DebugArgs m_debug;
+    QString m_mediaBackendOverride;
     QString m_logPath;
     int m_logPathToken = -1;
     QHash<QString, ChatListModel *> m_chatLists;

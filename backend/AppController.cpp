@@ -3,6 +3,7 @@
 #include "LogBridge.h"
 #include "Notifier.h"
 
+#include <QCoreApplication>
 #include <QFileInfo>
 #include <utility>
 
@@ -103,7 +104,8 @@ void AppController::applyLogLevel() {
 // The setting is a switch and the native loggers take a level, so `debug` is
 // what "on" means - they do their own filtering, and jlog does not re-filter.
 void AppController::applyLogNative() {
-    if (!m_debug.libdatachannelLevel.isEmpty() || !m_debug.rtcmaLevel.isEmpty())
+    if (!m_debug.libdatachannelLevel.isEmpty() || !m_debug.rtcmaLevel.isEmpty()
+        || !m_debug.webrtcLevel.isEmpty() || !m_debug.rtcmvLevel.isEmpty())
         return;
     m_backend.notify(
         QStringLiteral("log"), QStringLiteral("setnativelevel"),
@@ -210,6 +212,57 @@ void AppController::setAvatarEncoder(const AvatarEncoder *encoder) {
         s->setAvatarEncoder(encoder);
 }
 
+QStringList AppController::tacoArgs() const {
+    return tacoArgs(mediaBackend());
+}
+
+QString AppController::mediaBackend() const {
+    return m_mediaBackendOverride.isEmpty() ? m_settings.mediaBackend()
+                                            : m_mediaBackendOverride;
+}
+
+void AppController::setMediaBackendOverride(const QString &name) {
+    if (!name.isEmpty() && name != QLatin1String("rtc")
+        && name != QLatin1String("webrtc")) {
+        qWarning("unknown media backend %s; using the stored setting",
+                 qUtf8Printable(name));
+        return;
+    }
+    m_mediaBackendOverride = name;
+}
+
+QStringList AppController::tacoArgs(const QString &mediaBackend) const {
+    // Persist to disk so an enabled account reconnects next launch without the
+    // env vars. No -config-dir override, so we share tacky's own store
+    // (~/.config/tacky) rather than keeping a separate quackchat one.
+    QStringList args{QStringLiteral("-transient"), QStringLiteral("0")};
+    // Here rather than through the log module once it is up: these have to be
+    // in force before the backend writes its first line.
+    if (!m_debug.level.isEmpty())
+        args << QStringLiteral("-debug-level") << m_debug.level;
+    if (!m_debug.file.isEmpty())
+        args << QStringLiteral("-debug-file") << m_debug.file;
+    if (!m_debug.libdatachannelLevel.isEmpty())
+        args << QStringLiteral("-libdatachannel-debug-level")
+             << m_debug.libdatachannelLevel;
+    if (!m_debug.rtcmaLevel.isEmpty())
+        args << QStringLiteral("-rtcma-debug-level") << m_debug.rtcmaLevel;
+    if (!m_debug.webrtcLevel.isEmpty())
+        args << QStringLiteral("-webrtc-debug-level") << m_debug.webrtcLevel;
+    if (!m_debug.rtcmvLevel.isEmpty())
+        args << QStringLiteral("-rtcmv-debug-level") << m_debug.rtcmvLevel;
+    // Only when not the default. The library path is explicit: an embedded
+    // interpreter has no executable to look beside.
+    if (mediaBackend != QLatin1String("rtc")) {
+        args << QStringLiteral("-media-backend") << mediaBackend;
+        const QString lib = QCoreApplication::applicationDirPath()
+                            + QStringLiteral("/libtacky_webrtc.so");
+        if (QFileInfo::exists(lib))
+            args << QStringLiteral("-webrtc-lib") << lib;
+    }
+    return args;
+}
+
 void AppController::startFromEnvironment() {
     if (m_started)
         return;
@@ -237,22 +290,13 @@ void AppController::startFromEnvironment() {
     m_backend.setTransport(new SocketTransport(kAndroidBackendSocket));
     const bool started = m_backend.start();
 #else
-    // Persist to disk so an enabled account reconnects next launch without the
-    // env vars. No -config-dir override, so we share tacky's own store
-    // (~/.config/tacky) rather than keeping a separate quackchat one.
-    QStringList tacoArgs{QStringLiteral("-transient"), QStringLiteral("0")};
-    // Here rather than through the log module once it is up: these have to be
-    // in force before the backend writes its first line.
-    if (!m_debug.level.isEmpty())
-        tacoArgs << QStringLiteral("-debug-level") << m_debug.level;
-    if (!m_debug.file.isEmpty())
-        tacoArgs << QStringLiteral("-debug-file") << m_debug.file;
-    if (!m_debug.libdatachannelLevel.isEmpty())
-        tacoArgs << QStringLiteral("-libdatachannel-debug-level")
-                 << m_debug.libdatachannelLevel;
-    if (!m_debug.rtcmaLevel.isEmpty())
-        tacoArgs << QStringLiteral("-rtcma-debug-level") << m_debug.rtcmaLevel;
-    const bool started = m_backend.start(tacoArgs);
+    bool started = m_backend.start(tacoArgs());
+    // A backend the interpreter rejects would stop every start; retry on rtc.
+    if (!started && mediaBackend() != QLatin1String("rtc")) {
+        qWarning("tacky would not start on the %s media backend; using rtc",
+                 qUtf8Printable(mediaBackend()));
+        started = m_backend.start(tacoArgs(QStringLiteral("rtc")));
+    }
 #endif
 
     // Nothing retries this: an interpreter that would not create is not going

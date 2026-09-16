@@ -22,6 +22,8 @@
 # Still running when the timeout fires is a pass. A Qt that cannot find its
 # platform plugin, or QML that fails to load, exits at once - main.cpp returns
 # -1 on an empty rootObjects().
+#
+# A webrtc backend in the AppImage must also resolve on this distro.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -68,7 +70,22 @@ for image in "${images[@]}"; do
             timeout 20 xvfb-run -a /tmp/quack.AppImage 2>&1 | tail -20
             rc=\${PIPESTATUS[0]}
             echo \"--- exit \$rc\"
-            [ \$rc -eq 124 ]
+            [ \$rc -eq 124 ] || exit 1
+
+            cd /tmp
+            /tmp/quack.AppImage --appimage-extract >/dev/null 2>&1 || exit 1
+            so=/tmp/squashfs-root/usr/bin/libtacky_webrtc.so
+            if [ ! -f \$so ]; then
+                echo '--- webrtc backend: not in this AppImage (rtc only)'
+                exit 0
+            fi
+            echo '--- webrtc backend: beside the executable'
+            ldd -r \$so 2>&1 | tail -5
+            if ldd -r \$so 2>&1 | grep -qE 'not found|undefined symbol'; then
+                echo '--- webrtc backend: will not load here'
+                exit 1
+            fi
+            exit 0
         "; then
         echo "==> $image: PASS (still running at the timeout)"
     else

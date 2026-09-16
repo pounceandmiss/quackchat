@@ -1,10 +1,22 @@
 #include "AppSettings.h"
 
+#include <QSettings>
+
 #include "BackendBinding.h"
 
 #include "TackyBackend.h"
 
 namespace {
+// The media backend lives in the app's own config; the names are explicit
+// because a test binary sets none.
+const QLatin1String kLocalOrg("io.github.pounceandmiss.Quack");
+const QLatin1String kLocalApp("quack");
+const QLatin1String kMediaBackend("media/backend");
+
+bool isMediaBackend(const QString &name) {
+    return name == QLatin1String("rtc") || name == QLatin1String("webrtc");
+}
+
 const QLatin1String kAutofetch("attachment_autofetch");
 const QLatin1String kAutofetchMax("attachment_autofetch_max");
 const QLatin1String kLogToFile("log_to_file");
@@ -13,7 +25,13 @@ const QLatin1String kLogNative("log_native");
 const QLatin1String kChatAvatars("chat_avatars");
 } // namespace
 
-AppSettings::AppSettings(QObject *parent) : QObject(parent) {}
+AppSettings::AppSettings(QObject *parent) : QObject(parent) {
+    QSettings local(QSettings::IniFormat, QSettings::UserScope, kLocalOrg,
+                    kLocalApp);
+    const QString backend = local.value(kMediaBackend).toString();
+    if (isMediaBackend(backend))
+        m_mediaBackend = backend;
+}
 
 void AppSettings::setBackend(TackyBackend *backend) {
     if (m_backend == backend)
@@ -165,4 +183,14 @@ void AppSettings::setLogNative(bool on) {
 
 void AppSettings::setChatAvatars(bool on) {
     write(kChatAvatars, on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void AppSettings::setMediaBackend(const QString &name) {
+    if (!isMediaBackend(name) || m_mediaBackend == name)
+        return;
+    m_mediaBackend = name;
+    QSettings local(QSettings::IniFormat, QSettings::UserScope, kLocalOrg,
+                    kLocalApp);
+    local.setValue(kMediaBackend, name);
+    emit mediaBackendChanged();
 }

@@ -77,6 +77,14 @@ stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
 delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
 compile, which dominates the build.
 
+Calls run on tacky's rtc backend unless the AppImage carries the webrtc one,
+built from the rtc-webrtc repo:
+
+    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
+    QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh
+
+Pick the backend in Preferences, or with `--media-backend`.
+
     ./appimage/smoke-test.sh
 
 runs it on a clean Ubuntu container under a virtual X server, the only real
@@ -198,7 +206,8 @@ The binary is `build/quackchat`.
 
 CMake finds `third_party/tacky` on its own. A checkout elsewhere is named with
 `-DTACKY_ROOT=<dir>` or `$TACKY_ROOT`, and wants both `embed/tacky.h` and
-`dist/libtacky.a` under it. `cmake --build build --target tacky-lib` re-runs
+`dist/libtacky.a` under it. A `dist/libtacky_webrtc.so` there (tacky's
+`make webrtc-so`) is staged next to the binary. `cmake --build build --target tacky-lib` re-runs
 tacky's make without leaving the build tree, which is the short way round after
 moving the pin.
 

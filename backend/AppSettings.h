@@ -39,6 +39,9 @@ class AppSettings : public QObject {
     // Whether the chat feed draws a face beside each run of messages. A key of
     // our own: the Tk client draws them either way.
     Q_PROPERTY(bool chatAvatars READ chatAvatars NOTIFY chatAvatarsChanged)
+    // rtc | webrtc. Kept in the app's own config, not tacky's: it is a taco_type
+    // argument. Takes effect at the next start.
+    Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
 
 public:
     explicit AppSettings(QObject *parent = nullptr);
@@ -49,6 +52,7 @@ public:
     QString logLevel() const { return m_logLevel; }
     bool logNative() const { return m_logNative; }
     bool chatAvatars() const { return m_chatAvatars; }
+    QString mediaBackend() const { return m_mediaBackend; }
 
     void setBackend(TackyBackend *backend);
 
@@ -61,6 +65,8 @@ public:
     Q_INVOKABLE void setLogLevel(const QString &level);
     Q_INVOKABLE void setLogNative(bool on);
     Q_INVOKABLE void setChatAvatars(bool on);
+    // Unknown names are ignored.
+    Q_INVOKABLE void setMediaBackend(const QString &name);
 
     // Public so tests can drive them with canned events and replies.
     void handleEvent(const QString &module, const QString &name,
@@ -75,6 +81,7 @@ signals:
     void logLevelChanged();
     void logNativeChanged();
     void chatAvatarsChanged();
+    void mediaBackendChanged();
 
 private:
     void applyValue(const QString &key, const QString &value);
@@ -88,6 +95,7 @@ private:
     QString m_logLevel = QStringLiteral("warning");
     bool m_logNative = false;
     bool m_chatAvatars = true;
+    QString m_mediaBackend = QStringLiteral("rtc");
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;

@@ -1,10 +1,15 @@
 // The app's own preferences off canned replies, plus a real libtacky round
 // trip - the one thing that proves the `setting` argument names match the Tcl.
 #include <QtTest>
+#include <QFileInfo>
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QSettings>
 #include <QSignalSpy>
+#include <QStandardPaths>
 
+#include "AppController.h"
 #include "AppSettings.h"
 #include "TackyBackend.h"
 
@@ -17,12 +22,21 @@ static void feed(AppSettings &s, const QByteArray &json) {
 class TestAppSettings : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase();
     void unsetKeysReadAsTackysOwnDefaults();
     void changedEventsAreGlobal();
     void settingsRoundTripThroughTheBackend();
     void chatAvatarsIsOnUntilItIsTurnedOff();
     void refreshesWhenTheBackendConnects();
+    void theMediaBackendDefaultsToRtc();
+    void theMediaBackendIsStoredLocally();
+    void theMediaBackendReachesTheTacoArgs();
 };
+
+// Keep QSettings away from the developer's own config.
+void TestAppSettings::initTestCase() {
+    QStandardPaths::setTestModeEnabled(true);
+}
 
 // Persisted values with no event to announce them, and on Android the link is
 // still coming up when AppController first asks.
@@ -146,6 +160,60 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);
 
     backend.stop();
+}
+
+void TestAppSettings::theMediaBackendDefaultsToRtc() {
+    QSettings local(QSettings::IniFormat, QSettings::UserScope,
+                    QStringLiteral("io.github.pounceandmiss.Quack"),
+                    QStringLiteral("quack"));
+    local.remove(QStringLiteral("media/backend"));
+    local.sync();
+
+    AppSettings s;
+    QCOMPARE(s.mediaBackend(), QString("rtc"));
+}
+
+void TestAppSettings::theMediaBackendIsStoredLocally() {
+    AppSettings s;
+    QSignalSpy changed(&s, &AppSettings::mediaBackendChanged);
+    s.setMediaBackend(QStringLiteral("webrtc"));
+    QCOMPARE(s.mediaBackend(), QString("webrtc"));
+    QCOMPARE(changed.count(), 1);
+
+    s.setMediaBackend(QStringLiteral("nonsense"));
+    QCOMPARE(s.mediaBackend(), QString("webrtc"));
+    QCOMPARE(changed.count(), 1);
+
+    AppSettings next;
+    QCOMPARE(next.mediaBackend(), QString("webrtc"));
+
+    s.setMediaBackend(QStringLiteral("rtc"));
+}
+
+// The default leaves the arguments unchanged.
+void TestAppSettings::theMediaBackendReachesTheTacoArgs() {
+    AppController app;
+    app.settings()->setMediaBackend(QStringLiteral("rtc"));
+    QCOMPARE(app.tacoArgs(), QStringList({"-transient", "0"}));
+
+    // Named only when the .so is beside the binary, as in a host build.
+    QStringList lib;
+    const QString libPath =
+        QCoreApplication::applicationDirPath() + QStringLiteral("/libtacky_webrtc.so");
+    if (QFileInfo::exists(libPath))
+        lib = {QStringLiteral("-webrtc-lib"), libPath};
+
+    app.settings()->setMediaBackend(QStringLiteral("webrtc"));
+    QCOMPARE(app.tacoArgs(),
+             QStringList({"-transient", "0", "-media-backend", "webrtc"}) + lib);
+
+    // Alongside the debug flags rather than in place of them.
+    app.setDebugArgs({QStringLiteral("debug"), {}, {}, {}});
+    QCOMPARE(app.tacoArgs(),
+             QStringList({"-transient", "0", "-debug-level", "debug",
+                          "-media-backend", "webrtc"}) + lib);
+
+    app.settings()->setMediaBackend(QStringLiteral("rtc"));
 }
 
 QTEST_MAIN(TestAppSettings)

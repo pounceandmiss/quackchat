@@ -156,8 +156,8 @@ int main(int argc, char *argv[]) {
             "main", "Write the log here instead of where the Diagnostics "
                     "setting says."),
         QGuiApplication::translate("main", "path"));
-    // The two libraries behind calls, which log at their own levels and at
-    // length. Separate flags because the two can differ.
+    // The native libraries behind calls, which log at their own levels and at
+    // length. Separate flags because they can differ.
     const QCommandLineOption datachannelOption(
         QStringLiteral("libdatachannel-debug-level"),
         QGuiApplication::translate("main", "How much libdatachannel logs."),
@@ -166,10 +166,27 @@ int main(int argc, char *argv[]) {
         QStringLiteral("rtcma-debug-level"),
         QGuiApplication::translate("main", "How much rtc-ma logs."),
         QGuiApplication::translate("main", "level"));
+    const QCommandLineOption webrtcOption(
+        QStringLiteral("webrtc-debug-level"),
+        QGuiApplication::translate("main", "How much libwebrtc logs."),
+        QGuiApplication::translate("main", "level"));
+    const QCommandLineOption rtcmvOption(
+        QStringLiteral("rtcmv-debug-level"),
+        QGuiApplication::translate("main", "How much rtc-mv logs."),
+        QGuiApplication::translate("main", "level"));
+    const QCommandLineOption backendOption(
+        QStringLiteral("media-backend"),
+        QGuiApplication::translate(
+            "main", "Media backend for calls this run: rtc or webrtc. Overrides "
+                    "the setting without changing it."),
+        QGuiApplication::translate("main", "name"));
     parser.addOption(levelOption);
     parser.addOption(fileOption);
     parser.addOption(datachannelOption);
     parser.addOption(rtcmaOption);
+    parser.addOption(webrtcOption);
+    parser.addOption(rtcmvOption);
+    parser.addOption(backendOption);
     parser.parse(QCoreApplication::arguments());
     if (parser.isSet(helpOption))
         parser.showHelp(0);
@@ -188,7 +205,10 @@ int main(int argc, char *argv[]) {
         controller->setDebugArgs({parser.value(levelOption),
                                   parser.value(fileOption),
                                   parser.value(datachannelOption),
-                                  parser.value(rtcmaOption)});
+                                  parser.value(rtcmaOption),
+                                  parser.value(webrtcOption),
+                                  parser.value(rtcmvOption)});
+        controller->setMediaBackendOverride(parser.value(backendOption));
         // Early, so the handler is in place before anything logs; it stays
         // inert until the backend answers with a file to forward to.
         installLogBridge(controller->backend());
