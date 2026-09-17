@@ -23,6 +23,9 @@ import org.qtproject.qt.android.bindings.QtActivity;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Holds the XMPP session in a process that outlives the UI. Qt ends the
@@ -119,12 +122,34 @@ public final class QuackBackendService extends Service {
                 Log.w(TAG, "could not create " + d);
             }
         }
-        return new String[] {
+        final List<String> args = new ArrayList<>(Arrays.asList(
             "-transient", "0", // persist, so an enabled account reconnects on its own
             "-config-dir", config.getAbsolutePath(),
             "-data-dir", data.getAbsolutePath(),
-            "-cache-dir", cache.getAbsolutePath(),
-        };
+            "-cache-dir", cache.getAbsolutePath()));
+        if (loadWebrtc()) {
+            args.addAll(Arrays.asList(
+                "-media-backend", "webrtc", "-webrtc-lib", "libtacky_webrtc.so"));
+        }
+        return args.toArray(new String[0]);
+    }
+
+    /**
+     * The webrtc media backend, when the apk carries it. Loaded here so its
+     * JNI_OnLoad runs; libwebrtc's Java audio finds the app through ContextUtils.
+     * tacky then loads the same library by name.
+     */
+    private boolean loadWebrtc() {
+        try {
+            System.loadLibrary("tacky_webrtc");
+            Class.forName("org.webrtc.ContextUtils")
+                .getMethod("initialize", Context.class)
+                .invoke(null, getApplicationContext());
+            return true;
+        } catch (UnsatisfiedLinkError | ReflectiveOperationException e) {
+            Log.i(TAG, "no webrtc media backend: " + e);
+            return false;
+        }
     }
 
     private void goForeground() {

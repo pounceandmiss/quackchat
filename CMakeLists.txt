@@ -441,6 +441,24 @@ if(ANDROID)
     # resolves.
     set(_android_pkg "${CMAKE_CURRENT_BINARY_DIR}/android-package")
     set(_staged_jni "${_android_pkg}/libs/${CMAKE_ANDROID_ARCH_ABI}/libtackyjni.so")
+
+    # Optional webrtc media backend beside libtacky-android.a, with the jar
+    # holding the Java classes its audio calls. Also only the service loads it.
+    cmake_path(GET TACKY_LIB PARENT_PATH _tacky_dist)
+    set(_webrtc_so "${_tacky_dist}/libtacky_webrtc-android.so")
+    set(_webrtc_jar "${_tacky_dist}/webrtc-android.jar")
+    set(_stage_webrtc)
+    if(EXISTS "${_webrtc_so}" AND EXISTS "${_webrtc_jar}")
+        message(STATUS "webrtc media backend: ${_webrtc_so}")
+        set(_stage_webrtc
+            COMMAND ${CMAKE_COMMAND} -E copy "${_webrtc_so}"
+                    "${_android_pkg}/libs/${CMAKE_ANDROID_ARCH_ABI}/libtacky_webrtc.so"
+            COMMAND ${CMAKE_COMMAND} -E copy "${_webrtc_jar}"
+                    "${_android_pkg}/libs/webrtc.jar")
+        set(_webrtc_inputs "${_webrtc_so}" "${_webrtc_jar}")
+    else()
+        message(STATUS "no webrtc media backend beside ${TACKY_LIB}; rtc only")
+    endif()
     # Everything androiddeployqt reads out of the staged dir, so that editing
     # the manifest or an icon restages as surely as relinking the interpreter.
     file(GLOB_RECURSE _android_pkg_src CONFIGURE_DEPENDS
@@ -456,7 +474,8 @@ if(ANDROID)
                 "${CMAKE_CURRENT_SOURCE_DIR}/android" "${_android_pkg}"
         COMMAND ${CMAKE_COMMAND} -E copy
                 "$<TARGET_FILE:tackyjni>" "${_staged_jni}"
-        DEPENDS tackyjni ${_android_pkg_src}
+        ${_stage_webrtc}
+        DEPENDS tackyjni ${_android_pkg_src} ${_webrtc_inputs}
         COMMENT "Staging the Android package source dir")
     add_custom_target(stage_android_package DEPENDS "${_staged_jni}")
     set_target_properties(quackchat PROPERTIES

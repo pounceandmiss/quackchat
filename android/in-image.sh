@@ -50,6 +50,16 @@ make -C /src/third_party/tacky android-lib \
 # empty build type compiles with no -O flags yet still packages as a release.
 # QT_ANDROID_DEPLOYMENT_TYPE decides the *package* type independently of it, so
 # it is stated too rather than left to whatever the tree was last configured for.
+# Optional webrtc media backend (see README.md), built before CMake looks for it.
+echo "==> tacky webrtc backend"
+if [ -z "${QUACK_WEBRTC_SRC-}" ]; then
+    echo "    QUACK_WEBRTC_SRC is unset; rtc backend only"
+else
+    make -C /src/third_party/tacky android-webrtc-so \
+        ANDROID_BUILD=../../build-android/tacky \
+        WEBRTC_SRC="$QUACK_WEBRTC_SRC"
+fi
+
 echo "==> quackchat"
 if [ -n "${QUACK_ANDROID_DEBUG-}" ]; then
     deployment=Debug

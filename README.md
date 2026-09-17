@@ -123,6 +123,11 @@ The keystore is bind-mounted read-only, never copied into the checkout or into
 an image, and the password is passed by variable name rather than value so it
 stays out of the process table. Left unset, `apksigner` prompts.
 
+With the webrtc backend, which the service then uses for calls:
+
+    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
+    QUACK_WEBRTC_SRC=/webrtc ./android/build.sh --debug
+
 The image carries its own NDK, so tacky's Android targets are driven with
 `ANDROID_DOCKER=0`. Left at the default they would start a second container from
 inside this one. `docker/android.Dockerfile` pins the NDK, the JDK and the

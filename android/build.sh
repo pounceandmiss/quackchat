@@ -68,7 +68,7 @@ if [ -n "${QUACK_ANDROID_KEYSTORE-}" ]; then
         echo "android/build.sh: QUACK_ANDROID_KEY_ALIAS is unset but a keystore is named" >&2
         exit 1
     }
-    export QUACK_RUN_MOUNTS="$(cd "$(dirname "$QUACK_ANDROID_KEYSTORE")" && pwd)/$(basename "$QUACK_ANDROID_KEYSTORE"):/keystore:ro"
+    export QUACK_RUN_MOUNTS="${QUACK_RUN_MOUNTS:+$QUACK_RUN_MOUNTS }$(cd "$(dirname "$QUACK_ANDROID_KEYSTORE")" && pwd)/$(basename "$QUACK_ANDROID_KEYSTORE"):/keystore:ro"
     export QUACK_ANDROID_KEYSTORE=/keystore
     export QUACK_ANDROID_KEY_ALIAS
 fi
