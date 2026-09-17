@@ -76,7 +76,8 @@ RUN dnf -y --disablerepo='*' --enablerepo='vault-*' install epel-release \
 #                            in it if these are missing.
 #   mingw64-*                the Windows cross toolchain, from CRB. posix
 #                            threads, which libdatachannel needs, and it carries
-#                            libssp, which tacky's kitsh link wants.
+#                            libssp, which tacky's kitsh link wants. The
+#                            libstdc++ DLL is packaged apart from the compiler.
 #   wine                     windeployqt ships only as a .exe. Without it cpack
 #                            packages a tree with no Qt in it at all.
 # curl is absent on purpose: the base image's curl-minimal already provides
@@ -93,7 +94,7 @@ RUN dnf -y --disablerepo='*' --enablerepo='vault-*' --enablerepo=epel install \
         libxcb libX11-xcb xcb-util xcb-util-image xcb-util-keysyms \
         xcb-util-renderutil xcb-util-wm xcb-util-cursor \
         libSM libICE glib2 freetype dbus-libs \
-        mingw64-gcc mingw64-gcc-c++ mingw64-winpthreads-static \
+        mingw64-gcc mingw64-gcc-c++ mingw64-libstdc++ mingw64-winpthreads-static \
         wine \
     && dnf clean all
 

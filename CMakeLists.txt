@@ -170,11 +170,14 @@ else()
 endif()
 
 # Optional webrtc media backend beside libtacky.a. A shared library: it carries
-# its own libc++.
-if(NOT ANDROID AND NOT WIN32)
+# its own C++ runtime.
+if(NOT ANDROID)
     cmake_path(GET TACKY_LIB PARENT_PATH _tacky_dist)
-    set(TACKY_WEBRTC_LIB
-        "${_tacky_dist}/libtacky_webrtc${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    if(WIN32)
+        set(TACKY_WEBRTC_LIB "${_tacky_dist}/libtacky_webrtc-win.dll")
+    else()
+        set(TACKY_WEBRTC_LIB "${_tacky_dist}/libtacky_webrtc.so")
+    endif()
     if(EXISTS "${TACKY_WEBRTC_LIB}")
         message(STATUS "webrtc media backend: ${TACKY_WEBRTC_LIB}")
     else()
@@ -442,8 +445,7 @@ if(ANDROID)
     set(_android_pkg "${CMAKE_CURRENT_BINARY_DIR}/android-package")
     set(_staged_jni "${_android_pkg}/libs/${CMAKE_ANDROID_ARCH_ABI}/libtackyjni.so")
 
-    # Optional webrtc media backend beside libtacky-android.a, with the jar
-    # holding the Java classes its audio calls. Also only the service loads it.
+    # Optional webrtc media backend and the jar with its Java classes.
     cmake_path(GET TACKY_LIB PARENT_PATH _tacky_dist)
     set(_webrtc_so "${_tacky_dist}/libtacky_webrtc-android.so")
     set(_webrtc_jar "${_tacky_dist}/webrtc-android.jar")
@@ -600,7 +602,8 @@ install(TARGETS quackchat RUNTIME DESTINATION "${_bindir}" BUNDLE DESTINATION .)
 
 # Beside the executable, as in the build tree.
 if(TACKY_WEBRTC_LIB)
-    install(PROGRAMS "${TACKY_WEBRTC_LIB}" DESTINATION "${_bindir}")
+    install(PROGRAMS "${TACKY_WEBRTC_LIB}" DESTINATION "${_bindir}"
+            RENAME "libtacky_webrtc${CMAKE_SHARED_LIBRARY_SUFFIX}")
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux|.*BSD|DragonFly|GNU")
@@ -649,9 +652,11 @@ if(WIN32 AND NOT _qt_core_type STREQUAL "STATIC_LIBRARY")
     if(EXISTS "${WINDEPLOYQT_EXECUTABLE}"
             AND (NOT CMAKE_CROSSCOMPILING OR WINE_EXECUTABLE))
         message(STATUS "Staging Qt's runtime with ${WINDEPLOYQT_EXECUTABLE}")
+        # The QML to scan for imports is the module's copy in the build tree:
+        # the checkout holds build trees big enough to time the scanner out.
         install(CODE "
             execute_process(COMMAND ${_deploy_launcher} \"${WINDEPLOYQT_EXECUTABLE}\"
-                    --qmldir \"${CMAKE_CURRENT_SOURCE_DIR}\"
+                    --qmldir \"${CMAKE_CURRENT_BINARY_DIR}/Quack\"
                     --no-translations --no-system-d3d-compiler --no-opengl-sw
                     \"\${CMAKE_INSTALL_PREFIX}/quackchat.exe\"
                 RESULT_VARIABLE _rc)
@@ -684,8 +689,11 @@ if(WIN32 AND NOT _qt_core_type STREQUAL "STATIC_LIBRARY")
     #           copies to a -posix build would be quietly wrong.
     #   Arch    the sysroot's bin/, which is not on any library search path, so
     #           -print-file-name finds nothing and hands the name back unchanged.
+    #   Rocky   as Arch, but under the sysroot's sys-root/mingw/bin/ (Fedora's
+    #           mingw64 packages), which is what the Windows build image has.
     #
     # Hence both, in that order: ask the compiler, and fall back to the sysroot.
+    # A miss is fatal: Qt's older copy leaves the exe unable to start.
     foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libssp-0.dll)
         execute_process(
             COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=${_dll}
@@ -693,15 +701,18 @@ if(WIN32 AND NOT _qt_core_type STREQUAL "STATIC_LIBRARY")
             OUTPUT_STRIP_TRAILING_WHITESPACE
             ERROR_QUIET)
         if(NOT IS_ABSOLUTE "${_dll_path}")
-            set(_dll_path "${MINGW_SYSROOT}/bin/${_dll}")
+            foreach(_dir bin sys-root/mingw/bin)
+                if(EXISTS "${MINGW_SYSROOT}/${_dir}/${_dll}")
+                    set(_dll_path "${MINGW_SYSROOT}/${_dir}/${_dll}")
+                    break()
+                endif()
+            endforeach()
         endif()
-        if(EXISTS "${_dll_path}")
-            install(FILES "${_dll_path}" DESTINATION .)
-        else()
-            message(WARNING "cannot find ${_dll} by asking ${CMAKE_CXX_COMPILER} "
-                "or under ${MINGW_SYSROOT}/bin; the package will carry Qt's "
-                "copy, which the exe may outrun.")
+        if(NOT EXISTS "${_dll_path}")
+            message(FATAL_ERROR "cannot find ${_dll} by asking ${CMAKE_CXX_COMPILER} "
+                "or under ${MINGW_SYSROOT}/bin or sys-root/mingw/bin")
         endif()
+        install(FILES "${_dll_path}" DESTINATION .)
     endforeach()
 endif()
 

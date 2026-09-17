@@ -231,6 +231,12 @@ void AppController::setMediaBackendOverride(const QString &name) {
     m_mediaBackendOverride = name;
 }
 
+#ifdef Q_OS_WIN
+static const char kWebrtcLib[] = "/libtacky_webrtc.dll";
+#else
+static const char kWebrtcLib[] = "/libtacky_webrtc.so";
+#endif
+
 QStringList AppController::tacoArgs(const QString &mediaBackend) const {
     // Persist to disk so an enabled account reconnects next launch without the
     // env vars. No -config-dir override, so we share tacky's own store
@@ -256,7 +262,7 @@ QStringList AppController::tacoArgs(const QString &mediaBackend) const {
     if (mediaBackend != QLatin1String("rtc")) {
         args << QStringLiteral("-media-backend") << mediaBackend;
         const QString lib = QCoreApplication::applicationDirPath()
-                            + QStringLiteral("/libtacky_webrtc.so");
+                            + QLatin1String(kWebrtcLib);
         if (QFileInfo::exists(lib))
             args << QStringLiteral("-webrtc-lib") << lib;
     }

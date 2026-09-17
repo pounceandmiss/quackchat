@@ -1,6 +1,6 @@
 // Reader for an rtc-mv shared-memory frame ring, opened by the name a
 // calls <VideoTrack>/<VideoPreview> event carries (on Android, through
-// the backend service's ringbroker); mmaps read-only and
+// the backend service's ringbroker); maps it read-only and
 // hands out the newest complete I420 frame. Layout mirrors
 // rtc-mv/src/rtcmv_internal.h - keep in sync.
 
@@ -38,8 +38,9 @@ public:
     bool read(Frame &out);
 
 private:
-#ifndef Q_OS_WIN
-    bool openFd(int fd, const QString &label); // takes ownership of fd
+    bool adopt(void *base, size_t bytes, const QString &label);
+#ifdef Q_OS_WIN
+    void   *m_mapping = nullptr;
 #endif
     void   *m_base = nullptr;
     size_t  m_mapBytes = 0;

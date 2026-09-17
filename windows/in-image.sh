@@ -40,6 +40,18 @@ make -C /src/third_party/tacky win-lib \
     WIN_BUILD=../../build-win/tacky \
     WIN_DEPS_DIR=/src/build-deps
 
+# Optional webrtc media backend (see README.md), built before CMake looks for it.
+echo "==> tacky webrtc backend"
+if [ -z "${QUACK_WEBRTC_SRC-}" ]; then
+    echo "    QUACK_WEBRTC_SRC is unset; rtc backend only"
+else
+    make -C /src/third_party/tacky win-webrtc-dll \
+        WIN_TCLSH="$QUACK_WIN_TCLSH" \
+        WIN_BUILD=../../build-win/tacky \
+        WIN_DEPS_DIR=/src/build-deps \
+        WEBRTC_SRC="$QUACK_WEBRTC_SRC"
+fi
+
 # QUACK_FAST_LINKER=OFF for the same reason as the AppImage: which linker ran is
 # visible in the binary, so it must not depend on what happens to be installed.
 #

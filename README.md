@@ -102,6 +102,11 @@ asks for administrator, and the ZIP is what someone without it unpacks and runs
 in place. `--no-installer` skips NSIS. `--clean` drops the app's half of
 `build-win/` and keeps tacky's dependencies.
 
+With the webrtc backend:
+
+    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
+    QUACK_WEBRTC_SRC=/webrtc ./windows/build.sh
+
 NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
 so `docker/common.Dockerfile` builds it from source, along with the scons that
 builds it. That is more pinning than a distro package gives, not less: the

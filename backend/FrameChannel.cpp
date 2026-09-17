@@ -5,7 +5,9 @@
 #include <atomic>
 #include <cstring>
 
-#ifndef Q_OS_WIN
+#ifdef Q_OS_WIN
+#include <windows.h>
+#else
 #include "ringbroker.h"
 
 #include <fcntl.h>
@@ -51,10 +53,18 @@ FrameChannel::~FrameChannel() { close(); }
 
 void FrameChannel::close()
 {
-#ifndef Q_OS_WIN
     if (m_base) {
+#ifdef Q_OS_WIN
+        ::UnmapViewOfFile(m_base);
+#else
         ::munmap(m_base, m_mapBytes);
+#endif
         m_base = nullptr;
+    }
+#ifdef Q_OS_WIN
+    if (m_mapping) {
+        ::CloseHandle(m_mapping);
+        m_mapping = nullptr;
     }
 #endif
     m_mapBytes = m_slotBytes = 0;
@@ -69,9 +79,23 @@ bool FrameChannel::openByName(const QString &shmName)
         return false;
 
 #if defined(Q_OS_WIN)
-    // rtc-mv doesn't open a named CreateFileMappingW region on Windows yet.
-    qCWarning(lcVideo) << "no shm-by-name support on Windows yet:" << shmName;
-    return false;
+    HANDLE mapping = ::OpenFileMappingW(FILE_MAP_READ, FALSE,
+                                        reinterpret_cast<LPCWSTR>(shmName.utf16()));
+    if (!mapping) {
+        qCWarning(lcVideo) << "OpenFileMapping" << shmName << "failed:" << ::GetLastError();
+        return false;
+    }
+    void *base = ::MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 0);
+    MEMORY_BASIC_INFORMATION mbi {};
+    if (!base || !::VirtualQuery(base, &mbi, sizeof(mbi))
+        || !adopt(base, mbi.RegionSize, shmName)) {
+        if (base)
+            ::UnmapViewOfFile(base);
+        ::CloseHandle(mapping);
+        return false;
+    }
+    m_mapping = mapping;
+    return true;
 #else
     const QByteArray n = shmName.toUtf8();
 #ifdef Q_OS_ANDROID
@@ -88,13 +112,6 @@ bool FrameChannel::openByName(const QString &shmName)
         return false;
     }
 #endif
-    return openFd(fd, shmName);
-#endif
-}
-
-#ifndef Q_OS_WIN
-bool FrameChannel::openFd(int fd, const QString &label)
-{
     struct stat st {};
     if (::fstat(fd, &st) != 0 || static_cast<size_t>(st.st_size) < kHdrBytes) {
         ::close(fd);
@@ -104,17 +121,25 @@ bool FrameChannel::openFd(int fd, const QString &label)
     ::close(fd);
     if (base == MAP_FAILED)
         return false;
-
-    auto *h = static_cast<RingHeader *>(base);
-    if (h->magic != kMagic || h->version != kVersion || h->slotCount == 0 ||
-        h->slotBytes == 0) {
+    if (!adopt(base, st.st_size, shmName)) {
         ::munmap(base, st.st_size);
+        return false;
+    }
+    return true;
+#endif
+}
+
+bool FrameChannel::adopt(void *base, size_t bytes, const QString &label)
+{
+    auto *h = static_cast<RingHeader *>(base);
+    if (bytes < kHdrBytes || h->magic != kMagic || h->version != kVersion ||
+        h->slotCount == 0 || h->slotBytes == 0) {
         qCWarning(lcVideo) << "not a valid frame ring:" << label;
         return false;
     }
 
     m_base = base;
-    m_mapBytes = st.st_size;
+    m_mapBytes = bytes;
     m_slotBytes = h->slotBytes;
     m_slots = h->slotCount;
     m_lastSeen = 0;
@@ -122,7 +147,6 @@ bool FrameChannel::openFd(int fd, const QString &label)
                      << "slots" << h->slotCount;
     return true;
 }
-#endif
 
 bool FrameChannel::read(Frame &out)
 {
