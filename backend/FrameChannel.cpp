@@ -6,6 +6,8 @@
 #include <cstring>
 
 #ifndef Q_OS_WIN
+#include "ringbroker.h"
+
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -66,23 +68,33 @@ bool FrameChannel::openByName(const QString &shmName)
     if (shmName.isEmpty())
         return false;
 
-#ifdef Q_OS_ANDROID
-    // bionic has no shm_open/shm_unlink; the fd hand-off replacing this
-    // (the "channel" token in <VideoTrack>/<VideoPreview>) isn't wired yet.
-    qCWarning(lcVideo) << "no shm-by-name support on Android:" << shmName;
-    return false;
-#elif defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
     // rtc-mv doesn't open a named CreateFileMappingW region on Windows yet.
     qCWarning(lcVideo) << "no shm-by-name support on Windows yet:" << shmName;
     return false;
 #else
     const QByteArray n = shmName.toUtf8();
+#ifdef Q_OS_ANDROID
+    // The rings are memfds in the backend service; it hands them over.
+    int fd = ringbroker_fetch(RINGBROKER_ANDROID_SOCKET, n.constData());
+    if (fd < 0) {
+        qCWarning(lcVideo) << "the backend did not hand over ring" << shmName;
+        return false;
+    }
+#else
     int fd = ::shm_open(n.constData(), O_RDONLY, 0);
     if (fd < 0) {
         qCWarning(lcVideo) << "shm_open" << shmName << "failed:" << strerror(errno);
         return false;
     }
+#endif
+    return openFd(fd, shmName);
+#endif
+}
 
+#ifndef Q_OS_WIN
+bool FrameChannel::openFd(int fd, const QString &label)
+{
     struct stat st {};
     if (::fstat(fd, &st) != 0 || static_cast<size_t>(st.st_size) < kHdrBytes) {
         ::close(fd);
@@ -97,7 +109,7 @@ bool FrameChannel::openByName(const QString &shmName)
     if (h->magic != kMagic || h->version != kVersion || h->slotCount == 0 ||
         h->slotBytes == 0) {
         ::munmap(base, st.st_size);
-        qCWarning(lcVideo) << "not a valid frame ring:" << shmName;
+        qCWarning(lcVideo) << "not a valid frame ring:" << label;
         return false;
     }
 
@@ -106,11 +118,11 @@ bool FrameChannel::openByName(const QString &shmName)
     m_slotBytes = h->slotBytes;
     m_slots = h->slotCount;
     m_lastSeen = 0;
-    qCDebug(lcVideo) << "opened ring" << shmName << h->maxWidth << "x" << h->maxHeight
+    qCDebug(lcVideo) << "opened ring" << label << h->maxWidth << "x" << h->maxHeight
                      << "slots" << h->slotCount;
     return true;
-#endif
 }
+#endif
 
 bool FrameChannel::read(Frame &out)
 {
