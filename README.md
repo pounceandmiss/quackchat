@@ -78,7 +78,8 @@ delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
 compile, which dominates the build.
 
 Calls run on tacky's rtc backend unless the AppImage carries the webrtc one,
-built from the rtc-webrtc repo:
+built from the rtc-webrtc repo, whose README lists the prebuilts its
+`third_party/` needs and where each comes from:
 
     QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
     QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh
@@ -149,6 +150,11 @@ dating the build by the commit rather than by the manifest's mtime.
 flatpak-builder cannot read a submodule, so it builds tacky from the commit
 pinned in the manifest instead. tacky and its dependencies are fetched from
 pinned sources and built with no network of their own.
+
+The webrtc media backend is the exception: an offline build cannot compile it, so
+the manifest takes `third_party/tacky/dist/libtacky_webrtc.so` as a file and the
+build refuses to start without it. An AppImage build with `QUACK_WEBRTC_SRC` (see
+above) leaves one there.
 
 While working on the app, the form that installs what it builds is more useful:
 

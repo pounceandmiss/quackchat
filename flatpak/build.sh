@@ -49,6 +49,13 @@ version=$(sed -n 's/^project(quack_qml VERSION \([0-9.]*\).*/\1/p' CMakeLists.tx
 ./flatpak/check-pin.sh
 ./flatpak/check-runtime-pin.sh
 
+# The one binary the manifest takes prebuilt, so its absence is a named error
+# here rather than a flatpak-builder source failure minutes in.
+[ -f third_party/tacky/dist/libtacky_webrtc.so ] || die \
+    "no third_party/tacky/dist/libtacky_webrtc.so; build it with
+    QUACK_RUN_MOUNTS=<rtc-webrtc>:/webrtc:ro QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh
+    (rtc-webrtc's README lists the prebuilts its third_party/ needs)"
+
 # The commit date, matching appimage/build.sh. An explicit value in the
 # environment wins, which is what tools/repro-check.sh uses to hold two builds to one
 # value.
