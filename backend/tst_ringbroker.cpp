@@ -4,7 +4,6 @@
 
 #include "ringbroker.h"
 
-#include <cerrno>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -30,7 +29,6 @@ class TestRingBroker : public QObject {
 private slots:
     void initTestCase();
     void handsOverTheNamedRing();
-    void handsOverReadOnly();
     void refusesUnknownAndNonRingNames();
 
 private:
@@ -59,21 +57,6 @@ void TestRingBroker::handsOverTheNamedRing()
     close(fd);
     close(ring);
     close(longer);
-}
-
-void TestRingBroker::handsOverReadOnly()
-{
-    const int ring = makeMemfd("tv-0123", QByteArray(4096, 'x'));
-    QVERIFY(ring >= 0);
-    const int fd = ringbroker_fetch(m_socket.constData(), "tv-0123");
-    QVERIFY(fd >= 0);
-
-    QCOMPARE(write(fd, "y", 1), ssize_t(-1));
-    QCOMPARE(mmap(nullptr, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0), MAP_FAILED);
-    QCOMPARE(errno, EACCES);
-
-    close(fd);
-    close(ring);
 }
 
 void TestRingBroker::refusesUnknownAndNonRingNames()

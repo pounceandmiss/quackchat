@@ -372,25 +372,42 @@ void CallsModel::withMicrophone(const QString &acc, const QString &peer,
 #endif
 }
 
+void CallsModel::withCamera(bool video, const std::function<void()> &then) {
+#ifdef Q_OS_ANDROID
+    const QCameraPermission perm;
+    if (video && qApp->checkPermission(perm) == Qt::PermissionStatus::Undetermined) {
+        qApp->requestPermission(perm, this, [then](const QPermission &) { then(); });
+        return;
+    }
+#else
+    Q_UNUSED(video)
+#endif
+    then();
+}
+
 void CallsModel::start(const QString &acc, const QString &to, bool video) {
     if (!m_backend || acc.isEmpty() || to.isEmpty())
         return;
     withMicrophone(acc, to, [this, acc, to, video] {
-        // A token only so a refusal ("not connected", no such account) has
-        // somewhere to land - the sid comes from <Outgoing>, which the backend
-        // emits before this ever replies.
-        const int token = m_backend->request(
-            QStringLiteral("calls"), QStringLiteral("start"),
-            QVariantMap{{QStringLiteral("acc"), acc},
-                        {QStringLiteral("to"), to},
-                        {QStringLiteral("video"), video ? 1 : 0}});
-        m_startTokens.insert(token, {acc, to});
+        withCamera(video, [this, acc, to, video] {
+            // A token only so a refusal ("not connected", no such account) has
+            // somewhere to land - the sid comes from <Outgoing>, which the
+            // backend emits before this ever replies.
+            const int token = m_backend->request(
+                QStringLiteral("calls"), QStringLiteral("start"),
+                QVariantMap{{QStringLiteral("acc"), acc},
+                            {QStringLiteral("to"), to},
+                            {QStringLiteral("video"), video ? 1 : 0}});
+            m_startTokens.insert(token, {acc, to});
+        });
     });
 }
 
 void CallsModel::setVideo(const QString &acc, const QString &sid, bool on) {
-    sendFor(acc, sid, QStringLiteral("setVideo"),
-            {{QStringLiteral("on"), on ? 1 : 0}});
+    withCamera(on, [this, acc, sid, on] {
+        sendFor(acc, sid, QStringLiteral("setVideo"),
+                {{QStringLiteral("on"), on ? 1 : 0}});
+    });
 }
 
 void CallsModel::sendFor(const QString &acc, const QString &sid,
@@ -406,11 +423,14 @@ void CallsModel::accept(const QString &acc, const QString &sid) {
     const int i = indexOf(acc, sid);
     if (i < 0 || m_calls.at(i).state != QLatin1String("incoming"))
         return;
-    withMicrophone(acc, m_calls.at(i).peer, [this, acc, sid] {
-        sendFor(acc, sid, QStringLiteral("accept"));
-        // Nothing is emitted between our <proceed> and <Active>, which is a
-        // long wait on a slow ICE path, so move the row ourselves.
-        setState(acc, sid, QStringLiteral("connecting"));
+    const bool video = m_calls.at(i).offeredVideo;
+    withMicrophone(acc, m_calls.at(i).peer, [this, acc, sid, video] {
+        withCamera(video, [this, acc, sid] {
+            sendFor(acc, sid, QStringLiteral("accept"));
+            // Nothing is emitted between our <proceed> and <Active>, which is
+            // a long wait on a slow ICE path, so move the row ourselves.
+            setState(acc, sid, QStringLiteral("connecting"));
+        });
     });
 }
 

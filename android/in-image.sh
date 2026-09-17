@@ -29,6 +29,10 @@ if [ -n "${QUACK_ANDROID_CLEAN-}" ]; then
 fi
 mkdir -p "$build"
 
+# Gradle's debug key lives in the Android user home; kept in the build tree so
+# successive debug apks install over each other.
+export ANDROID_USER_HOME=$build/android-user
+
 # tacky's bionic archive. ANDROID_DOCKER=0 because this image already carries
 # the NDK: left at its default the Makefile would call zippy/in_docker.sh and
 # try to start the ndk container from inside this one.

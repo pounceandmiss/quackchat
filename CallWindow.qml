@@ -46,10 +46,11 @@ ApplicationWindow {
     // grown once sendingVideo/hasRemoteVideo turns true (outgoing).
     readonly property bool videoActive: win.offeredVideo || win.hasRemoteVideo || win.sendingVideo
 
-    width: videoActive ? 480 : 380
-    height: videoActive ? 640 : 460
-    minimumWidth: videoActive ? 400 : 320
-    minimumHeight: videoActive ? 560 : 380
+    // A phone gives the call the whole screen, as a call activity would.
+    width: Theme.mobile ? Screen.width : videoActive ? 480 : 380
+    height: Theme.mobile ? Screen.height : videoActive ? 640 : 460
+    minimumWidth: Theme.mobile ? 0 : videoActive ? 400 : 320
+    minimumHeight: Theme.mobile ? 0 : videoActive ? 560 : 380
     title: qsTr("Call — %1").arg(peer)
     color: Theme.background
 

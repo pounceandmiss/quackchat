@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -63,8 +64,8 @@ static int links_to(const char *path, const char *want)
     return strcmp(link, want) == 0;
 }
 
-// Reopened rather than dup'ed so the reader can't map it writable. The new fd
-// is checked again: the one matched may have been closed and reused meanwhile.
+// The dup is checked again: the fd matched may have been closed and reused
+// meanwhile. Not reopened through /proc: Android's SELinux policy denies that.
 static int open_ring(const char *ring)
 {
     char want[96];
@@ -80,7 +81,7 @@ static int open_ring(const char *ring)
         snprintf(path, sizeof(path), "/proc/self/fd/%s", e->d_name);
         if (e->d_name[0] == '.' || !links_to(path, want))
             continue;
-        fd = open(path, O_RDONLY | O_CLOEXEC);
+        fd = fcntl(atoi(e->d_name), F_DUPFD_CLOEXEC, 0);
         if (fd < 0)
             continue;
         snprintf(path, sizeof(path), "/proc/self/fd/%d", fd);

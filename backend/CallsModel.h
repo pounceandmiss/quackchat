@@ -179,6 +179,9 @@ private:
     // acc/peer only name the call in a microphoneDenied().
     void withMicrophone(const QString &acc, const QString &peer,
                         const std::function<void()> &then);
+    // Asks for the camera when `video`, then runs `then` whatever the answer:
+    // a call without it just sends no video.
+    void withCamera(bool video, const std::function<void()> &then);
 
     TackyBackend *m_backend = nullptr;
     QList<Call> m_calls;
