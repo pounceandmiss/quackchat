@@ -152,8 +152,6 @@ private:
     void applyLogLevel();
     void applyLogNative();
     QStringList tacoArgs(const QString &mediaBackend) const;
-    // --media-backend, else the setting.
-    QString mediaBackend() const;
     void onResult(int token, const QVariant &data);
     void onEvent(const QString &module, const QString &name, const QVariant &args);
 

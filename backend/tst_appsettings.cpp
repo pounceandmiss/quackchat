@@ -5,7 +5,6 @@
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
-#include <QSettings>
 #include <QSignalSpy>
 #include <QStandardPaths>
 
@@ -29,7 +28,6 @@ private slots:
     void chatAvatarsIsOnUntilItIsTurnedOff();
     void refreshesWhenTheBackendConnects();
     void theMediaBackendDefaultsToRtc();
-    void theMediaBackendIsStoredLocally();
     void theMediaBackendReachesTheTacoArgs();
 };
 
@@ -57,7 +55,8 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
     keys.sort();
     QCOMPARE(keys, QStringList({"attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
-                                "log_level", "log_native", "log_to_file"}));
+                                "log_level", "log_native", "log_to_file",
+                                "media_backend"}));
 }
 
 // The store holds nothing until something is written, and "" is not a policy
@@ -143,6 +142,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setLogLevel(QStringLiteral("debug"));
     s.setLogNative(true);
     s.setChatAvatars(false);
+    s.setMediaBackend(QStringLiteral("webrtc"));
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
 
@@ -158,52 +158,43 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     // Off is the value that has to travel: readback starts on, so this only
     // passes once the stored "0" has come back.
     QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        readback.mediaBackend() == QLatin1String("webrtc"), 5000);
 
     backend.stop();
 }
 
+// Unset in the store, and nothing of ours to read it from either.
 void TestAppSettings::theMediaBackendDefaultsToRtc() {
-    QSettings local(QSettings::IniFormat, QSettings::UserScope,
-                    QStringLiteral("io.github.pounceandmiss.Quack"),
-                    QStringLiteral("quack"));
-    local.remove(QStringLiteral("media/backend"));
-    local.sync();
-
     AppSettings s;
     QCOMPARE(s.mediaBackend(), QString("rtc"));
-}
 
-void TestAppSettings::theMediaBackendIsStoredLocally() {
-    AppSettings s;
     QSignalSpy changed(&s, &AppSettings::mediaBackendChanged);
-    s.setMediaBackend(QStringLiteral("webrtc"));
+    feed(s, R"(["event","setting","Changed",{"key":"media_backend","value":"webrtc"}])");
     QCOMPARE(s.mediaBackend(), QString("webrtc"));
     QCOMPARE(changed.count(), 1);
 
+    // A name this build has no backend for is not written at all.
     s.setMediaBackend(QStringLiteral("nonsense"));
     QCOMPARE(s.mediaBackend(), QString("webrtc"));
     QCOMPARE(changed.count(), 1);
-
-    AppSettings next;
-    QCOMPARE(next.mediaBackend(), QString("webrtc"));
-
-    s.setMediaBackend(QStringLiteral("rtc"));
 }
 
-// The default leaves the arguments unchanged.
+// Only the flag reaches them: the setting is tacky's to read.
 void TestAppSettings::theMediaBackendReachesTheTacoArgs() {
     AppController app;
-    app.settings()->setMediaBackend(QStringLiteral("rtc"));
-    QCOMPARE(app.tacoArgs(), QStringList({"-transient", "0"}));
 
-    // Named only when the .so is beside the binary, as in a host build.
+    // The library is named whenever it is beside the binary, as in a host
+    // build, since which backend runs is settled inside tacky.
     QStringList lib;
     const QString libPath =
         QCoreApplication::applicationDirPath() + QStringLiteral("/libtacky_webrtc.so");
     if (QFileInfo::exists(libPath))
         lib = {QStringLiteral("-webrtc-lib"), libPath};
 
-    app.settings()->setMediaBackend(QStringLiteral("webrtc"));
+    QCOMPARE(app.tacoArgs(), QStringList({"-transient", "0"}) + lib);
+
+    app.setMediaBackendOverride(QStringLiteral("webrtc"));
     QCOMPARE(app.tacoArgs(),
              QStringList({"-transient", "0", "-media-backend", "webrtc"}) + lib);
 
@@ -212,8 +203,6 @@ void TestAppSettings::theMediaBackendReachesTheTacoArgs() {
     QCOMPARE(app.tacoArgs(),
              QStringList({"-transient", "0", "-debug-level", "debug",
                           "-media-backend", "webrtc"}) + lib);
-
-    app.settings()->setMediaBackend(QStringLiteral("rtc"));
 }
 
 QTEST_MAIN(TestAppSettings)

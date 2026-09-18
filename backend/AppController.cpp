@@ -213,18 +213,13 @@ void AppController::setAvatarEncoder(const AvatarEncoder *encoder) {
 }
 
 QStringList AppController::tacoArgs() const {
-    return tacoArgs(mediaBackend());
-}
-
-QString AppController::mediaBackend() const {
-    return m_mediaBackendOverride.isEmpty() ? m_settings.mediaBackend()
-                                            : m_mediaBackendOverride;
+    return tacoArgs(m_mediaBackendOverride);
 }
 
 void AppController::setMediaBackendOverride(const QString &name) {
     if (!name.isEmpty() && name != QLatin1String("rtc")
         && name != QLatin1String("webrtc")) {
-        qWarning("unknown media backend %s; using the stored setting",
+        qWarning("unknown media backend %s; using the stored one",
                  qUtf8Printable(name));
         return;
     }
@@ -257,15 +252,16 @@ QStringList AppController::tacoArgs(const QString &mediaBackend) const {
         args << QStringLiteral("-webrtc-debug-level") << m_debug.webrtcLevel;
     if (!m_debug.rtcmvLevel.isEmpty())
         args << QStringLiteral("-rtcmv-debug-level") << m_debug.rtcmvLevel;
-    // Only when not the default. The library path is explicit: an embedded
-    // interpreter has no executable to look beside.
-    if (mediaBackend != QLatin1String("rtc")) {
+    // Which backend runs is tacky's own setting; this only overrides it for
+    // the run. The library path goes either way, since the setting is not ours
+    // to read - and it is explicit because an embedded interpreter has no
+    // executable to look beside.
+    if (!mediaBackend.isEmpty())
         args << QStringLiteral("-media-backend") << mediaBackend;
-        const QString lib = QCoreApplication::applicationDirPath()
-                            + QLatin1String(kWebrtcLib);
-        if (QFileInfo::exists(lib))
-            args << QStringLiteral("-webrtc-lib") << lib;
-    }
+    const QString lib =
+        QCoreApplication::applicationDirPath() + QLatin1String(kWebrtcLib);
+    if (QFileInfo::exists(lib))
+        args << QStringLiteral("-webrtc-lib") << lib;
     return args;
 }
 
@@ -298,9 +294,8 @@ void AppController::startFromEnvironment() {
 #else
     bool started = m_backend.start(tacoArgs());
     // A backend the interpreter rejects would stop every start; retry on rtc.
-    if (!started && mediaBackend() != QLatin1String("rtc")) {
-        qWarning("tacky would not start on the %s media backend; using rtc",
-                 qUtf8Printable(mediaBackend()));
+    if (!started && m_mediaBackendOverride != QLatin1String("rtc")) {
+        qWarning("tacky would not start; retrying on the rtc media backend");
         started = m_backend.start(tacoArgs(QStringLiteral("rtc")));
     }
 #endif
