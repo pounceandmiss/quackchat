@@ -27,7 +27,7 @@ private slots:
     void settingsRoundTripThroughTheBackend();
     void chatAvatarsIsOnUntilItIsTurnedOff();
     void refreshesWhenTheBackendConnects();
-    void theMediaBackendDefaultsToRtc();
+    void theMediaBackendDefaultsToAutomatic();
     void theMediaBackendReachesTheTacoArgs();
 };
 
@@ -164,20 +164,26 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     backend.stop();
 }
 
-// Unset in the store, and nothing of ours to read it from either.
-void TestAppSettings::theMediaBackendDefaultsToRtc() {
+// Nothing stored means tacky chooses, which is what "" stands for here.
+void TestAppSettings::theMediaBackendDefaultsToAutomatic() {
     AppSettings s;
-    QCOMPARE(s.mediaBackend(), QString("rtc"));
+    QCOMPARE(s.mediaBackend(), QString());
 
     QSignalSpy changed(&s, &AppSettings::mediaBackendChanged);
     feed(s, R"(["event","setting","Changed",{"key":"media_backend","value":"webrtc"}])");
     QCOMPARE(s.mediaBackend(), QString("webrtc"));
     QCOMPARE(changed.count(), 1);
 
+    // Going back to automatic is a value of its own, not an unwritten key:
+    // the empty answer has to reach the property like any other.
+    feed(s, R"(["event","setting","Changed",{"key":"media_backend","value":""}])");
+    QCOMPARE(s.mediaBackend(), QString());
+    QCOMPARE(changed.count(), 2);
+
     // A name this build has no backend for is not written at all.
     s.setMediaBackend(QStringLiteral("nonsense"));
-    QCOMPARE(s.mediaBackend(), QString("webrtc"));
-    QCOMPARE(changed.count(), 1);
+    QCOMPARE(s.mediaBackend(), QString());
+    QCOMPARE(changed.count(), 2);
 }
 
 // Only the flag reaches them: the setting is tacky's to read.

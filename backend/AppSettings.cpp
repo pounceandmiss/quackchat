@@ -8,8 +8,10 @@ namespace {
 // tacky reads this one itself, at startup.
 const QLatin1String kMediaBackend("media_backend");
 
+// "" is a value here, not a missing one: it leaves the choice to tacky.
 bool isMediaBackend(const QString &name) {
-    return name == QLatin1String("rtc") || name == QLatin1String("webrtc");
+    return name.isEmpty() || name == QLatin1String("rtc")
+           || name == QLatin1String("webrtc");
 }
 
 const QLatin1String kAutofetch("attachment_autofetch");
@@ -109,6 +111,15 @@ void AppSettings::handleEvent(const QString &module, const QString &name,
 // An empty value is a key never written, which leaves tacky's default in force
 // - so it leaves ours alone too.
 void AppSettings::applyValue(const QString &key, const QString &value) {
+    // Before the guard below: an empty media backend is the automatic one,
+    // and has to be able to travel like any other value.
+    if (key == kMediaBackend) {
+        if (m_mediaBackend == value)
+            return;
+        m_mediaBackend = value;
+        emit mediaBackendChanged();
+        return;
+    }
     if (value.isEmpty())
         return;
     if (key == kAutofetch) {
@@ -145,11 +156,6 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_chatAvatars = on;
         emit chatAvatarsChanged();
-    } else if (key == kMediaBackend) {
-        if (m_mediaBackend == value)
-            return;
-        m_mediaBackend = value;
-        emit mediaBackendChanged();
     }
 }
 
@@ -186,8 +192,8 @@ void AppSettings::setChatAvatars(bool on) {
     write(kChatAvatars, on ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
-// Only the two this build offers: tacky would accept any name and spend a
-// start falling back from it.
+// Only what this build offers, plus "" for automatic: tacky would accept any
+// name and spend a start falling back from it.
 void AppSettings::setMediaBackend(const QString &name) {
     if (!isMediaBackend(name))
         return;

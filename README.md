@@ -62,6 +62,33 @@ in. `docker/run.sh common bash` gives a shell in the same toolchain, which is ho
 to work out why a build behaves differently there than here. The Dockerfiles say
 why the two are split the way they are.
 
+## Calls: the webrtc backend
+
+Calls run on one of two media stacks. `rtc` is tacky's own - libdatachannel
+with rtc-ma and rtc-mv - linked into every build, speaking Opus and VP8, with no
+camera on Windows. `webrtc` is libwebrtc in a library of its own,
+`libtacky_webrtc.so` (`.dll` on Windows): the wider codec set, echo
+cancellation, and the one that sends video from Windows.
+
+A build either carries that library or it does not, and tacky uses it when it is
+there - what Preferences calls Automatic. The same picker pins `rtc` or
+`webrtc` instead, and `--media-backend rtc|webrtc` overrides the choice for one
+run.
+
+Building it needs a checkout of the rtc-webrtc repository holding the prebuilts
+its README lists - libwebrtc itself, Chromium's clang, and the MSVC SDK for
+Windows. They are large, and unpacked by hand, so no build reaches for them
+unless it is told where they are:
+
+    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
+    QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh
+
+`QUACK_RUN_MOUNTS` mounts the checkout into the build container read-only and
+`QUACK_WEBRTC_SRC` says where it landed inside. The same pair works for
+`./windows/build.sh` and `./android/build.sh`; the Flatpak takes the built
+library instead, see below. Leave them out and the build is shorter and calls
+run on rtc.
+
 ## The Linux AppImage
 
 A single portable binary needing no Qt on the machine that runs it:
@@ -77,14 +104,8 @@ stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
 delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
 compile, which dominates the build.
 
-Calls run on tacky's rtc backend unless the AppImage carries the webrtc one,
-built from the rtc-webrtc repo, whose README lists the prebuilts its
-`third_party/` needs and where each comes from:
-
-    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
-    QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh
-
-Pick the backend in Preferences, or with `--media-backend`.
+`QUACK_WEBRTC_SRC` puts the webrtc backend in it, as
+[Calls: the webrtc backend](#calls-the-webrtc-backend) describes.
 
     ./appimage/smoke-test.sh
 
@@ -103,10 +124,9 @@ asks for administrator, and the ZIP is what someone without it unpacks and runs
 in place. `--no-installer` skips NSIS. `--clean` drops the app's half of
 `build-win/` and keeps tacky's dependencies.
 
-With the webrtc backend:
-
-    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
-    QUACK_WEBRTC_SRC=/webrtc ./windows/build.sh
+`QUACK_WEBRTC_SRC` puts the webrtc backend in the package, which is what sends
+video from Windows: see [Calls: the webrtc
+backend](#calls-the-webrtc-backend).
 
 NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
 so `docker/common.Dockerfile` builds it from source, along with the scons that
@@ -129,10 +149,9 @@ The keystore is bind-mounted read-only, never copied into the checkout or into
 an image, and the password is passed by variable name rather than value so it
 stays out of the process table. Left unset, `apksigner` prompts.
 
-With the webrtc backend, which the service then uses for calls:
-
-    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
-    QUACK_WEBRTC_SRC=/webrtc ./android/build.sh --debug
+`QUACK_WEBRTC_SRC` puts the webrtc backend in the apk, where the background
+service uses it for calls: see [Calls: the webrtc
+backend](#calls-the-webrtc-backend).
 
 The image carries its own NDK, so tacky's Android targets are driven with
 `ANDROID_DOCKER=0`. Left at the default they would start a second container from
@@ -151,10 +170,10 @@ flatpak-builder cannot read a submodule, so it builds tacky from the commit
 pinned in the manifest instead. tacky and its dependencies are fetched from
 pinned sources and built with no network of their own.
 
-The webrtc media backend is the exception: an offline build cannot compile it, so
-the manifest takes `third_party/tacky/dist/libtacky_webrtc.so` as a file and the
-build refuses to start without it. An AppImage build with `QUACK_WEBRTC_SRC` (see
-above) leaves one there.
+The webrtc backend is the exception: an offline build cannot compile it, so the
+manifest takes `third_party/tacky/dist/libtacky_webrtc.so` as a file and refuses
+to start without one. An AppImage build with `QUACK_WEBRTC_SRC` leaves one
+there.
 
 While working on the app, the form that installs what it builds is more useful:
 
@@ -223,7 +242,8 @@ The binary is `build/quackchat`.
 CMake finds `third_party/tacky` on its own. A checkout elsewhere is named with
 `-DTACKY_ROOT=<dir>` or `$TACKY_ROOT`, and wants both `embed/tacky.h` and
 `dist/libtacky.a` under it. A `dist/libtacky_webrtc.so` there (tacky's
-`make webrtc-so`) is staged next to the binary. `cmake --build build --target tacky-lib` re-runs
+`make webrtc-so`, see [Calls: the webrtc
+backend](#calls-the-webrtc-backend)) is staged next to the binary. `cmake --build build --target tacky-lib` re-runs
 tacky's make without leaving the build tree, which is the short way round after
 moving the pin.
 

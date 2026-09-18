@@ -372,12 +372,13 @@ Page {
                 Caption { text: qsTr("Media backend") }
                 Repeater {
                     model: [
+                        { label: qsTr("Automatic"), value: "" },
                         { label: qsTr("Built in"), value: "rtc" },
                         { label: qsTr("libwebrtc"), value: "webrtc" }
                     ]
                     delegate: OptionRow {
                         required property var modelData
-                        objectName: "mediaBackend_" + modelData.value
+                        objectName: "mediaBackend_" + (modelData.value || "auto")
                         text: modelData.label
                         selected: App.settings.mediaBackend === modelData.value
                         onClicked: App.settings.setMediaBackend(modelData.value)
@@ -385,7 +386,7 @@ Page {
                 }
                 Caption {
                     Layout.fillWidth: true
-                    text: qsTr("Takes effect at the next start.")
+                    text: qsTr("Automatic uses libwebrtc where this build carries it. Takes effect at the next start.")
                     wrapMode: Text.WordWrap
                 }
             }

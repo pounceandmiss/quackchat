@@ -39,8 +39,8 @@ class AppSettings : public QObject {
     // Whether the chat feed draws a face beside each run of messages. A key of
     // our own: the Tk client draws them either way.
     Q_PROPERTY(bool chatAvatars READ chatAvatars NOTIFY chatAvatarsChanged)
-    // rtc | webrtc, stored by tacky, which reads it when it picks a backend.
-    // Takes effect at the next start.
+    // "" (tacky picks) | rtc | webrtc, stored by tacky, which reads it when it
+    // picks a backend. Takes effect at the next start.
     Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
 
 public:
@@ -95,7 +95,7 @@ private:
     QString m_logLevel = QStringLiteral("warning");
     bool m_logNative = false;
     bool m_chatAvatars = true;
-    QString m_mediaBackend = QStringLiteral("rtc");
+    QString m_mediaBackend;   // "" until stored: the automatic choice
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;
