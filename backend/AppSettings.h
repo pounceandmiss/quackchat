@@ -42,6 +42,11 @@ class AppSettings : public QObject {
     // "" (tacky picks) | rtc | webrtc, stored by tacky, which reads it when it
     // picks a backend. Takes effect at the next start.
     Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
+    // What the setting above actually produced this run, which is not the same
+    // thing: a backend that would not load leaves rtc running. "" until the
+    // backend answers.
+    Q_PROPERTY(QString activeMediaBackend READ activeMediaBackend
+                   NOTIFY activeMediaBackendChanged)
 
 public:
     explicit AppSettings(QObject *parent = nullptr);
@@ -53,6 +58,7 @@ public:
     bool logNative() const { return m_logNative; }
     bool chatAvatars() const { return m_chatAvatars; }
     QString mediaBackend() const { return m_mediaBackend; }
+    QString activeMediaBackend() const { return m_activeMediaBackend; }
 
     void setBackend(TackyBackend *backend);
 
@@ -82,6 +88,7 @@ signals:
     void logNativeChanged();
     void chatAvatarsChanged();
     void mediaBackendChanged();
+    void activeMediaBackendChanged();
 
 private:
     void applyValue(const QString &key, const QString &value);
@@ -96,6 +103,7 @@ private:
     bool m_logNative = false;
     bool m_chatAvatars = true;
     QString m_mediaBackend;   // "" until stored: the automatic choice
+    QString m_activeMediaBackend;
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;
@@ -104,6 +112,7 @@ private:
     int m_logNativeToken = -1;
     int m_chatAvatarsToken = -1;
     int m_mediaBackendToken = -1;
+    int m_activeBackendToken = -1;
 };
 
 #endif // APPSETTINGS_H

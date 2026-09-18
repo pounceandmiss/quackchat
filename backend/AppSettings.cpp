@@ -58,6 +58,10 @@ void AppSettings::refresh() {
     m_mediaBackendToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kMediaBackend}});
+    // Not a setting: what the setting resolved to, which only the backend
+    // knows and only after it has tried to open one.
+    m_activeBackendToken = m_backend->request(
+        QStringLiteral("media"), QStringLiteral("backend"), QVariantMap{});
 }
 
 void AppSettings::handleResult(int token, const QVariant &data) {
@@ -75,6 +79,13 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kChatAvatars, data.toString());
     else if (token == m_mediaBackendToken)
         applyValue(kMediaBackend, data.toString());
+    else if (token == m_activeBackendToken) {
+        const QString name = data.toString();
+        if (name == m_activeMediaBackend)
+            return;
+        m_activeMediaBackend = name;
+        emit activeMediaBackendChanged();
+    }
 }
 
 // The stored value never came, so the compiled-in default stands. Dropping the
@@ -95,6 +106,8 @@ void AppSettings::handleError(int token, const QString &message) {
         m_chatAvatarsToken = -1;
     else if (token == m_mediaBackendToken)
         m_mediaBackendToken = -1;
+    else if (token == m_activeBackendToken)
+        m_activeBackendToken = -1;
 }
 
 void AppSettings::handleEvent(const QString &module, const QString &name,

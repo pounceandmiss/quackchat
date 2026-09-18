@@ -367,6 +367,16 @@ Page {
             }
 
             Card {
+                id: callsCard
+
+                function backendLabel(name) {
+                    if (name === "rtc")
+                        return qsTr("Built in")
+                    if (name === "webrtc")
+                        return qsTr("libwebrtc")
+                    return name
+                }
+
                 SectionTitle { text: qsTr("Calls") }
 
                 Caption { text: qsTr("Media backend") }
@@ -387,6 +397,16 @@ Page {
                 Caption {
                     Layout.fillWidth: true
                     text: qsTr("Automatic uses libwebrtc where this build carries it. Takes effect at the next start.")
+                    wrapMode: Text.WordWrap
+                }
+                // The choice above is what the next start will try; this is
+                // what this one ended up on.
+                Caption {
+                    objectName: "mediaBackendRunning"
+                    Layout.fillWidth: true
+                    visible: App.settings.activeMediaBackend !== ""
+                    text: qsTr("Running now: %1.")
+                        .arg(callsCard.backendLabel(App.settings.activeMediaBackend))
                     wrapMode: Text.WordWrap
                 }
             }

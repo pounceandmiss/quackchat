@@ -47,8 +47,12 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
     emit backend.connected();
 
     QStringList keys;
+    QStringList others;
     for (const QList<QVariant> &call : sent) {
-        QCOMPARE(call.at(0).toString(), QString("setting"));
+        if (call.at(0).toString() != QLatin1String("setting")) {
+            others << call.at(0).toString() + QLatin1Char('/') + call.at(1).toString();
+            continue;
+        }
         QCOMPARE(call.at(1).toString(), QString("get"));
         keys << call.at(2).toMap().value("key").toString();
     }
@@ -57,6 +61,8 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
                                 "attachment_autofetch_max", "chat_avatars",
                                 "log_level", "log_native", "log_to_file",
                                 "media_backend"}));
+    // The running backend is asked for alongside them, and is not a setting.
+    QCOMPARE(others, QStringList({"media/backend"}));
 }
 
 // The store holds nothing until something is written, and "" is not a policy
@@ -160,6 +166,10 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.mediaBackend() == QLatin1String("webrtc"), 5000);
+    // Stored is not running: this build has no webrtc library, so the backend
+    // answers rtc however the setting reads.
+    QTRY_VERIFY_WITH_TIMEOUT(
+        readback.activeMediaBackend() == QLatin1String("rtc"), 5000);
 
     backend.stop();
 }
