@@ -1671,13 +1671,14 @@ Page {
                     visible: page.canEncrypt && page.hasChat && page.encryptKnown
                     width: 32
                     height: composerButtons.height
-                    Text {
+                    Glyph {
                         anchors.centerIn: parent
-                        // As on the bubbles: the colour form of the glyph, so
-                        // the shape carries the state rather than a tint.
-                        text: page.encryptOn ? "🔒" : "🔓"
-                        opacity: page.encryptOn ? 1 : 0.55
-                        font.pixelSize: 20
+                        // As on the bubbles. The shape carries the state, with
+                        // the colour to back it up: open is the setting that
+                        // gives something up, as on the row's resend button.
+                        path: page.encryptOn ? Icons.lock : Icons.lockOpen
+                        color: page.encryptOn ? Theme.textPrimary : Theme.warning
+                        size: 20
                     }
                     TapHandler {
                         acceptedButtons: Qt.LeftButton

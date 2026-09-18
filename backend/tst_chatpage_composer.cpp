@@ -258,7 +258,9 @@ void TestChatPageComposer::padlockFollowsTheRowStamp() {
     QQuickItem *lock = findItem(encrypted.row(0), "lockBadge");
     QVERIFY(lock);
     QVERIFY(lock->isVisible());
-    QCOMPARE(lock->property("text").toString(), QString("🔒"));
+    QObject *icons = m_engine->singletonInstance<QObject *>("Quack", "Icons");
+    QVERIFY(icons);
+    QCOMPARE(lock->property("path").toString(), icons->property("lock").toString());
 
     const Chat clear = open("clear@example.com");
     QVERIFY(clear.feed);

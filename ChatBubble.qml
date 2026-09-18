@@ -804,18 +804,20 @@ Item {
                     Layout.alignment: Qt.AlignRight
                     spacing: 4
                     // Ahead of the time, so it keeps its place on an incoming
-                    // message, where the tick beside it is not drawn. Bigger
-                    // than the text around it because the colour form of the
-                    // glyph is detailed enough to smudge at footnote size.
-                    Text {
+                    // message, where the tick beside it is not drawn. Drawn
+                    // like the tick rather than typed as an emoji: at footnote
+                    // size Windows hints every layer of a colour glyph to the
+                    // pixel grid, and the padlock came out as pixel art.
+                    Glyph {
                         objectName: "lockBadge"
                         Layout.alignment: Qt.AlignVCenter
                         // Nothing to badge about a row in the clear - in a room
                         // that is every row. A tombstone keeps the stamp of the
                         // message it replaces, and has nothing to badge.
                         visible: root.encrypted && !root.retracted
-                        text: "🔒"
-                        font.pixelSize: 16
+                        path: Icons.lock
+                        color: Theme.textDim
+                        size: 13
                     }
                     // Beside the time, not after the words: the body is a rich
                     // text document built from the markup, and this is not part

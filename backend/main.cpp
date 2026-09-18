@@ -63,13 +63,16 @@ int main(int argc, char *argv[]) {
     if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME") && hasXdgPortal())
         qputenv("QT_QPA_PLATFORMTHEME", "xdgdesktopportal");
 #endif
-#if (defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)) || defined(Q_OS_MACOS)
+#if (defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)) || defined(Q_OS_MACOS) || defined(Q_OS_WIN)
     // Fusion is the one bundled QQC2 style that actually paints from
     // QGuiApplication::palette() rather than a style-defined one, so it is what
     // turns that palette into control colours. macOS needs it for a second
     // reason: the native style refuses the control customization this UI does,
-    // logging a "does not support customization" line per control. Default only,
-    // as above.
+    // logging a "does not support customization" line per control. Windows for
+    // a third: its native styles (Windows, FluentWinUI3) draw a menu's drop
+    // shadow inside the background item, sized by negative insets, and a
+    // background of our own inherits that room as 32px of blank panel around
+    // the entries. Default only, as above.
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE"))
         qputenv("QT_QUICK_CONTROLS_STYLE", "Fusion");
 #endif
