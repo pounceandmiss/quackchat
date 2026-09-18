@@ -74,8 +74,8 @@ void VideoSurface::poll()
     while (m_ring.read(f)) // drain to the newest this tick
         got = true;
     if (!got) {
-        // The whole of "no video" in a log: the ring is open, the other side
-        // is quiet.
+        // The ring is open and nothing is coming through it: the line a
+        // "no video" report needs.
         if (!m_stalled && m_since.hasExpired(kStallMs)) {
             m_stalled = true;
             qCWarning(lcVideo) << "no frames on" << m_openName << "for"
