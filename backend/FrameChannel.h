@@ -7,8 +7,11 @@
 #pragma once
 
 #include <QByteArray>
+#include <QLoggingCategory>
 #include <QString>
 #include <cstdint>
+
+Q_DECLARE_LOGGING_CATEGORY(lcVideo)
 
 class FrameChannel {
 public:

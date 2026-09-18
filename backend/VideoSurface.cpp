@@ -6,6 +6,10 @@
 
 #include <cstring>
 
+namespace {
+constexpr qint64 kStallMs = 3000;
+}
+
 VideoSurface::VideoSurface(QObject *parent) : QObject(parent)
 {
     m_timer.setInterval(33); // ~30 Hz
@@ -47,10 +51,17 @@ void VideoSurface::reopen()
     if (m_sink)
         m_sink->setVideoFrame(QVideoFrame());
 
+    m_stalled = false;
+    m_shortLogged = false;
+    m_w = 0;
+    m_h = 0;
+
     if (name.isEmpty())
         return;
-    if (m_ring.openByName(name))
+    if (m_ring.openByName(name)) {
+        m_since.start();
         m_timer.start();
+    }
 }
 
 void VideoSurface::poll()
@@ -62,15 +73,41 @@ void VideoSurface::poll()
     bool got = false;
     while (m_ring.read(f)) // drain to the newest this tick
         got = true;
-    if (!got)
+    if (!got) {
+        // The whole of "no video" in a log: the ring is open, the other side
+        // is quiet.
+        if (!m_stalled && m_since.hasExpired(kStallMs)) {
+            m_stalled = true;
+            qCWarning(lcVideo) << "no frames on" << m_openName << "for"
+                               << m_since.elapsed() << "ms;"
+                               << (m_hasFrame ? "stopped" : "none ever arrived");
+        }
         return;
+    }
+    m_since.restart();
+    if (m_stalled) {
+        m_stalled = false;
+        qCWarning(lcVideo) << "frames resumed on" << m_openName;
+    }
 
     const int w = f.width, h = f.height;
     const int cw = (w + 1) / 2, ch = (h + 1) / 2;
+    if (w != m_w || h != m_h) {
+        m_w = w;
+        m_h = h;
+        qCDebug(lcVideo) << "frame" << w << "x" << h << "on" << m_openName;
+    }
+
     const qsizetype ys = qsizetype(w) * h;
     const qsizetype cs = qsizetype(cw) * ch;
-    if (f.planes.size() < ys + 2 * cs)
+    if (f.planes.size() < ys + 2 * cs) {
+        if (!m_shortLogged) {
+            m_shortLogged = true;
+            qCWarning(lcVideo) << "short frame on" << m_openName << f.planes.size()
+                               << "bytes for" << w << "x" << h;
+        }
         return;
+    }
 
     QVideoFrameFormat fmt(QSize(w, h), QVideoFrameFormat::Format_YUV420P);
     QVideoFrame frame(fmt);

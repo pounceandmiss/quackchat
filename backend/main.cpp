@@ -24,6 +24,7 @@
 #include <QIcon>
 #include <QLibraryInfo>
 #include <QLocale>
+#include <QLoggingCategory>
 #include <QQmlApplicationEngine>
 #include <QTranslator>
 
@@ -190,6 +191,17 @@ int main(int argc, char *argv[]) {
     parser.parse(QCoreApplication::arguments());
     if (parser.isSet(helpOption))
         parser.showHelp(0);
+
+    // So the frontend's own categories reach a log someone sends in. Not the
+    // wire one: a line per stanza, and the bridge drops it anyway.
+    // QT_LOGGING_RULES still overrides this.
+    const QString debugLevel = parser.value(levelOption);
+    if (debugLevel == QLatin1String("verbose") || debugLevel == QLatin1String("debug"))
+        QLoggingCategory::setFilterRules(
+            QStringLiteral("quack.*.debug=true\nquack.wire.debug=false"));
+    else if (debugLevel == QLatin1String("info"))
+        QLoggingCategory::setFilterRules(
+            QStringLiteral("quack.*.info=true\nquack.wire.info=false"));
 
     // Declared before the engine so it outlives everything holding a pointer
     // to it.

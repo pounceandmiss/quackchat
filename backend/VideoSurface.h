@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 #include <QVariantMap>
@@ -48,7 +49,13 @@ private:
     QVariantMap  m_channel;
     bool         m_hasFrame = false;
 
-    FrameChannel m_ring;
-    QString      m_openName;
-    QTimer       m_timer;
+    FrameChannel  m_ring;
+    QString       m_openName;
+    QTimer        m_timer;
+    // Since the last frame, or since the ring opened.
+    QElapsedTimer m_since;
+    bool          m_stalled = false;
+    bool          m_shortLogged = false;
+    int           m_w = 0;
+    int           m_h = 0;
 };
