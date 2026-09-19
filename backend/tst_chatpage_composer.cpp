@@ -2,6 +2,13 @@
 // padlock beside it changes, and what a row that failed to send offers.
 #include "ChatPageTest.h"
 
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QImage>
+#include <QMimeData>
+#include <QTemporaryDir>
+#include <QFileInfo>
+
 // The timestamps handed to `message retract`, in order. Filtered: the feed is
 // live, so read markers and history calls come past the same spy.
 static QList<qlonglong> retracts(const QSignalSpy &spy) {
@@ -9,6 +16,15 @@ static QList<qlonglong> retracts(const QSignalSpy &spy) {
     for (const QList<QVariant> &call : spy)
         if (call.at(1).toString() == QLatin1String("retract"))
             out << call.at(2).toMap().value("timestamp").toLongLong();
+    return out;
+}
+
+// The paths handed to `message sendFile`, in order.
+static QStringList uploads(const QSignalSpy &spy) {
+    QStringList out;
+    for (const QList<QVariant> &call : spy)
+        if (call.at(1).toString() == QLatin1String("sendFile"))
+            out << call.at(2).toMap().value("path").toString();
     return out;
 }
 
@@ -21,6 +37,9 @@ private slots:
 
     void theComposerGrowsWithTheTextUpToACeiling();
     void enterSendsAndShiftEnterOpensALine();
+    void pastingAPictureQueuesItAndTextStillTypes();
+    void pastingACopiedFileQueuesItButALinkIsStillText();
+    void theTrayGivesBackWhatItHoldsAndGoesOutWithTheWords();
     void replyingFromTheComposerThreadsTheTarget();
     void ticksFollowBothHops();
     void padlockFollowsTheRowStamp();
@@ -163,6 +182,176 @@ void TestChatPageComposer::enterSendsAndShiftEnterOpensALine() {
     QCOMPARE(model->data(model->index(0), ChatModel::BodyRole).toString(),
              QStringLiteral("first\nsecond"));
     QCOMPARE(input->property("text").toString(), QString());
+}
+
+// What Ctrl+V does over the composer depends on what is on the clipboard. A
+// picture is not text, so the field's own paste dropped it; it joins the tray
+// now, and goes out with the next send.
+void TestChatPageComposer::pastingAPictureQueuesItAndTextStillTypes() {
+    const Chat chat = open("pasted@example.com");
+    QVERIFY(chat.win());
+    QTRY_VERIFY(chat.model() != nullptr);
+
+    auto *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    auto *strip = chat.win()->findChild<QQuickItem *>("attachmentStrip");
+    auto *tray = chat.win()->findChild<QQuickItem *>("attachmentTray");
+    QVERIFY(input);
+    QVERIFY(strip);
+    QVERIFY(tray);
+    QVERIFY(!tray->property("visible").toBool()); // nothing queued, no tray
+    input->forceActiveFocus();
+    QTRY_VERIFY(input->hasActiveFocus());
+
+    QImage picture(4, 3, QImage::Format_RGB32);
+    picture.fill(Qt::green);
+    QGuiApplication::clipboard()->setImage(picture);
+
+    QSignalSpy sent(m_app->backend(), &TackyBackend::sent);
+    QTest::keyClick(chat.win(), Qt::Key_V, Qt::ControlModifier);
+
+    // Queued, not sent.
+    QTRY_COMPARE(strip->property("count").toInt(), 1);
+    QTRY_VERIFY(tray->property("visible").toBool());
+    QCOMPARE(uploads(sent).size(), 0);
+    QCOMPARE(input->property("text").toString(), QString());
+    // An empty field has something to send now, and shows it.
+    auto *send = chat.win()->findChild<QQuickItem *>("sendButton");
+    QVERIFY(send);
+    QTRY_COMPARE(send->property("opacity").toReal(), 1.0);
+
+    QTest::keyClick(chat.win(), Qt::Key_Return);
+    // A file on disk, under a name that carries the kind: everything past the
+    // upload reads what it is from the extension.
+    QTRY_COMPARE(uploads(sent).size(), 1);
+    const QString path = uploads(sent).first();
+    QVERIFY2(QFile::exists(path), qPrintable(path));
+    QCOMPARE(QFileInfo(path).suffix(), QStringLiteral("png"));
+    QCOMPARE(QImage(path).size(), picture.size());
+    // ...and the tray is clear.
+    QTRY_COMPARE(strip->property("count").toInt(), 0);
+
+    // Text on the clipboard is still the field's own business.
+    QGuiApplication::clipboard()->setText(QStringLiteral("typed elsewhere"));
+    QTest::keyClick(chat.win(), Qt::Key_V, Qt::ControlModifier);
+    QTRY_COMPARE(input->property("text").toString(),
+                 QStringLiteral("typed elsewhere"));
+    QCOMPARE(strip->property("count").toInt(), 0);
+    input->setProperty("text", QString());
+}
+
+// The other half of the clipboard: a file manager copies the file, not the
+// pixels, so what arrives is a url list. A copied link arrives as one too,
+// with nothing on disk behind it, and that is text like any other.
+void TestChatPageComposer::pastingACopiedFileQueuesItButALinkIsStillText() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString picture = dir.filePath(QStringLiteral("holiday.jpg"));
+    QVERIFY(QImage(4, 3, QImage::Format_RGB32).save(picture));
+
+    const Chat chat = open("copied@example.com");
+    QVERIFY(chat.win());
+    QTRY_VERIFY(chat.model() != nullptr);
+
+    auto *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    auto *strip = chat.win()->findChild<QQuickItem *>("attachmentStrip");
+    QVERIFY(input);
+    QVERIFY(strip);
+    input->forceActiveFocus();
+    QTRY_VERIFY(input->hasActiveFocus());
+
+    auto *copied = new QMimeData;
+    copied->setUrls({QUrl::fromLocalFile(picture)});
+    QGuiApplication::clipboard()->setMimeData(copied);
+
+    QSignalSpy sent(m_app->backend(), &TackyBackend::sent);
+    QTest::keyClick(chat.win(), Qt::Key_V, Qt::ControlModifier);
+    QTRY_COMPARE(strip->property("count").toInt(), 1);
+
+    // A link is offered as a url list as well, and there is no file behind
+    // it. It pastes.
+    auto *link = new QMimeData;
+    link->setUrls({QUrl("https://example.com/cat.png")});
+    link->setText(QStringLiteral("https://example.com/cat.png"));
+    QGuiApplication::clipboard()->setMimeData(link);
+    QTest::keyClick(chat.win(), Qt::Key_V, Qt::ControlModifier);
+    QTRY_COMPARE(input->property("text").toString(),
+                 QStringLiteral("https://example.com/cat.png"));
+    QCOMPARE(strip->property("count").toInt(), 1);
+
+    // The file as it stands, under the name it already had: nothing is
+    // written out, so nothing is renamed.
+    input->setProperty("text", QString());
+    QTest::keyClick(chat.win(), Qt::Key_Return);
+    QTRY_COMPARE(uploads(sent), QStringList{picture});
+}
+
+// The tray holds what was queued until the send, and hands any of it back
+// before then. tacky attaches one file to a message, so what goes out is a
+// message per file and then one more for the words.
+void TestChatPageComposer::theTrayGivesBackWhatItHoldsAndGoesOutWithTheWords() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QStringList files;
+    for (const QString &name : {QStringLiteral("one.png"), QStringLiteral("two.png"),
+                                QStringLiteral("three.png")}) {
+        files << dir.filePath(name);
+        QVERIFY(QImage(4, 3, QImage::Format_RGB32).save(files.last()));
+    }
+
+    const Chat chat = open("tray@example.com");
+    QVERIFY(chat.win());
+    QTRY_VERIFY(chat.model() != nullptr);
+
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    auto *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    auto *strip = chat.win()->findChild<QQuickItem *>("attachmentStrip");
+    QVERIFY(page);
+    QVERIFY(input);
+    QVERIFY(strip);
+
+    auto *copied = new QMimeData;
+    copied->setUrls({QUrl::fromLocalFile(files.at(0)), QUrl::fromLocalFile(files.at(1)),
+                     QUrl::fromLocalFile(files.at(2))});
+    QGuiApplication::clipboard()->setMimeData(copied);
+    input->forceActiveFocus();
+    QTRY_VERIFY(input->hasActiveFocus());
+    QTest::keyClick(chat.win(), Qt::Key_V, Qt::ControlModifier);
+    QTRY_COMPARE(strip->property("count").toInt(), 3);
+
+    // The tray opens over the field rather than appearing at full height,
+    // so nothing in it can be clicked until it has finished growing.
+    auto *tray = chat.win()->findChild<QQuickItem *>("attachmentTray");
+    QVERIFY(tray);
+    QTRY_VERIFY(tray->isVisible() && tray->height() > 0);
+
+    // Taking the middle one back leaves the two either side of it.
+    QQuickItem *tile = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(strip, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, tile),
+                                      Q_ARG(int, 1)));
+    QVERIFY(tile);
+    auto *remove = tile->findChild<QQuickItem *>("trayRemove");
+    QVERIFY(remove);
+    QTRY_VERIFY(remove->width() > 0 && remove->isVisible());
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {},
+                      remove->mapToScene(QPointF(remove->width() / 2,
+                                                 remove->height() / 2))
+                          .toPoint());
+    QTRY_COMPARE(strip->property("count").toInt(), 2);
+
+    QSignalSpy sent(m_app->backend(), &TackyBackend::sent);
+    input->setProperty("text", QStringLiteral("two of the three"));
+    QVERIFY(QMetaObject::invokeMethod(page, "sendCurrent"));
+
+    // In the order they were queued, without the one taken back.
+    QTRY_COMPARE(uploads(sent), QStringList({files.at(0), files.at(2)}));
+    QTRY_COMPARE(strip->property("count").toInt(), 0);
+    QCOMPARE(input->property("text").toString(), QString());
+    // The words followed as a message of their own.
+    QTRY_COMPARE(chat.count(), 3);
+    ChatModel *model = chat.model();
+    QCOMPARE(model->data(model->index(0), ChatModel::BodyRole).toString(),
+             QStringLiteral("two of the three"));
 }
 
 // The composer used to hold the quoted body and nothing else, so replying sent
@@ -660,3 +849,4 @@ void TestChatPageComposer::theFailedPillCarriesTheBackendsWords() {
 
 QTEST_MAIN(TestChatPageComposer)
 #include "tst_chatpage_composer.moc"
+

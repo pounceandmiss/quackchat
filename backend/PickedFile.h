@@ -12,6 +12,10 @@
 
 namespace pickedfile {
 
+// Where files on their way out are kept: a copy of what a dialog picked, or
+// a picture written out of the clipboard. "" if it cannot be made.
+QString outgoingDir();
+
 // A readable local path for `picked`, or "" if there is none.
 QString localPath(const QUrl &picked);
 

@@ -1,5 +1,10 @@
 #include "ChatSession.h"
 
+#include <QFileInfo>
+#include <QMimeDatabase>
+
+#include "PickedFile.h"
+
 ChatSession::ChatSession(TackyBackend *backend, const QString &acc,
                          const QString &jid, bool groupchat, QObject *parent)
     : QObject(parent) {
@@ -27,6 +32,30 @@ void ChatSession::setDraft(const QString &text) {
         return;
     m_draft = text;
     emit draftChanged();
+}
+
+void ChatSession::attach(const QUrl &file) {
+    const QString path = pickedfile::localPath(file);
+    if (path.isEmpty())
+        return;
+    const QFileInfo info(path);
+    // Read off the file, not the name: the tray draws an image as a
+    // thumbnail and everything else as a chip, as the feed does.
+    const bool isImage = QMimeDatabase()
+                             .mimeTypeForFile(info)
+                             .name()
+                             .startsWith(QLatin1String("image/"));
+    m_pending.append(QVariantMap{{QStringLiteral("url"), QUrl::fromLocalFile(path)},
+                                 {QStringLiteral("name"), info.fileName()},
+                                 {QStringLiteral("isImage"), isImage}});
+    emit pendingChanged();
+}
+
+void ChatSession::unattach(int index) {
+    if (index < 0 || index >= m_pending.size())
+        return;
+    m_pending.removeAt(index);
+    emit pendingChanged();
 }
 
 void ChatSession::replyToMessage(qlonglong ts, const QString &body,
@@ -82,14 +111,27 @@ void ChatSession::restoreStash() {
 
 void ChatSession::sendDraft() {
     const QString body = m_draft.trimmed();
-    if (body.isEmpty())
-        return;
     if (m_editing != 0) {
+        if (body.isEmpty())
+            return;
         m_messages.edit(m_editing, body);
         cancelEdit();
         return;
     }
-    m_messages.send(body, m_replyTo);
+    if (body.isEmpty() && m_pending.isEmpty())
+        return;
+    // One message per file, in the order they were queued: tacky attaches a
+    // single file to a message, so a queue of three is three rows.
+    for (const QVariant &file : std::as_const(m_pending))
+        m_messages.sendFile(file.toMap().value(QStringLiteral("url")).toUrl());
+    if (!m_pending.isEmpty()) {
+        m_pending.clear();
+        emit pendingChanged();
+    }
+    if (!body.isEmpty())
+        m_messages.send(body, m_replyTo);
     setDraft(QString());
+    // Only the words can carry the reply, but the banner goes either way:
+    // left up, it would thread the next message instead.
     cancelReply();
 }

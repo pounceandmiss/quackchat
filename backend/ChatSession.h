@@ -12,6 +12,8 @@
 
 #include <QObject>
 #include <QString>
+#include <QUrl>
+#include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 
 #include "ChatModel.h"
@@ -34,6 +36,10 @@ class ChatSession : public QObject {
     Q_PROPERTY(QString replyBody READ replyBody NOTIFY replyChanged)
     Q_PROPERTY(bool replyOutgoing READ replyOutgoing NOTIFY replyChanged)
     Q_PROPERTY(bool replying READ replying NOTIFY replyChanged)
+    // Files chosen but not sent yet, which the composer shows in a tray over
+    // the field. One map per file: `url` (a local file), `name`, `isImage`.
+    // Here with the draft, and kept here for the same reason.
+    Q_PROPERTY(QVariantList pending READ pending NOTIFY pendingChanged)
     // Whether the composer is correcting a message rather than writing one. Its
     // timestamp stays in here for the reason the reply's does: only the send
     // needs it.
@@ -57,6 +63,15 @@ public:
 
     bool editing() const { return m_editing != 0; }
 
+    QVariantList pending() const { return m_pending; }
+
+    // Queue a file, or drop it if there is nothing readable behind it.
+    // Resolved to a local path now rather than at send time: on Android a
+    // dialog hands back a content:// url readable only while the grant
+    // lasts, and the tray has a thumbnail to draw before then.
+    Q_INVOKABLE void attach(const QUrl &file);
+    Q_INVOKABLE void unattach(int index);
+
     Q_INVOKABLE void replyToMessage(qlonglong ts, const QString &body,
                                     bool outgoing);
     Q_INVOKABLE void cancelReply();
@@ -66,13 +81,16 @@ public:
     Q_INVOKABLE void editMessage(qlonglong ts, const QString &body);
     Q_INVOKABLE void cancelEdit();
 
-    // Send the draft, clearing it and the reply along with it. No-op when the
-    // draft is blank, which is also what an empty composer press means. While
-    // editing this corrects that message instead of sending a new one.
+    // Send the queue and then the draft, clearing them and the reply along
+    // with them. No-op when both are empty, which is what an empty composer
+    // press means. While editing this corrects that message instead of
+    // sending a new one, and the queue waits: an edit replaces words, and
+    // there is nowhere on one to hang a file.
     Q_INVOKABLE void sendDraft();
 
 signals:
     void draftChanged();
+    void pendingChanged();
     void replyChanged();
     void editChanged();
 
@@ -82,6 +100,7 @@ private:
     ChatModel m_messages;
     OmemoChat m_omemo;
     QString m_draft;
+    QVariantList m_pending;
     qlonglong m_replyTo = 0;
     QString m_replyBody;
     bool m_replyOutgoing = false;

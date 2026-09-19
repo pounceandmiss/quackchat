@@ -71,15 +71,20 @@ QString nameFor(const QUrl &picked, const QString &displayName,
     return name;
 }
 
+QString outgoingDir() {
+    const QString dir =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+        QStringLiteral("/outgoing");
+    return QDir().mkpath(dir) ? dir : QString();
+}
+
 QString localPath(const QUrl &picked) {
     if (picked.isLocalFile())
         return picked.toLocalFile();
     if (picked.scheme().isEmpty())
         return picked.path(); // a bare path, as a fixture would pass
-    const QString dir =
-        QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
-        QStringLiteral("/outgoing");
-    if (!QDir().mkpath(dir))
+    const QString dir = outgoingDir();
+    if (dir.isEmpty())
         return {};
     const QString dest = dir + QLatin1Char('/') +
                          nameFor(picked, documentName(picked), documentMime(picked));

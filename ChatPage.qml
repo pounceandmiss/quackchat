@@ -321,6 +321,9 @@ Page {
     readonly property string replyBody: page.session ? page.session.replyBody : ""
     readonly property bool replyOutgoing: page.session ? page.session.replyOutgoing : false
     readonly property bool editing: page.session ? page.session.editing : false
+    // Files waiting in the tray over the field, on the session with the
+    // draft and for the same reasons.
+    readonly property var pending: page.session ? page.session.pending : []
 
     function startReply(ts, body, outgoing) {
         if (!page.session)
@@ -447,13 +450,39 @@ Page {
         onAccepted: if (page.chatModel) page.chatModel.retract(deleteConfirm.target)
     }
 
-    // No filters: tacky puts up whatever it is handed.
+    // Ctrl+V of a file or a picture: it joins the tray, as a dropped file
+    // does. Answers whether it took the paste, so anything else is left to
+    // the field. Files before pixels, because a picture copied in a file
+    // manager is on disk under a name that writing it out again would lose.
+    function pasteAttachment() {
+        if (!page.session || !page.hasChat)
+            return false
+        const files = Clipboard.files()
+        if (files.length > 0) {
+            for (const file of files)
+                page.session.attach(file)
+            return true
+        }
+        const picture = Clipboard.saveImage()
+        if (picture.toString() === "")
+            return false
+        page.session.attach(picture)
+        return true
+    }
+
+    // No filters: tacky puts up whatever it is handed. Several at a time,
+    // since the tray holds them until the send.
     FileDialog {
         id: attachDialog
         objectName: "attachDialog"
-        title: qsTr("Attach a file")
-        onAccepted: if (page.chatModel)
-            page.chatModel.sendFile(attachDialog.selectedFile)
+        title: qsTr("Attach files")
+        fileMode: FileDialog.OpenFiles
+        onAccepted: {
+            if (!page.session)
+                return
+            for (const file of attachDialog.selectedFiles)
+                page.session.attach(file)
+        }
     }
 
     FileDialog {
@@ -474,10 +503,10 @@ Page {
         anchors.fill: parent
         enabled: page.hasChat
         onDropped: (drop) => {
-            if (!drop.hasUrls || !page.chatModel)
+            if (!drop.hasUrls || !page.session)
                 return
             for (const url of drop.urls)
-                page.chatModel.sendFile(url)
+                page.session.attach(url)
             drop.acceptProposedAction()
         }
 
@@ -1632,6 +1661,128 @@ Page {
             }
         }
 
+        // What is queued but not sent, to look at and to take back from. Not
+        // an album: tacky attaches a single file to a message, so three
+        // pictures here are three rows in the feed.
+        Rectangle {
+            id: attachmentTray
+            objectName: "attachmentTray"
+            Layout.fillWidth: true
+            Layout.preferredHeight: page.pending.length > 0 ? 92 : 0
+            clip: true
+            visible: Layout.preferredHeight > 0
+            color: Theme.surface
+            Behavior on Layout.preferredHeight { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+            Rectangle {
+                anchors.top: parent.top
+                width: parent.width; height: 1
+                color: Theme.hairline
+            }
+
+            ListView {
+                id: trayStrip
+                objectName: "attachmentStrip"
+                anchors.fill: parent
+                anchors.topMargin: 12
+                anchors.bottomMargin: 12
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                orientation: ListView.Horizontal
+                spacing: 8
+                clip: true
+                model: page.pending
+                delegate: Item {
+                    id: tile
+                    objectName: "trayTile"
+                    required property int index
+                    required property var modelData
+                    width: 68
+                    height: trayStrip.height
+
+                    Rectangle {
+                        anchors.fill: parent
+                        // Room at the top right for the button that laps it.
+                        anchors.topMargin: 6
+                        anchors.rightMargin: 6
+                        radius: 10
+                        color: Theme.field
+                        clip: true
+
+                        Image {
+                            id: tileThumb
+                            objectName: "trayThumb"
+                            anchors.fill: parent
+                            visible: tile.modelData.isImage
+                                     && tileThumb.status === Image.Ready
+                            source: tile.modelData.isImage ? tile.modelData.url : ""
+                            fillMode: Image.PreserveAspectCrop
+                            // A phone's photo is tens of megapixels, and
+                            // this draws it the size of a stamp.
+                            sourceSize.width: 160
+                            sourceSize.height: 160
+                            asynchronous: true
+                        }
+
+                        // For a file, and for an image whose bytes would
+                        // not decode.
+                        ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 5
+                            visible: !tileThumb.visible
+                            spacing: 2
+                            Glyph {
+                                Layout.alignment: Qt.AlignHCenter
+                                path: tile.modelData.isImage ? Icons.image
+                                                             : Icons.attachFile
+                                color: Theme.textDim
+                                size: 18
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: tile.modelData.name
+                                color: Theme.textDim
+                                font.pixelSize: 10
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WrapAnywhere
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                            }
+                        }
+                    }
+
+                    // Over the corner rather than beside the tile, which at
+                    // this size would leave a strip of mostly buttons.
+                    Rectangle {
+                        objectName: "trayRemove"
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        width: 20
+                        height: 20
+                        radius: 10
+                        color: Theme.surface
+                        border.width: 1
+                        border.color: Theme.hairline
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("Remove %1").arg(tile.modelData.name)
+                        Accessible.onPressAction: if (page.session)
+                            page.session.unattach(tile.index)
+                        Glyph {
+                            anchors.centerIn: parent
+                            path: Icons.close
+                            color: Theme.textDim
+                            size: 12
+                        }
+                        TapHandler {
+                            onTapped: if (page.session)
+                                page.session.unattach(tile.index)
+                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    }
+                }
+            }
+        }
+
         Rectangle {
             id: composer
             objectName: "composerBar"
@@ -1774,12 +1925,22 @@ Page {
                         EnterKey.type: Qt.EnterKeySend
                         Keys.onReturnPressed: (event) => page.typedReturn(event)
                         Keys.onEnterPressed: (event) => page.typedReturn(event)
+                        // Before the field's own paste, which is text-only: a
+                        // picture on the clipboard would otherwise be dropped
+                        // on the floor, and a copied file pasted as the name
+                        // of something the other end has no copy of.
+                        Keys.onPressed: (event) => {
+                            if (event.matches(StandardKey.Paste)
+                                    && page.pasteAttachment())
+                                event.accepted = true
+                        }
                         onTextChanged: if (page.session) page.session.draft = text
                     }
                 }
             }
             Rectangle {
                 id: sendBtn
+                objectName: "sendButton"
                 anchors.right: parent.right
                 anchors.rightMargin: 10
                 anchors.bottom: parent.bottom
@@ -1794,7 +1955,8 @@ Page {
                     GradientStop { position: 0.0; color: Theme.accent2 }
                     GradientStop { position: 1.0; color: Theme.accent }
                 }
-                opacity: input.text.trim().length > 0 ? 1.0 : 0.5
+                opacity: input.text.trim().length > 0 || page.pending.length > 0
+                         ? 1.0 : 0.5
                 Behavior on opacity { NumberAnimation { duration: 120 } }
                 Glyph {
                     anchors.centerIn: parent
