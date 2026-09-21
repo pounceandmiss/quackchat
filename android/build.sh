@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Android apk.
 #
-#   android/build.sh [--clean] [--debug] [--test]
+#   android/build.sh [--clean] [--debug] [--test] [--webrtc]
 #
 # Runs entirely in the Android toolchain image (docker/android.Dockerfile), so
 # docker is all the host needs - no SDK, no NDK r29, no JDK 21, no Qt kit.
@@ -19,7 +19,8 @@
 # --clean drops it. tacky's Android dependency tree stays inside it rather than
 # joining the one the Linux and Windows builds share: android.mk builds those
 # dependencies in place, in their own source directories, so that tree belongs to
-# this target alone.
+# this target alone. --webrtc puts the webrtc media backend in (see README.md,
+# "Calls: the webrtc backend"); the result is named differently without it.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -28,12 +29,14 @@ project=$(cd "$here/.." && pwd)
 clean=
 debug=
 tests=
+webrtc=${QUACK_WEBRTC-}
 while [ "$#" -gt 0 ]; do
     case $1 in
-        --clean) clean=1 ;;
-        --debug) debug=1 ;;
-        --test) tests=1 ;;
-        *) echo "usage: android/build.sh [--clean] [--debug] [--test]" >&2; exit 2 ;;
+        --clean)  clean=1 ;;
+        --debug)  debug=1 ;;
+        --test)   tests=1 ;;
+        --webrtc) webrtc=1 ;;
+        *) echo "usage: android/build.sh [--clean] [--debug] [--test] [--webrtc]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -52,6 +55,7 @@ fi
 export SOURCE_DATE_EPOCH
 
 export QUACK_ANDROID_CLEAN=$clean
+export QUACK_WEBRTC=$webrtc
 export QUACK_ANDROID_DEBUG=$debug
 export QUACK_ANDROID_TESTS=$tests
 

@@ -9,6 +9,10 @@
 # The AppImage is reproducible, and the sha256 recorded below is a build on a
 # different machine - the one thing tools/repro-check.sh cannot prove by itself.
 # For a given commit it should equal the sha of a local build of that commit.
+# It is built with the webrtc backend, as release.sh builds it, so that the sha
+# is the release's. The Windows package is built without: it is not held to
+# reproducing, and the backend's MSVC SDK is the one input fetched by version
+# rather than by hash.
 name: build
 
 on:
@@ -85,7 +89,7 @@ jobs:
           docker pull "${IMAGE,,}" && docker tag "${IMAGE,,}" quack-build:common
 
       - name: Build
-        run: ./appimage/build.sh
+        run: ./appimage/build.sh --webrtc
 
       - name: Record the hash
         run: |
@@ -101,7 +105,7 @@ jobs:
             echo "sha256  $sha"
             echo '```'
             echo
-            echo "The AppImage is reproducible: a local build of this commit should match."
+            echo "The AppImage is reproducible: ./appimage/build.sh --webrtc at this commit should match."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # The check the build cannot make about itself - that it runs somewhere

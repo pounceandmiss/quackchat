@@ -58,18 +58,26 @@ make -C /src/third_party/tacky lib \
     LINUX_BUILD="$build/tacky" \
     DEPS_DIR=/src/build-deps
 
-# Optional webrtc media backend (see README.md), built before CMake looks for it.
+# The webrtc media backend, when --webrtc asked for it (see README.md), built
+# before CMake looks for it. tacky clones the wrapper at its pinned commit and
+# fetches the pinned prebuilts into the same /src/build-deps, once; a checkout
+# named by QUACK_WEBRTC_SRC (mounted with QUACK_RUN_MOUNTS) builds instead.
+# The name of the result says which way it went, so an AppImage without the
+# backend is never taken for a reproduction of one with it - and a library left
+# in tacky's dist/ by an earlier --webrtc build is removed rather than staged,
+# so the name is true.
 echo "==> tacky webrtc backend"
-if [ -z "${QUACK_WEBRTC_SRC-}" ]; then
-    echo "    QUACK_WEBRTC_SRC is unset; rtc backend only"
-elif ! make -C /src/third_party/tacky -n webrtc-so >/dev/null 2>&1; then
-    echo "    the pinned tacky has no webrtc-so target; rtc backend only"
+suffix=
+if [ -z "${QUACK_WEBRTC-}" ]; then
+    echo "    off (pass --webrtc); rtc backend only"
+    suffix=-rtc
+    rm -f /src/third_party/tacky/dist/libtacky_webrtc.so
 else
     make -C /src/third_party/tacky webrtc-so \
         LINUX_BUILD="$build/tacky" \
         DEPS_DIR=/src/build-deps \
-        WEBRTC_SRC="$QUACK_WEBRTC_SRC" \
-        WEBRTC_BUILD="$build/webrtc"
+        WEBRTC_BUILD="$build/webrtc" \
+        ${QUACK_WEBRTC_SRC:+WEBRTC_SRC="$QUACK_WEBRTC_SRC"}
 fi
 
 # Prefix /usr with DESTDIR into the AppDir is the layout linuxdeploy expects: it
@@ -168,7 +176,7 @@ if [ ! -s "${APPIMAGE_RUNTIME_FILE-}" ]; then
     echo "    and docker/run.sh rebuilds the image on every run." >&2
     exit 1
 fi
-out=quackchat-$VERSION-x86_64.AppImage
+out=quackchat-$VERSION$suffix-x86_64.AppImage
 rm -f "$out"
 env -u SOURCE_DATE_EPOCH ARCH=x86_64 appimagetool \
     --runtime-file "$APPIMAGE_RUNTIME_FILE" \

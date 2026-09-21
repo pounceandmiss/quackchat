@@ -81,19 +81,32 @@ room of its own, as Dino's do; one held in a group chat itself, as Movim's
 are, is joined there, and that room has to show real JIDs for the legs to
 reach anyone.
 
-Building it needs a checkout of the rtc-webrtc repository holding the prebuilts
-its README lists - libwebrtc itself, Chromium's clang, and the MSVC SDK for
-Windows. They are large, and unpacked by hand, so no build reaches for them
-unless it is told where they are:
+It is opt-in per build and always in a release:
 
-    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc:ro \
-    QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh
+    ./appimage/build.sh --webrtc
 
-`QUACK_RUN_MOUNTS` mounts the checkout into the build container read-only and
-`QUACK_WEBRTC_SRC` says where it landed inside. The same pair works for
-`./windows/build.sh` and `./android/build.sh`; the Flatpak takes the built
-library instead, see below. Leave them out and the build is shorter and calls
-run on rtc.
+The same flag works for `./windows/build.sh` and `./android/build.sh`;
+`release.sh` passes it to all three, and the Flatpak takes the library the
+AppImage build leaves behind, see below. Nothing is prepared by hand: tacky
+clones the rtc-webrtc wrapper at the commit pinned in its Makefile and runs the
+wrapper's `third_party/fetch.sh`, which fetches libwebrtc, Chromium's clang and
+the libc++ headers - and the MSVC SDK, for Windows - each pinned by hash or
+commit, into `build-deps/` beside tacky's other sources. A few hundred
+megabytes, once per platform.
+
+Without the flag the build is shorter, calls run on rtc, and the result is
+named for it: `quackchat-<version>-rtc-x86_64.AppImage`, `-rtc-win64.zip`,
+`-rtc.apk`. A build with it keeps the plain name, so the two are never mistaken
+for one another.
+
+To build a checkout of the wrapper other than the pinned one - while working on
+it - mount it in and name it:
+
+    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc \
+    QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh --webrtc
+
+Not read-only: the fetch writes that checkout's `third_party/` when it is not
+already in place.
 
 ## The Linux AppImage
 
@@ -110,7 +123,7 @@ stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
 delete `build-appimage/` for those too. `--no-aot` skips the ahead-of-time QML
 compile, which dominates the build.
 
-`QUACK_WEBRTC_SRC` puts the webrtc backend in it, as
+`--webrtc` puts the webrtc backend in it, as
 [Calls: the webrtc backend](#calls-the-webrtc-backend) describes.
 
     ./appimage/smoke-test.sh
@@ -130,9 +143,8 @@ asks for administrator, and the ZIP is what someone without it unpacks and runs
 in place. `--no-installer` skips NSIS. `--clean` drops the app's half of
 `build-win/` and keeps tacky's dependencies.
 
-`QUACK_WEBRTC_SRC` puts the webrtc backend in the package, which is what sends
-video from Windows: see [Calls: the webrtc
-backend](#calls-the-webrtc-backend).
+`--webrtc` puts the webrtc backend in the package, which is what sends video
+from Windows: see [Calls: the webrtc backend](#calls-the-webrtc-backend).
 
 NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
 so `docker/common.Dockerfile` builds it from source, along with the scons that
@@ -155,9 +167,8 @@ The keystore is bind-mounted read-only, never copied into the checkout or into
 an image, and the password is passed by variable name rather than value so it
 stays out of the process table. Left unset, `apksigner` prompts.
 
-`QUACK_WEBRTC_SRC` puts the webrtc backend in the apk, where the background
-service uses it for calls: see [Calls: the webrtc
-backend](#calls-the-webrtc-backend).
+`--webrtc` puts the webrtc backend in the apk, where the background service
+uses it for calls: see [Calls: the webrtc backend](#calls-the-webrtc-backend).
 
 The image carries its own NDK, so tacky's Android targets are driven with
 `ANDROID_DOCKER=0`. Left at the default they would start a second container from
@@ -178,8 +189,8 @@ pinned sources and built with no network of their own.
 
 The webrtc backend is the exception: an offline build cannot compile it, so the
 manifest takes `third_party/tacky/dist/libtacky_webrtc.so` as a file and refuses
-to start without one. An AppImage build with `QUACK_WEBRTC_SRC` leaves one
-there.
+to start without one. `./appimage/build.sh --webrtc` leaves one there, which is
+why `release.sh` builds the AppImage before the Flatpak.
 
 While working on the app, the form that installs what it builds is more useful:
 
@@ -194,6 +205,14 @@ from a release page is one anybody can rebuild and check against the source. The
 clock and the checkout's file mtimes are replaced by the commit date, the uid and
 the linker are fixed rather than inherited from the build host, and the whole
 toolchain is pinned by digest and checksum in `docker/common.Dockerfile`.
+
+"The same commit" includes the webrtc backend, since a release carries it: the
+wrapper's commit is pinned in tacky, and every prebuilt it links - libwebrtc,
+Chromium's clang, the libc++ headers - by hash or commit in the wrapper, so the
+whole of it is named by the commit and fetched the same way on every machine.
+libwebrtc itself is a prebuilt, though: the same bytes go in everywhere, but
+nobody here compiles them from source. A build without `--webrtc` is a
+different artifact under a different name, not a failed reproduction.
 
 Checked from a fresh clone rather than a rebuild in place: a rebuild reuses its
 build tree and can agree with itself for reasons that would not survive
@@ -212,7 +231,9 @@ settles: `tools/repro-check.sh flatpak` would settle the Flatpak, whose remainin
 unknown is the KDE sdk it builds against - a binary runtime nobody here compiles,
 recorded in `flatpak/runtime.pin` rather than built. Windows and Android have no
 such check at all, and the apk in particular goes through gradle, which would
-have to be made deterministic first.
+have to be made deterministic first. The Windows backend adds an input of its
+own: the MSVC CRT and SDK, which xwin fetches from Microsoft by version rather
+than by hash.
 
 ## What a host build needs
 
@@ -248,10 +269,10 @@ The binary is `build/quackchat`.
 CMake finds `third_party/tacky` on its own. A checkout elsewhere is named with
 `-DTACKY_ROOT=<dir>` or `$TACKY_ROOT`, and wants both `embed/tacky.h` and
 `dist/libtacky.a` under it. A `dist/libtacky_webrtc.so` there (tacky's
-`make webrtc-so`, see [Calls: the webrtc
-backend](#calls-the-webrtc-backend)) is staged next to the binary. `cmake --build build --target tacky-lib` re-runs
-tacky's make without leaving the build tree, which is the short way round after
-moving the pin.
+`make webrtc-so`, which fetches what it needs; see [Calls: the webrtc
+backend](#calls-the-webrtc-backend)) is staged next to the binary.
+`cmake --build build --target tacky-lib` re-runs tacky's make without leaving
+the build tree, which is the short way round after moving the pin.
 
 Debug builds compile QML to bytecode and Release builds compile it ahead of
 time to C++, trading build time for startup and binding speed. Override with

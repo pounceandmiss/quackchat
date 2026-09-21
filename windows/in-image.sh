@@ -40,16 +40,23 @@ make -C /src/third_party/tacky win-lib \
     WIN_BUILD=../../build-win/tacky \
     WIN_DEPS_DIR=/src/build-deps
 
-# Optional webrtc media backend (see README.md), built before CMake looks for it.
+# The webrtc media backend, when --webrtc asked for it (see README.md), built
+# before CMake looks for it. As in appimage/in-image.sh: tacky clones the
+# wrapper at its pin and fetches the prebuilts - here the MSVC CRT and SDK too -
+# into /src/build-deps, or builds the checkout QUACK_WEBRTC_SRC names.
 echo "==> tacky webrtc backend"
-if [ -z "${QUACK_WEBRTC_SRC-}" ]; then
-    echo "    QUACK_WEBRTC_SRC is unset; rtc backend only"
+suffix=
+if [ -z "${QUACK_WEBRTC-}" ]; then
+    echo "    off (pass --webrtc); rtc backend only"
+    suffix=-rtc
+    rm -f /src/third_party/tacky/dist/libtacky_webrtc-win.dll
 else
     make -C /src/third_party/tacky win-webrtc-dll \
         WIN_TCLSH="$QUACK_WIN_TCLSH" \
         WIN_BUILD=../../build-win/tacky \
         WIN_DEPS_DIR=/src/build-deps \
-        WEBRTC_SRC="$QUACK_WEBRTC_SRC"
+        WEBRTC_DEPS_DIR=/src/build-deps \
+        ${QUACK_WEBRTC_SRC:+WEBRTC_SRC="$QUACK_WEBRTC_SRC"}
 fi
 
 # QUACK_FAST_LINKER=OFF for the same reason as the AppImage: which linker ran is
@@ -88,17 +95,18 @@ cpack --config "$build/cmake/CPackConfig.cmake" -G "$generators" -B "$build/pkg"
 
 VERSION=$(sed -n 's/.*project(quack_qml VERSION \([0-9.]*\).*/\1/p' /src/CMakeLists.txt)
 mkdir -p /src/dist
-for f in "quackchat-$VERSION-win64.zip" "quackchat-$VERSION-win64.exe"; do
-    if [ -f "$build/pkg/$f" ]; then
-        mv -f "$build/pkg/$f" /src/dist/
-        sha256sum "/src/dist/$f"
+for ext in zip exe; do
+    if [ -f "$build/pkg/quackchat-$VERSION-win64.$ext" ]; then
+        mv -f "$build/pkg/quackchat-$VERSION-win64.$ext" \
+            "/src/dist/quackchat-$VERSION$suffix-win64.$ext"
+        sha256sum "/src/dist/quackchat-$VERSION$suffix-win64.$ext"
     fi
 done
 
 # cpack can finish without writing one.
-wanted=("quackchat-$VERSION-win64.zip")
+wanted=("quackchat-$VERSION$suffix-win64.zip")
 if [ -n "${QUACK_WIN_INSTALLER-}" ]; then
-    wanted+=("quackchat-$VERSION-win64.exe")
+    wanted+=("quackchat-$VERSION$suffix-win64.exe")
 fi
 for f in "${wanted[@]}"; do
     [ -f "/src/dist/$f" ] || {
@@ -106,4 +114,4 @@ for f in "${wanted[@]}"; do
         exit 1
     }
 done
-ls -l /src/dist/quackchat-"$VERSION"-win64.*
+ls -l /src/dist/quackchat-"$VERSION$suffix"-win64.*

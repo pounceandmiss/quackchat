@@ -68,9 +68,12 @@ artifact_for() {
     esac
 }
 
+# With the webrtc backend, as release.sh builds them: the claim being checked is
+# about the bytes on the release page. Its prebuilts are fetched by pin on both
+# sides, the clone included, which is the honest test of those pins.
 build_target() {
     case $1 in
-        appimage) ./appimage/build.sh ;;
+        appimage) ./appimage/build.sh --webrtc ;;
         flatpak)  ./flatpak/build.sh ;;
     esac
 }

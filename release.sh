@@ -4,10 +4,17 @@
 #   ./release.sh [--check] [--clean] [--allow-dirty] [--allow-debug-key] \
 #                [<version>] [target...]
 #
-# Targets are `windows`, `android`, `flatpak` and `appimage`; all four run when
-# none are named. Each leaves one or two files in dist/, and a SHA256SUMS over
-# them is rewritten at the end. Nothing is uploaded - the release page is a
-# separate, deliberate step.
+# Targets are `windows`, `android`, `appimage` and `flatpak`; all four run when
+# none are named, in that order - the Flatpak takes the webrtc backend the
+# AppImage build leaves behind. Each leaves one or two files in dist/, and a
+# SHA256SUMS over them is rewritten at the end. Nothing is uploaded - the
+# release page is a separate, deliberate step.
+#
+# A release carries the webrtc media backend: every container build here runs
+# with --webrtc. The per-target scripts leave it out unless asked, so that a
+# development build stays short; a release is not one, and the choice is made
+# here rather than at the keyboard so that "one commit, one set of bytes" keeps
+# meaning the bytes on the release page.
 #
 # <version> is optional and checked rather than applied: the version lives in
 # project(quack_qml VERSION), which is what CPack, the Android version code and
@@ -36,7 +43,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")" && pwd)
 cd "$root"
 
-all_targets="windows android flatpak appimage"
+all_targets="windows android appimage flatpak"
 logdir=dist/logs
 
 usage() {
@@ -165,6 +172,12 @@ $dirty"
         # checks this too; doing it here means it fails in seconds rather than
         # after the other three targets have built.
         ./flatpak/check-runtime-pin.sh
+        # The one binary the manifest takes prebuilt. The AppImage build makes
+        # it, and runs first when both are selected; alone, the Flatpak needs
+        # one already there.
+        selected appimage || [ -f third_party/tacky/dist/libtacky_webrtc.so ] ||
+            die "no third_party/tacky/dist/libtacky_webrtc.so for the Flatpak;
+build the appimage target first (./appimage/build.sh --webrtc leaves one there)"
     fi
 
     if selected appimage; then
@@ -214,15 +227,15 @@ QUACK_ANDROID_KEYSTORE_PASS for an unattended build"
 # ------------------------------------------------------------------ targets
 
 build_windows() {
-    local args=()
-    if [ "$clean" -eq 1 ]; then args=(--clean); fi
+    local args=(--webrtc)
+    if [ "$clean" -eq 1 ]; then args+=(--clean); fi
     # Writes dist/quackchat-<version>-win64.{zip,exe} itself.
     run_logged windows ./windows/build.sh "${args[@]}"
 }
 
 build_android() {
-    local args=()
-    if [ "$clean" -eq 1 ]; then args=(--clean); fi
+    local args=(--webrtc)
+    if [ "$clean" -eq 1 ]; then args+=(--clean); fi
     # --debug builds the debug-signed apk gradle can sign by itself, which is
     # what --allow-debug-key asks for. Otherwise android/build.sh signs with the
     # keystore named below, mounted into the container read-only.
@@ -241,8 +254,8 @@ build_flatpak() {
 }
 
 build_appimage() {
-    local args=()
-    if [ "$clean" -eq 1 ]; then args=(--clean); fi
+    local args=(--webrtc)
+    if [ "$clean" -eq 1 ]; then args+=(--clean); fi
     # Writes dist/quackchat-<version>-x86_64.AppImage itself.
     run_logged appimage ./appimage/build.sh "${args[@]}"
 }
@@ -259,9 +272,11 @@ fi
 
 ask_keystore_pass
 
+# In all_targets' order whatever order they were named in: the Flatpak comes
+# after the AppImage whose build supplies its webrtc backend.
 note "quackchat $version: $targets"
-for t in $targets; do
-    "build_$t"
+for t in $all_targets; do
+    selected "$t" && "build_$t"
 done
 
 # Only this version's files, so a dist/ that still holds the last release does

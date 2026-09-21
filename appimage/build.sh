@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the portable Linux AppImage.
 #
-#   appimage/build.sh [--clean] [--no-aot]
+#   appimage/build.sh [--clean] [--no-aot] [--webrtc]
 #
 # Runs entirely in the common toolchain image (docker/common.Dockerfile), so
 # docker is all the host needs. The result lands in dist/ and runs on glibc 2.34
@@ -16,7 +16,10 @@
 # incremental. --clean drops the app's half of it and keeps tacky's deps, which
 # cost the better part of an hour to compile; delete build-appimage/ for those
 # too. --no-aot skips the ahead-of-time QML compile, which dominates a release
-# build and has no bearing on packaging.
+# build and has no bearing on packaging. --webrtc puts the webrtc media backend
+# in (see README.md, "Calls: the webrtc backend"): a few hundred megabytes of
+# pinned prebuilts fetched on the first run, and a differently named result
+# without it.
 #
 # The tree is never shared with a host-native build: different toolchain,
 # different glibc, and objects from one are no use to the other.
@@ -27,11 +30,13 @@ project=$(cd "$here/.." && pwd)
 
 clean=
 aot=1
+webrtc=${QUACK_WEBRTC-}
 while [ "$#" -gt 0 ]; do
     case $1 in
         --clean)  clean=1 ;;
         --no-aot) aot= ;;
-        *) echo "usage: appimage/build.sh [--clean] [--no-aot]" >&2; exit 2 ;;
+        --webrtc) webrtc=1 ;;
+        *) echo "usage: appimage/build.sh [--clean] [--no-aot] [--webrtc]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -54,5 +59,6 @@ export SOURCE_DATE_EPOCH
 # in-image half without that script knowing what any of them mean.
 export QUACK_APPIMAGE_CLEAN=$clean
 export QUACK_APPIMAGE_AOT=$aot
+export QUACK_WEBRTC=$webrtc
 
 exec "$project/docker/run.sh" common appimage/in-image.sh

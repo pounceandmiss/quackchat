@@ -57,14 +57,24 @@ make -C /src/third_party/tacky android-lib \
 # empty build type compiles with no -O flags yet still packages as a release.
 # QT_ANDROID_DEPLOYMENT_TYPE decides the *package* type independently of it, so
 # it is stated too rather than left to whatever the tree was last configured for.
-# Optional webrtc media backend (see README.md), built before CMake looks for it.
+# The webrtc media backend, when --webrtc asked for it (see README.md), built
+# before CMake looks for it. As in appimage/in-image.sh: tacky clones the
+# wrapper at its pin and fetches the prebuilts into /src/build-deps - shared
+# with the other targets, unlike the rest of this build's tacky tree, since
+# nothing there is built in place - or builds the checkout QUACK_WEBRTC_SRC
+# names.
 echo "==> tacky webrtc backend"
-if [ -z "${QUACK_WEBRTC_SRC-}" ]; then
-    echo "    QUACK_WEBRTC_SRC is unset; rtc backend only"
+suffix=
+if [ -z "${QUACK_WEBRTC-}" ]; then
+    echo "    off (pass --webrtc); rtc backend only"
+    suffix=-rtc
+    rm -f /src/third_party/tacky/dist/libtacky_webrtc-android.so \
+          /src/third_party/tacky/dist/webrtc-android.jar
 else
     make -C /src/third_party/tacky android-webrtc-so \
         ANDROID_BUILD=../../build-android/tacky \
-        WEBRTC_SRC="$QUACK_WEBRTC_SRC"
+        WEBRTC_DEPS_DIR=/src/build-deps \
+        ${QUACK_WEBRTC_SRC:+WEBRTC_SRC="$QUACK_WEBRTC_SRC"}
 fi
 
 # FrameRouter's token renaming, checked with the image's JDK before gradle.
@@ -107,10 +117,10 @@ cmake --build "$build/cmake" --target apk
 VERSION=$(sed -n 's/.*project(quack_qml VERSION \([0-9.]*\).*/\1/p' /src/CMakeLists.txt)
 mkdir -p /src/dist
 if [ -n "${QUACK_ANDROID_DEBUG-}" ]; then
-    out=/src/dist/quackchat-$VERSION-debug.apk
+    out=/src/dist/quackchat-$VERSION$suffix-debug.apk
     src=$debug_apk
 else
-    out=/src/dist/quackchat-$VERSION-unsigned.apk
+    out=/src/dist/quackchat-$VERSION$suffix-unsigned.apk
     src=$unsigned
 fi
 [ -f "$src" ] || {
@@ -148,7 +158,7 @@ tools=$(ls -d "$QUACK_ANDROID_SDK"/build-tools/* | sort -V | tail -1)
 
 echo "==> signing"
 aligned=$build/quackchat-$VERSION-aligned.apk
-signed=/src/dist/quackchat-$VERSION.apk
+signed=/src/dist/quackchat-$VERSION$suffix.apk
 "$tools/zipalign" -p -f 4 "$out" "$aligned"
 
 pass_args=()

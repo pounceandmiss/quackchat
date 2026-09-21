@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Windows package.
 #
-#   windows/build.sh [--clean] [--no-installer]
+#   windows/build.sh [--clean] [--no-installer] [--webrtc]
 #
 # Runs entirely in the common toolchain image (docker/common.Dockerfile), so
 # docker is all the host needs - no MinGW, no Qt kit, no wine, no NSIS.
@@ -13,7 +13,9 @@
 #
 # build-win/ holds the build tree and persists, so a rebuild is incremental.
 # --clean drops the app's half and keeps tacky's deps, which cost the better
-# part of an hour to compile; delete build-win/ for those too.
+# part of an hour to compile; delete build-win/ for those too. --webrtc puts the
+# webrtc media backend in (see README.md, "Calls: the webrtc backend"), which is
+# what sends video from Windows; the result is named differently without it.
 #
 # The tree is never shared with a host-native cross build: a different MinGW
 # means objects wanting libgcc symbols the other runtime lacks, and nothing
@@ -25,11 +27,13 @@ project=$(cd "$here/.." && pwd)
 
 clean=
 installer=1
+webrtc=${QUACK_WEBRTC-}
 while [ "$#" -gt 0 ]; do
     case $1 in
         --clean)         clean=1 ;;
         --no-installer)  installer= ;;
-        *) echo "usage: windows/build.sh [--clean] [--no-installer]" >&2; exit 2 ;;
+        --webrtc)        webrtc=1 ;;
+        *) echo "usage: windows/build.sh [--clean] [--no-installer] [--webrtc]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -52,5 +56,6 @@ export SOURCE_DATE_EPOCH
 # every QUACK_* variable it finds.
 export QUACK_WIN_CLEAN=$clean
 export QUACK_WIN_INSTALLER=$installer
+export QUACK_WEBRTC=$webrtc
 
 exec "$project/docker/run.sh" common windows/in-image.sh
