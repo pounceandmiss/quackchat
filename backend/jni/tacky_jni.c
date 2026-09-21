@@ -15,7 +15,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ringbroker.h"
 #include "tacky.h"
 
 typedef struct {
@@ -96,11 +95,6 @@ Java_org_qtproject_example_quackchat_TackyNative_nativeCreate(
         held[i] = (jstring)(*env)->GetObjectArrayElement(env, args, i);
         argv[i] = (*env)->GetStringUTFChars(env, held[i], NULL);
     }
-
-    /* The UI process maps video frame rings through this. */
-    if (ringbroker_start(RINGBROKER_ANDROID_SOCKET) != 0)
-        __android_log_print(ANDROID_LOG_ERROR, "quack.jni", "cannot serve frame rings on %s",
-                            RINGBROKER_ANDROID_SOCKET);
 
     /* Callbacks can fire before this returns, so ctx is complete beforehand. */
     c->client = tacky_create(argv, emit_cb, c);

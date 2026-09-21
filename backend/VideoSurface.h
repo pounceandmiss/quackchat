@@ -1,4 +1,4 @@
-// Feeds the video ring into a QVideoSink so QML can render it with a
+// Feeds a video frame stream into a QVideoSink so QML can render it with a
 // stock VideoOutput. Give it the channel arg-map from a calls
 // <VideoTrack>/<VideoPreview> event and bind videoSink to the VideoOutput.
 
@@ -11,7 +11,7 @@
 #include <QVideoSink>
 #include <QtQml/qqmlregistration.h>
 
-#include "FrameChannel.h"
+#include "FrameStream.h"
 
 class VideoSurface : public QObject {
     Q_OBJECT
@@ -39,23 +39,22 @@ signals:
     void channelChanged();
     void hasFrameChanged();
 
-private slots:
-    void poll();
-
 private:
     void reopen();
+    void deliver();
+    void stalled();
 
     QVideoSink  *m_sink = nullptr;
     QVariantMap  m_channel;
     bool         m_hasFrame = false;
 
-    FrameChannel  m_ring;
+    FrameStream   m_stream;
     QString       m_openName;
-    QTimer        m_timer;
-    // Since the last frame, or since the ring opened.
+    // Re-armed by every frame: firing means nothing arrived for a while.
+    QTimer        m_stallTimer;
+    // Since the last frame, or since the stream opened.
     QElapsedTimer m_since;
     bool          m_stalled = false;
-    bool          m_shortLogged = false;
     int           m_w = 0;
     int           m_h = 0;
 };

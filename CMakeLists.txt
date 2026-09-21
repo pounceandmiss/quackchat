@@ -324,15 +324,12 @@ qt_add_qml_module(quack
         backend/CallsModel.cpp backend/CallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
         backend/CameraDevices.cpp backend/CameraDevices.h
-        backend/FrameChannel.cpp backend/FrameChannel.h
+        backend/FrameStream.cpp backend/FrameStream.h
         backend/VideoSurface.cpp backend/VideoSurface.h
         backend/AppSettings.cpp backend/AppSettings.h
         backend/StorageController.cpp backend/StorageController.h
         backend/AvatarEncoder.h
         backend/AvatarSink.h)
-if(NOT WIN32)
-    target_sources(quack PRIVATE backend/ringbroker.c backend/ringbroker.h)
-endif()
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
 # Core/Qml PUBLIC so the headless tests get the headers without linking QtGui.
 target_link_libraries(quack
@@ -430,7 +427,7 @@ if(ANDROID)
     # The interpreter, loaded by the Java service in the :backend process. This
     # is the only thing that links libtacky on Android, and it is why the NDK
     # r29 / android-30 pinning still applies to the build as a whole.
-    add_library(tackyjni SHARED backend/jni/tacky_jni.c backend/ringbroker.c)
+    add_library(tackyjni SHARED backend/jni/tacky_jni.c)
     target_include_directories(tackyjni PRIVATE backend)
     target_link_libraries(tackyjni PRIVATE tacky log)
     set_target_properties(tackyjni PROPERTIES
@@ -507,17 +504,11 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_chatsession tst_author
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
           tst_calls tst_audiodevices tst_appsettings tst_notifications
-          tst_registration tst_i18n tst_logging tst_storage)
+          tst_registration tst_i18n tst_logging tst_storage tst_framestream)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
-
-if(NOT WIN32)
-    qt_add_executable(tst_ringbroker backend/tst_ringbroker.cpp)
-    target_link_libraries(tst_ringbroker PRIVATE quack Qt6::Test)
-    add_test(NAME tst_ringbroker COMMAND tst_ringbroker)
-endif()
 
 # The real FdoNotifier against a stand-in daemon. dbus-run-session gives it a
 # private bus to own org.freedesktop.Notifications on - on the developer's own

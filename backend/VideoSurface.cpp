@@ -12,8 +12,10 @@ constexpr qint64 kStallMs = 3000;
 
 VideoSurface::VideoSurface(QObject *parent) : QObject(parent)
 {
-    m_timer.setInterval(33); // ~30 Hz
-    connect(&m_timer, &QTimer::timeout, this, &VideoSurface::poll);
+    m_stallTimer.setSingleShot(true);
+    m_stallTimer.setInterval(kStallMs);
+    connect(&m_stallTimer, &QTimer::timeout, this, &VideoSurface::stalled);
+    connect(&m_stream, &FrameStream::frameReady, this, &VideoSurface::deliver);
 }
 
 VideoSurface::~VideoSurface() = default;
@@ -38,12 +40,12 @@ void VideoSurface::setChannel(const QVariantMap &c)
 void VideoSurface::reopen()
 {
     const QString name = m_channel.value(QStringLiteral("name")).toString();
-    if (name == m_openName && m_ring.isOpen())
+    if (name == m_openName && m_stream.isOpen())
         return;
 
-    m_ring.close();
+    m_stream.close();
     m_openName = name;
-    m_timer.stop();
+    m_stallTimer.stop();
     if (m_hasFrame) {
         m_hasFrame = false;
         emit hasFrameChanged();
@@ -52,39 +54,32 @@ void VideoSurface::reopen()
         m_sink->setVideoFrame(QVideoFrame());
 
     m_stalled = false;
-    m_shortLogged = false;
     m_w = 0;
     m_h = 0;
 
     if (name.isEmpty())
         return;
-    if (m_ring.openByName(name)) {
-        m_since.start();
-        m_timer.start();
-    }
+    m_stream.open(name);
+    m_since.start();
+    m_stallTimer.start();
 }
 
-void VideoSurface::poll()
+// The stream is open and nothing is coming through it: the line a
+// "no video" report needs.
+void VideoSurface::stalled()
 {
-    if (!m_ring.isOpen() || !m_sink)
-        return;
+    m_stalled = true;
+    qCWarning(lcVideo) << "no frames on" << m_openName << "for" << m_since.elapsed()
+                       << "ms;" << (m_hasFrame ? "stopped" : "none ever arrived");
+}
 
-    FrameChannel::Frame f;
-    bool got = false;
-    while (m_ring.read(f)) // drain to the newest this tick
-        got = true;
-    if (!got) {
-        // The ring is open and nothing is coming through it: the line a
-        // "no video" report needs.
-        if (!m_stalled && m_since.hasExpired(kStallMs)) {
-            m_stalled = true;
-            qCWarning(lcVideo) << "no frames on" << m_openName << "for"
-                               << m_since.elapsed() << "ms;"
-                               << (m_hasFrame ? "stopped" : "none ever arrived");
-        }
-        return;
-    }
+void VideoSurface::deliver()
+{
     m_since.restart();
+    m_stallTimer.start();
+    if (!m_sink)
+        return;
+    const FrameStream::Frame &f = m_stream.latest();
     if (m_stalled) {
         m_stalled = false;
         qCWarning(lcVideo) << "frames resumed on" << m_openName;
@@ -100,15 +95,6 @@ void VideoSurface::poll()
 
     const qsizetype ys = qsizetype(w) * h;
     const qsizetype cs = qsizetype(cw) * ch;
-    if (f.planes.size() < ys + 2 * cs) {
-        if (!m_shortLogged) {
-            m_shortLogged = true;
-            qCWarning(lcVideo) << "short frame on" << m_openName << f.planes.size()
-                               << "bytes for" << w << "x" << h;
-        }
-        return;
-    }
-
     QVideoFrameFormat fmt(QSize(w, h), QVideoFrameFormat::Format_YUV420P);
     QVideoFrame frame(fmt);
     if (!frame.map(QVideoFrame::WriteOnly))
