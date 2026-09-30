@@ -90,6 +90,7 @@ private slots:
     void gotoOutrunsTheOpeningPage();
     void searchMarkJoinsTheStylingSpans();
     void attachmentsRoleReadsTheContentUnion();
+    void inviteRoleReadsTheContentUnion();
     void fileUpdateMergesIntoTheRow();
     void fileUpdateFansOutToEveryRowSharingTheUrl();
     void transferStatesReachTheViewIntact();
@@ -1049,6 +1050,27 @@ static const char *kMediaRow = R"([{"timestamp":100,"is_outgoing":false,
 
 static QVariantMap att0(const ChatModel &m, int row = 0) {
     return m.data(m.index(row), ChatModel::AttachmentsRole).toList().at(0).toMap();
+}
+
+// The card's facts come out of the union; the body stays the body, so copying
+// and search keep working on an invite as on any other message.
+void TestChatModel::inviteRoleReadsTheContentUnion() {
+    ChatModel m;
+    m.applyBatch(msgs(R"([
+        {"timestamp":100,"content":{"type":"text","body":"hi"}},
+        {"timestamp":200,"content":{"type":"invite","room":"r@muc.h",
+            "reason":"come","password":"pw","body":"a invites you to r@muc.h"}},
+        {"timestamp":300,"retracted":true,"content":{"type":"invite",
+            "room":"r@muc.h","reason":"","body":"gone"}}
+    ])"));
+    // Newest first: row 0 is the withdrawn invite, row 2 the plain text.
+    const QVariantMap invite = m.data(m.index(1), ChatModel::InviteRole).toMap();
+    QCOMPARE(invite, (QVariantMap{{"room", "r@muc.h"}, {"reason", "come"},
+                                  {"password", "pw"}}));
+    QCOMPARE(m.data(m.index(1), ChatModel::BodyRole).toString(),
+             QString("a invites you to r@muc.h"));
+    QVERIFY(m.data(m.index(0), ChatModel::InviteRole).toMap().isEmpty());
+    QVERIFY(m.data(m.index(2), ChatModel::InviteRole).toMap().isEmpty());
 }
 
 void TestChatModel::attachmentsRoleReadsTheContentUnion() {

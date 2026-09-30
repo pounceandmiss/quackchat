@@ -242,6 +242,7 @@ Item {
                               shell.currentChatGroupchat)
             shell.closeChat()
         }
+        onOpenChatRequested: (jid, name, groupchat) => shell.openChat(jid, name, groupchat)
     }
 
     // The seam between the two columns, and the strip that drags it. Declared

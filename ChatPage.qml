@@ -20,6 +20,56 @@ Page {
     readonly property bool hasChat: chatJid !== ""
     signal back()
     signal popOut()
+    // Somewhere other than this chat to go, named by an invite's room.
+    signal openChatRequested(string jid, string name, bool groupchat)
+
+    // The account's chat list, for what an invite's card says about its room.
+    // Resolved on demand rather than bound, as ContactDetailsPage does: a
+    // binding that calls into App re-runs against a singleton on its way out
+    // at shutdown.
+    property var chatList: null
+    onAccountChanged: page.chatList = page.account !== "" ? App.chatListFor(page.account) : null
+    Component.onCompleted: page.chatList = page.account !== "" ? App.chatListFor(page.account) : null
+    // entryFor is a lookup, not a property, so bindings over it read this to
+    // hear that the rows moved: a bookmark landing, a rename, a reload.
+    property int chatListRevision: 0
+    Connections {
+        target: page.chatList
+        function onDataChanged() { page.chatListRevision++ }
+        function onModelReset() { page.chatListRevision++ }
+        function onRowsInserted() { page.chatListRevision++ }
+        function onRowsRemoved() { page.chatListRevision++ }
+    }
+
+    function inviteEntry(room) {
+        void page.chatListRevision
+        return page.chatList ? page.chatList.entryFor(room + "?join") : ({})
+    }
+    // The bookmark's name for the room, else its JID, as the list shows it.
+    function inviteTitle(invite) {
+        const room = invite.room ?? ""
+        if (room === "")
+            return ""
+        const name = page.inviteEntry(room).name ?? ""
+        return name !== "" ? name : room
+    }
+    // A member is bookmarked with autojoin, which is the Tk list's "Join" tick.
+    function inviteJoined(invite) {
+        const room = invite.room ?? ""
+        return room !== "" && page.inviteEntry(room).autojoin === true
+    }
+    // Accepting is joining: a bookmark with autojoin, carrying the password
+    // the invite came with. The room's chat opens straight away and fills in
+    // as the join lands.
+    function joinInvite(invite) {
+        const room = invite.room ?? ""
+        if (room === "" || !page.chatList)
+            return
+        const title = page.inviteTitle(invite)
+        if (!page.inviteJoined(invite))
+            page.chatList.joinRoom(room + "?join", "", invite.password ?? "")
+        page.openChatRequested(room + "?join", title, true)
+    }
 
     // Android overlays the keyboard instead of resizing the window, so the
     // content column has to shift up by this much itself. Zero elsewhere.
@@ -1360,6 +1410,7 @@ Page {
                 required property var timestamp
                 required property var reactions
                 required property var attachments
+                required property var invite
                 // BottomToTop over a newest-first model puts row index - 1
                 // below this one on screen, so a row whose section differs from
                 // the previous one is the foot of its run. Index 0 has no
@@ -1394,6 +1445,10 @@ Page {
                     avatarJid: App.settings.chatAvatars ? wrap.from : ""
                     showAvatar: wrap.runEnd
                     attachments: wrap.attachments
+                    invite: wrap.invite
+                    inviteTitle: page.inviteTitle(wrap.invite)
+                    inviteJoined: page.inviteJoined(wrap.invite)
+                    onJoinInviteRequested: page.joinInvite(wrap.invite)
                     onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
                     onAttachmentLoadRequested: (idx) => page.retryAttachment(wrap.timestamp,
                                                                              wrap.attachments, idx)

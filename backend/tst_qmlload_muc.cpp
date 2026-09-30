@@ -3,6 +3,8 @@
 #include <QQmlComponent>
 
 #include "AppController.h"
+#include "ChatListModel.h"
+#include "ChatModel.h"
 #include "MucRoomModel.h"
 #include "TackyBackend.h"
 
@@ -405,6 +407,99 @@ private slots:
         QCOMPARE(args.value("nick").toString(), QString("romeo"));
         QCOMPARE(args.value("password").toString(), QString("s3cret"));
         QCOMPARE(args.value("autojoin").toInt(), 1);
+
+        e.assertNoErrors();
+    }
+
+    // An invite in someone's chat is a card, not the sentence tacky stored as
+    // its body. Join is the bookmark write that accepts it, and takes us to the
+    // room; once we are a member, the same button only goes there.
+    void inviteCardJoinsTheRoom() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","source":"roster",
+             "last_activity":300},
+            {"jid":"room@muc.example.com?join","name":"The Room",
+             "source":"bookmarks","groupchat":true,"autojoin":false,
+             "last_activity":200}
+        ])")
+                             .array()
+                             .toVariantList());
+
+        QQuickWindow win;
+        win.resize(500, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ChatPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"chatJid", "amy@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        auto *model = qobject_cast<ChatModel *>(
+            page->property("chatModel").value<QObject *>());
+        QVERIFY(model);
+        model->applyBatch(QJsonDocument::fromJson(R"([
+            {"timestamp":100,"from_jid":"amy@example.com",
+             "content":{"type":"invite","room":"room@muc.example.com",
+                        "reason":"come say hi","password":"pw",
+                        "body":"amy@example.com invites you to the room room@muc.example.com"}}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickItem *join = nullptr;
+        QTRY_VERIFY((join = findItem(page, "inviteJoin")) && join->isVisible());
+        QCOMPARE(findItem(page, "inviteTitle")->property("text").toString(),
+                 QString("Invited you to The Room"));
+        QCOMPARE(findItem(page, "inviteReason")->property("text").toString(),
+                 QString("come say hi"));
+        QVERIFY(!findItem(page, "bubbleText")->isVisible());
+        QCOMPARE(join->property("text").toString(), QString("Join"));
+
+        // A real click: the bubble's own tap handlers must not take it.
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QSignalSpy opened(page, SIGNAL(openChatRequested(QString, QString, bool)));
+        QTest::mouseClick(&win, Qt::LeftButton, {},
+                          join->mapToScene(QPointF(join->width() / 2,
+                                                   join->height() / 2))
+                              .toPoint());
+        QCOMPARE(sent.count(), 1);
+        QCOMPARE(sent.at(0).at(0).toString(), QString("bookmarks"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("item"));
+        const QVariantMap args = sent.at(0).at(2).toMap();
+        QCOMPARE(args.value("jid").toString(),
+                 QString("room@muc.example.com?join"));
+        QCOMPARE(args.value("password").toString(), QString("pw"));
+        QCOMPARE(args.value("autojoin").toInt(), 1);
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.at(0).at(0).toString(),
+                 QString("room@muc.example.com?join"));
+        QCOMPARE(opened.at(0).at(1).toString(), QString("The Room"));
+        QCOMPARE(opened.at(0).at(2).toBool(), true);
+
+        // The bookmark lands: the card follows the list without a reload.
+        chats->applyItem(QVariantMap{{"jid", "room@muc.example.com?join"},
+                                     {"name", "The Room"},
+                                     {"source", "bookmarks"},
+                                     {"groupchat", true},
+                                     {"autojoin", true},
+                                     {"last_activity", 200}});
+        QTRY_COMPARE(join->property("text").toString(), QString("Open"));
+        QVERIFY(QMetaObject::invokeMethod(join, "clicked"));
+        QCOMPARE(sent.count(), 1);
+        QCOMPARE(opened.count(), 2);
 
         e.assertNoErrors();
     }

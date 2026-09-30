@@ -45,6 +45,16 @@ Item {
     signal attachmentFolderRequested(int idx)
     signal attachmentUncacheRequested(int idx)
     signal attachmentCancelRequested(int idx)
+    // An invitation to a group chat: {room, reason, password?} as ChatModel
+    // hands it over, empty for any other message. The card replaces the body,
+    // which only says the same thing in words for clients that can't draw one.
+    property var invite: ({})
+    readonly property bool isInvite: (invite.room ?? "") !== ""
+    // What to call the room, and whether we are already in it; both are the
+    // page's to know, since only it can see the chat list.
+    property string inviteTitle: ""
+    property bool inviteJoined: false
+    signal joinInviteRequested()
     property string time: ""
     property bool outgoing: false
     // pending | failed | sent | delivered | read, only drawn for our own
@@ -704,6 +714,42 @@ Item {
                     }
                 }
 
+                ColumnLayout {
+                    objectName: "inviteCard"
+                    visible: root.isInvite
+                    spacing: 4
+                    Layout.maximumWidth: root.maxBubbleWidth
+
+                    Text {
+                        objectName: "inviteTitle"
+                        Layout.maximumWidth: root.maxBubbleWidth
+                        text: root.outgoing ? qsTr("Invitation to %1").arg(root.inviteTitle)
+                                            : qsTr("Invited you to %1").arg(root.inviteTitle)
+                        color: Theme.textPrimary
+                        font.pixelSize: 15
+                        font.bold: true
+                        wrapMode: Text.Wrap
+                    }
+                    Text {
+                        objectName: "inviteReason"
+                        visible: text !== ""
+                        Layout.maximumWidth: root.maxBubbleWidth
+                        text: root.invite.reason ?? ""
+                        color: Theme.textDim
+                        font.pixelSize: 14
+                        font.italic: true
+                        wrapMode: Text.Wrap
+                    }
+                    // Once we are in the room, the same button just goes there.
+                    Button {
+                        objectName: "inviteJoin"
+                        Layout.topMargin: 2
+                        text: root.inviteJoined ? qsTr("Open") : qsTr("Join")
+                        enabled: !root.selectionMode
+                        onClicked: root.joinInviteRequested()
+                    }
+                }
+
                 // What stands in for the content. The header around it stays,
                 // so the row still says who and when.
                 Text {
@@ -731,8 +777,9 @@ Item {
                     textFormat: bodyText.rich ? TextEdit.RichText : TextEdit.PlainText
                     // A bare share has no caption (tacky blanks a body that is
                     // just the url), and an empty line under the image reads as
-                    // a gap in the bubble.
-                    visible: text !== ""
+                    // a gap in the bubble. An invite's body is the card's
+                    // words again.
+                    visible: text !== "" && !root.isInvite
                     color: Theme.textPrimary
                     // Left to the style, the highlight is a colour the theme
                     // never picked.

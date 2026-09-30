@@ -29,6 +29,9 @@ AppWindow {
         chatGroupchat: win.chatGroupchat
         showBack: false  // nowhere to go back to
         canPopOut: false // cannot pop itself out again
+        // Another chat gets a window of its own, as popping it out would.
+        onOpenChatRequested: (jid, name, groupchat) =>
+            AppWindows.popOut(win.account, jid, name, groupchat)
     }
 
     // A pop-out is somewhere you type: it says a dead backend as loudly as the

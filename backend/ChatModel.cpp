@@ -23,6 +23,22 @@ static QString bodyOf(const QVariantMap &m) {
     return c.value(QStringLiteral("body")).toString();
 }
 
+// The invitation a message carries, as the content union has it: room,
+// reason, and the password when the room has one. Empty for anything else,
+// a withdrawn invite included.
+static QVariantMap inviteOf(const QVariantMap &m) {
+    if (m.value(QStringLiteral("retracted")).toBool())
+        return {};
+    QVariantMap c = m.value(QStringLiteral("content")).toMap();
+    if (c.value(QStringLiteral("type")).toString() != QLatin1String("invite"))
+        return {};
+    c.remove(QStringLiteral("type"));
+    c.remove(QStringLiteral("body"));
+    c.remove(QStringLiteral("formatting"));
+    c.remove(QStringLiteral("matches"));
+    return c;
+}
+
 // The spans index into whichever string bodyOf returned, so both come from the
 // same content variant. A retraction empties that body, and an empty body needs
 // no markup, so the tombstone falls out without a case of its own.
@@ -166,6 +182,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     // "could not encrypt" apart from "could not deliver".
     case EncryptionRole:   return m.value(QStringLiteral("encryption")).toString();
     case FailReasonRole:   return m.value(QStringLiteral("fail_reason")).toString();
+    case InviteRole:       return inviteOf(m);
     case RawRole:          return m;
     default:               return {};
     }
@@ -188,6 +205,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {ReplyAuthorRole, "replyAuthor"},
         {EncryptionRole, "encryption"},
         {FailReasonRole, "failReason"},
+        {InviteRole, "invite"},
         {RawRole, "raw"},
     };
 }
