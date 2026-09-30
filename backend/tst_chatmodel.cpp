@@ -1058,14 +1058,14 @@ void TestChatModel::inviteRoleReadsTheContentUnion() {
     ChatModel m;
     m.applyBatch(msgs(R"([
         {"timestamp":100,"content":{"type":"text","body":"hi"}},
-        {"timestamp":200,"content":{"type":"invite","room":"r@muc.h",
+        {"timestamp":200,"content":{"type":"invite","room":"r@muc.h","inviter":"a@h",
             "reason":"come","password":"pw","body":"a invites you to r@muc.h"}},
         {"timestamp":300,"retracted":true,"content":{"type":"invite",
             "room":"r@muc.h","reason":"","body":"gone"}}
     ])"));
     // Newest first: row 0 is the withdrawn invite, row 2 the plain text.
     const QVariantMap invite = m.data(m.index(1), ChatModel::InviteRole).toMap();
-    QCOMPARE(invite, (QVariantMap{{"room", "r@muc.h"}, {"reason", "come"},
+    QCOMPARE(invite, (QVariantMap{{"room", "r@muc.h"}, {"inviter", "a@h"}, {"reason", "come"},
                                   {"password", "pw"}}));
     QCOMPARE(m.data(m.index(1), ChatModel::BodyRole).toString(),
              QString("a invites you to r@muc.h"));

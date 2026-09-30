@@ -65,7 +65,7 @@ public:
         ReplyAuthorRole, // and who wrote it; both empty when this is no reply
         EncryptionRole,  // "omemo" when the row is OMEMO, "" for cleartext
         FailReasonRole,  // why a failed row failed: encrypt, delivery, or ""
-        InviteRole,      // {room, reason, password?} for a room invitation,
+        InviteRole,      // {room, inviter, reason, password?} for an invitation,
                          // an empty map for anything else
         RawRole,
     };

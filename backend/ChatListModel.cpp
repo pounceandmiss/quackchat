@@ -124,6 +124,11 @@ void ChatListModel::removeBookmark(const QString &jid) {
              {{QStringLiteral("jid"), jid}});
 }
 
+void ChatListModel::declineInvite(const QString &jid) {
+    sendEdit(QStringLiteral("muc"), QStringLiteral("declineInvite"),
+             {{QStringLiteral("jid"), jid}});
+}
+
 void ChatListModel::handleEvent(const QString &module, const QString &name,
                                 const QVariant &args) {
     if (module != QLatin1String("chatlist"))

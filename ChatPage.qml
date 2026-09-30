@@ -41,34 +41,64 @@ Page {
         function onRowsRemoved() { page.chatListRevision++ }
     }
 
-    function inviteEntry(room) {
+    function inviteEntry(jid) {
         void page.chatListRevision
-        return page.chatList ? page.chatList.entryFor(room + "?join") : ({})
+        return page.chatList ? page.chatList.entryFor(jid) : ({})
     }
     // The bookmark's name for the room, else its JID, as the list shows it.
-    function inviteTitle(invite) {
+    function inviteRoomTitle(invite) {
         const room = invite.room ?? ""
-        if (room === "")
-            return ""
-        const name = page.inviteEntry(room).name ?? ""
+        const name = room !== "" ? (page.inviteEntry(room + "?join").name ?? "") : ""
         return name !== "" ? name : room
     }
     // A member is bookmarked with autojoin, which is the Tk list's "Join" tick.
     function inviteJoined(invite) {
         const room = invite.room ?? ""
-        return room !== "" && page.inviteEntry(room).autojoin === true
+        return room !== "" && page.inviteEntry(room + "?join").autojoin === true
+    }
+    // In the room's own chat the room relayed it, so the card says who the
+    // room says asked; in a 1:1 the sender asked themselves, and the card
+    // names the room.
+    function inviteHeadline(invite, outgoing) {
+        if (page.chatGroupchat) {
+            const inviter = invite.inviter ?? ""
+            if (inviter === "")
+                return qsTr("You were invited to this room")
+            const name = page.inviteEntry(inviter).name ?? ""
+            return qsTr("%1 invited you to this room").arg(name !== "" ? name : inviter)
+        }
+        return outgoing ? qsTr("Invitation to %1").arg(page.inviteRoomTitle(invite))
+                        : qsTr("Invited you to %1").arg(page.inviteRoomTitle(invite))
+    }
+    // Once in, a 1:1's card only goes to the room; in the room there is
+    // nowhere left to go.
+    function inviteJoinText(invite) {
+        if (!page.inviteJoined(invite))
+            return qsTr("Join")
+        return page.chatGroupchat ? "" : qsTr("Open")
+    }
+    function inviteCanDecline(invite) {
+        return page.chatGroupchat && !page.inviteJoined(invite)
     }
     // Accepting is joining: a bookmark with autojoin, carrying the password
-    // the invite came with. The room's chat opens straight away and fills in
-    // as the join lands.
+    // the invite came with. From a 1:1 the room's chat opens straight away and
+    // fills in as the join lands.
     function joinInvite(invite) {
         const room = invite.room ?? ""
         if (room === "" || !page.chatList)
             return
-        const title = page.inviteTitle(invite)
         if (!page.inviteJoined(invite))
             page.chatList.joinRoom(room + "?join", "", invite.password ?? "")
-        page.openChatRequested(room + "?join", title, true)
+        if (page.chatJid !== room + "?join")
+            page.openChatRequested(room + "?join", page.inviteRoomTitle(invite), true)
+    }
+    // Declining takes an unjoined room out of the list, so the chat closes.
+    function declineInvite(invite) {
+        const room = invite.room ?? ""
+        if (room === "" || !page.chatList)
+            return
+        page.chatList.declineInvite(room + "?join")
+        page.back()
     }
 
     // Android overlays the keyboard instead of resizing the window, so the
@@ -1440,15 +1470,18 @@ Page {
                     author: page.authorName(wrap.from)
                     // Rooms have many voices; a 1:1 has only the two, already
                     // named by the header and the bubble side.
-                    showAuthor: page.chatGroupchat && !wrap.outgoing
+                    showAuthor: page.chatGroupchat && !wrap.outgoing && !bubble.notice
                     avatarAccount: page.account
-                    avatarJid: App.settings.chatAvatars ? wrap.from : ""
+                    avatarJid: App.settings.chatAvatars && !bubble.notice ? wrap.from : ""
                     showAvatar: wrap.runEnd
                     attachments: wrap.attachments
                     invite: wrap.invite
-                    inviteTitle: page.inviteTitle(wrap.invite)
-                    inviteJoined: page.inviteJoined(wrap.invite)
+                    notice: page.chatGroupchat && bubble.isInvite
+                    inviteHeadline: page.inviteHeadline(wrap.invite, wrap.outgoing)
+                    inviteJoinText: page.inviteJoinText(wrap.invite)
+                    inviteCanDecline: page.inviteCanDecline(wrap.invite)
                     onJoinInviteRequested: page.joinInvite(wrap.invite)
+                    onDeclineInviteRequested: page.declineInvite(wrap.invite)
                     onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
                     onAttachmentLoadRequested: (idx) => page.retryAttachment(wrap.timestamp,
                                                                              wrap.attachments, idx)

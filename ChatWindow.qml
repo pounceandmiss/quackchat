@@ -30,6 +30,8 @@ AppWindow {
         showBack: false  // nowhere to go back to
         canPopOut: false // cannot pop itself out again
         // Another chat gets a window of its own, as popping it out would.
+        // No back button here, but a declined room has gone from under it.
+        onBack: win.close()
         onOpenChatRequested: (jid, name, groupchat) =>
             AppWindows.popOut(win.account, jid, name, groupchat)
     }

@@ -50,11 +50,16 @@ Item {
     // which only says the same thing in words for clients that can't draw one.
     property var invite: ({})
     readonly property bool isInvite: (invite.room ?? "") !== ""
-    // What to call the room, and whether we are already in it; both are the
-    // page's to know, since only it can see the chat list.
-    property string inviteTitle: ""
-    property bool inviteJoined: false
+    // What the card says and offers, all the page's to work out, since only
+    // it can see the chat list: an empty join text leaves the button out.
+    property string inviteHeadline: ""
+    property string inviteJoinText: ""
+    property bool inviteCanDecline: false
     signal joinInviteRequested()
+    signal declineInviteRequested()
+    // Drawn centred, as the room's word rather than anyone's message: no side,
+    // no author, no face.
+    property bool notice: false
     property string time: ""
     property bool outgoing: false
     // pending | failed | sent | delivered | read, only drawn for our own
@@ -614,8 +619,10 @@ Item {
             objectName: "bubbleBody"
             color: root.outgoing ? Theme.bubbleOut : Theme.bubbleIn
             radius: 14
-            anchors.right: root.outgoing ? parent.right : undefined
-            anchors.left:  root.outgoing ? undefined : parent.left
+            anchors.right: !root.notice && root.outgoing ? parent.right : undefined
+            anchors.left:  !root.notice && !root.outgoing ? parent.left : undefined
+            // Left free of both side anchors, a notice sits by x alone.
+            x: root.notice ? (parent.width - width) / 2 : 0
             anchors.rightMargin: root.outgoing ? root.avatarGutter : 0
             anchors.leftMargin:  root.outgoing ? 0 : root.avatarGutter
 
@@ -721,10 +728,9 @@ Item {
                     Layout.maximumWidth: root.maxBubbleWidth
 
                     Text {
-                        objectName: "inviteTitle"
+                        objectName: "inviteHeadline"
                         Layout.maximumWidth: root.maxBubbleWidth
-                        text: root.outgoing ? qsTr("Invitation to %1").arg(root.inviteTitle)
-                                            : qsTr("Invited you to %1").arg(root.inviteTitle)
+                        text: root.inviteHeadline
                         color: Theme.textPrimary
                         font.pixelSize: 15
                         font.bold: true
@@ -740,13 +746,25 @@ Item {
                         font.italic: true
                         wrapMode: Text.Wrap
                     }
-                    // Once we are in the room, the same button just goes there.
-                    Button {
-                        objectName: "inviteJoin"
+                    RowLayout {
+                        visible: root.inviteJoinText !== "" || root.inviteCanDecline
                         Layout.topMargin: 2
-                        text: root.inviteJoined ? qsTr("Open") : qsTr("Join")
-                        enabled: !root.selectionMode
-                        onClicked: root.joinInviteRequested()
+                        spacing: 8
+                        Button {
+                            objectName: "inviteJoin"
+                            visible: root.inviteJoinText !== ""
+                            text: root.inviteJoinText
+                            enabled: !root.selectionMode
+                            onClicked: root.joinInviteRequested()
+                        }
+                        Button {
+                            objectName: "inviteDecline"
+                            visible: root.inviteCanDecline
+                            text: qsTr("Decline")
+                            flat: true
+                            enabled: !root.selectionMode
+                            onClicked: root.declineInviteRequested()
+                        }
                     }
                 }
 
