@@ -411,10 +411,62 @@ private slots:
         e.assertNoErrors();
     }
 
+    // One ChatPage on `chat`, parented into `win`, held by `holder`.
+    static QQuickItem *openChatPage(QQmlEngine &e, QQuickWindow &win,
+                                    QScopedPointer<QObject> &holder,
+                                    const QString &chat, bool groupchat) {
+        QQmlComponent comp(&e, "Quack", "ChatPage");
+        if (!comp.isReady()) {
+            qWarning("%s", qPrintable(comp.errorString()));
+            return nullptr;
+        }
+        holder.reset(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"chatJid", chat},
+             {"chatGroupchat", groupchat},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        auto *page = qobject_cast<QQuickItem *>(holder.data());
+        if (page)
+            page->setParentItem(win.contentItem());
+        return page;
+    }
+
+    // The invite row as tacky sends it, in `state`.
+    static QVariantMap inviteRow(const QString &chat, const QString &from,
+                                 const QString &state,
+                                 const QString &reason = {}) {
+        return QVariantMap{
+            {"timestamp", 100},
+            {"from_jid", from},
+            {"content", QVariantMap{{"type", "invite"},
+                                    {"room", "room@muc.example.com"},
+                                    {"inviter", "amy@example.com"},
+                                    {"reason", reason},
+                                    {"state", state},
+                                    {"body", "amy@example.com invites you"}}},
+            {"chat_jid", chat}};
+    }
+
+    static void edited(ChatModel *model, const QString &chat,
+                       const QVariantMap &row) {
+        model->handleEvent("message", "Edited",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"jid", chat},
+                                       {"message", row}});
+    }
+
+    static void click(QQuickWindow &win, QQuickItem *item) {
+        QTest::mouseClick(&win, Qt::LeftButton, {},
+                          item->mapToScene(QPointF(item->width() / 2,
+                                                   item->height() / 2))
+                              .toPoint());
+    }
+
     // A direct invite in someone's chat is their message with a card in it,
-    // not the sentence tacky stored as its body. Join is the bookmark write
-    // that accepts it, and takes us to the room; once we are a member, the
-    // same button only goes there.
+    // not the sentence tacky stored as its body. The card reads its state off
+    // the message and answers through tacky, which holds the password; from a
+    // 1:1 joining also takes us to the room, and once in, Open only goes there.
     void inviteCardJoinsTheRoom() {
         Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -435,31 +487,14 @@ private slots:
         win.resize(500, 600);
         win.show();
         QVERIFY(QTest::qWaitForWindowExposed(&win));
-
-        QQmlComponent comp(&e, "Quack", "ChatPage");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
-            {{"account", "me@example.com"},
-             {"chatJid", "amy@example.com"},
-             {"width", win.width()},
-             {"height", win.height()}}));
-        QVERIFY(!obj.isNull());
-        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QScopedPointer<QObject> holder;
+        QQuickItem *page = openChatPage(e, win, holder, "amy@example.com", false);
         QVERIFY(page);
-        page->setParentItem(win.contentItem());
-
         auto *model = qobject_cast<ChatModel *>(
             page->property("chatModel").value<QObject *>());
         QVERIFY(model);
-        model->applyBatch(QJsonDocument::fromJson(R"([
-            {"timestamp":100,"from_jid":"amy@example.com",
-             "content":{"type":"invite","room":"room@muc.example.com",
-                        "inviter":"amy@example.com",
-                        "reason":"come say hi","password":"pw",
-                        "body":"amy@example.com invites you to the room room@muc.example.com"}}
-        ])")
-                              .array()
-                              .toVariantList());
+        model->applyBatch({inviteRow("amy@example.com", "amy@example.com",
+                                     "pending", "come say hi")});
 
         QQuickItem *join = nullptr;
         QTRY_VERIFY((join = findItem(page, "inviteJoin")) && join->isVisible());
@@ -467,52 +502,56 @@ private slots:
                  QString("Invited you to The Room"));
         QCOMPARE(findItem(page, "inviteReason")->property("text").toString(),
                  QString("come say hi"));
+        QVERIFY(!findItem(page, "inviteNote")->isVisible());
         QVERIFY(!findItem(page, "bubbleText")->isVisible());
         QCOMPARE(join->property("text").toString(), QString("Join"));
-        // Amy's own message, drawn as hers; declining is the room's business.
-        QVERIFY(!findItem(page, "inviteDecline")->isVisible());
+        QVERIFY(findItem(page, "inviteDecline")->isVisible());
+        // Amy's own message, drawn as hers.
         QVERIFY(!findItem(page, "bubbleBody")->parentItem()->parentItem()
                      ->property("notice").toBool());
 
         // A real click: the bubble's own tap handlers must not take it.
         QSignalSpy sent(app->backend(), &TackyBackend::sent);
         QSignalSpy opened(page, SIGNAL(openChatRequested(QString, QString, bool)));
-        QTest::mouseClick(&win, Qt::LeftButton, {},
-                          join->mapToScene(QPointF(join->width() / 2,
-                                                   join->height() / 2))
-                              .toPoint());
+        click(win, join);
         QCOMPARE(sent.count(), 1);
-        QCOMPARE(sent.at(0).at(0).toString(), QString("bookmarks"));
-        QCOMPARE(sent.at(0).at(1).toString(), QString("item"));
-        const QVariantMap args = sent.at(0).at(2).toMap();
-        QCOMPARE(args.value("jid").toString(),
-                 QString("room@muc.example.com?join"));
-        QCOMPARE(args.value("password").toString(), QString("pw"));
-        QCOMPARE(args.value("autojoin").toInt(), 1);
+        QCOMPARE(sent.at(0).at(0).toString(), QString("muc"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("acceptInvite"));
+        QCOMPARE(sent.at(0).at(2).toMap(),
+                 (QVariantMap{{"acc", "me@example.com"},
+                              {"chat", "amy@example.com"},
+                              {"timestamp", 100}}));
         QCOMPARE(opened.count(), 1);
         QCOMPARE(opened.at(0).at(0).toString(),
                  QString("room@muc.example.com?join"));
         QCOMPARE(opened.at(0).at(1).toString(), QString("The Room"));
         QCOMPARE(opened.at(0).at(2).toBool(), true);
 
-        // The bookmark lands: the card follows the list without a reload.
-        chats->applyItem(QVariantMap{{"jid", "room@muc.example.com?join"},
-                                     {"name", "The Room"},
-                                     {"source", "bookmarks"},
-                                     {"groupchat", true},
-                                     {"autojoin", true},
-                                     {"last_activity", 200}});
+        // tacky says we are in: Open, and nothing left to decline.
+        edited(model, "amy@example.com",
+               inviteRow("amy@example.com", "amy@example.com", "joined"));
         QTRY_COMPARE(join->property("text").toString(), QString("Open"));
+        QVERIFY(!findItem(page, "inviteDecline")->isVisible());
         QVERIFY(QMetaObject::invokeMethod(join, "clicked"));
         QCOMPARE(sent.count(), 1);
         QCOMPARE(opened.count(), 2);
+
+        // Said no earlier: it says so, and Join still takes it back.
+        edited(model, "amy@example.com",
+               inviteRow("amy@example.com", "amy@example.com", "declined"));
+        QTRY_COMPARE(join->property("text").toString(), QString("Join"));
+        QVERIFY(findItem(page, "inviteNote")->isVisible());
+        QCOMPARE(findItem(page, "inviteNote")->property("text").toString(),
+                 QString("You declined"));
+        QVERIFY(!findItem(page, "inviteDecline")->isVisible());
 
         e.assertNoErrors();
     }
 
     // An invite the room relayed sits in the room's own chat, listed before
     // we have joined. It is the room's word, so it is a centred notice naming
-    // who the room says asked; Join stays put, and Decline hands the room back.
+    // who the room says asked. Join opens nothing new; Decline closes the chat
+    // once tacky has taken the room out of the list.
     void relayedInviteIsANoticeInTheRoom() {
         Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -523,7 +562,8 @@ private slots:
             {"jid":"amy@example.com","name":"Amy","source":"roster",
              "last_activity":300},
             {"jid":"room@muc.example.com?join","name":"","source":"free",
-             "groupchat":true,"autojoin":false,"last_activity":200}
+             "groupchat":true,"autojoin":false,"invited":true,
+             "last_activity":200}
         ])")
                              .array()
                              .toVariantList());
@@ -532,31 +572,15 @@ private slots:
         win.resize(500, 600);
         win.show();
         QVERIFY(QTest::qWaitForWindowExposed(&win));
-
-        QQmlComponent comp(&e, "Quack", "ChatPage");
-        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
-        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
-            {{"account", "me@example.com"},
-             {"chatJid", "room@muc.example.com?join"},
-             {"chatGroupchat", true},
-             {"width", win.width()},
-             {"height", win.height()}}));
-        QVERIFY(!obj.isNull());
-        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QScopedPointer<QObject> holder;
+        QQuickItem *page = openChatPage(e, win, holder,
+                                        "room@muc.example.com?join", true);
         QVERIFY(page);
-        page->setParentItem(win.contentItem());
-
         auto *model = qobject_cast<ChatModel *>(
             page->property("chatModel").value<QObject *>());
         QVERIFY(model);
-        model->applyBatch(QJsonDocument::fromJson(R"([
-            {"timestamp":100,"from_jid":"room@muc.example.com",
-             "content":{"type":"invite","room":"room@muc.example.com",
-                        "inviter":"amy@example.com","reason":"",
-                        "body":"amy@example.com invites you to the room room@muc.example.com"}}
-        ])")
-                              .array()
-                              .toVariantList());
+        const QString chat = "room@muc.example.com?join";
+        model->applyBatch({inviteRow(chat, "room@muc.example.com", "pending")});
 
         QQuickItem *join = nullptr;
         QTRY_VERIFY((join = findItem(page, "inviteJoin")) && join->isVisible());
@@ -566,43 +590,84 @@ private slots:
         QVERIFY(!findItem(page, "authorLine")->isVisible());
         QQuickItem *body = findItem(page, "bubbleBody");
         QQuickItem *row = body->parentItem();
-        // Centred, to the pixel the anchors round to.
+        // Centred, to the pixel the layout rounds to.
         QVERIFY(qAbs(body->x() + body->width() / 2 - row->width() / 2) <= 1);
         QQuickItem *decline = findItem(page, "inviteDecline");
         QVERIFY(decline->isVisible());
 
-        // Already in the room's chat: joining opens nothing new.
         QSignalSpy sent(app->backend(), &TackyBackend::sent);
         QSignalSpy opened(page, SIGNAL(openChatRequested(QString, QString, bool)));
         QSignalSpy back(page, SIGNAL(back()));
-        QTest::mouseClick(&win, Qt::LeftButton, {},
-                          join->mapToScene(QPointF(join->width() / 2,
-                                                   join->height() / 2))
-                              .toPoint());
+        click(win, join);
         QCOMPARE(sent.count(), 1);
-        QCOMPARE(sent.at(0).at(0).toString(), QString("bookmarks"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("acceptInvite"));
         QCOMPARE(opened.count(), 0);
 
-        QTest::mouseClick(&win, Qt::LeftButton, {},
-                          decline->mapToScene(QPointF(decline->width() / 2,
-                                                      decline->height() / 2))
-                              .toPoint());
+        click(win, decline);
         QCOMPARE(sent.count(), 2);
         QCOMPARE(sent.at(1).at(0).toString(), QString("muc"));
         QCOMPARE(sent.at(1).at(1).toString(), QString("declineInvite"));
-        QCOMPARE(sent.at(1).at(2).toMap().value("jid").toString(),
-                 QString("room@muc.example.com?join"));
+        QCOMPARE(sent.at(1).at(2).toMap(),
+                 (QVariantMap{{"acc", "me@example.com"},
+                              {"chat", chat},
+                              {"timestamp", 100}}));
+        // Nothing closes on the click itself: only once the room has gone.
+        QCOMPARE(back.count(), 0);
+        chats->handleEvent("chatlist", "Remove",
+                           QVariantMap{{"acc", "me@example.com"}, {"jid", chat}});
         QCOMPARE(back.count(), 1);
 
-        // Joined: nothing left to offer, the notice just says who asked.
+        // Joined instead: nothing left to offer, the notice just says who asked.
+        edited(model, chat, inviteRow(chat, "room@muc.example.com", "joined"));
+        QTRY_VERIFY(!join->isVisible());
+        QVERIFY(!decline->isVisible());
+
+        e.assertNoErrors();
+    }
+
+    // An unjoined room listed for its invite says so where the JID would be.
+    void anInvitedRoomSaysSoInTheList() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"room@muc.example.com?join","name":"","source":"free",
+             "groupchat":true,"autojoin":false,"invited":true,
+             "last_activity":200}
+        ])")
+                             .array()
+                             .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *subtitle = nullptr;
+        QTRY_VERIFY((subtitle = findItem(page, "chatRowSubtitle")));
+        QCOMPARE(subtitle->property("text").toString(),
+                 QString("Invitation · room@muc.example.com?join"));
+
         chats->applyItem(QVariantMap{{"jid", "room@muc.example.com?join"},
                                      {"name", "The Room"},
                                      {"source", "bookmarks"},
                                      {"groupchat", true},
                                      {"autojoin", true},
+                                     {"invited", false},
                                      {"last_activity", 200}});
-        QTRY_VERIFY(!join->isVisible());
-        QVERIFY(!decline->isVisible());
+        QTRY_COMPARE(subtitle->property("text").toString(),
+                     QString("room@muc.example.com?join"));
 
         e.assertNoErrors();
     }

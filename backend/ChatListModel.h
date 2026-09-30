@@ -30,6 +30,7 @@ public:
         RoomReasonRole,
         UnreadRole,
         UnreadMentionsRole,
+        InvitedRole, // a room we are not in, listed for an invite still waiting
     };
     Q_ENUM(Role)
 
@@ -67,10 +68,6 @@ public:
     Q_INVOKABLE void forceJoinRoom(const QString &jid);
     Q_INVOKABLE void renameBookmark(const QString &jid, const QString &name);
     Q_INVOKABLE void removeBookmark(const QString &jid);
-    // Turn down the invites waiting in a room's chat. tacky tells each inviter
-    // and drops the invites, and with them an unjoined room's row.
-    Q_INVOKABLE void declineInvite(const QString &jid);
-
     // Re-ask the server for the roster and the bookmarks, then reload. refresh()
     // alone only re-reads what tacky already has stored.
     Q_INVOKABLE void reload();

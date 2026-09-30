@@ -65,7 +65,7 @@ public:
         ReplyAuthorRole, // and who wrote it; both empty when this is no reply
         EncryptionRole,  // "omemo" when the row is OMEMO, "" for cleartext
         FailReasonRole,  // why a failed row failed: encrypt, delivery, or ""
-        InviteRole,      // {room, inviter, reason, password?} for an invitation,
+        InviteRole,      // {room, inviter, reason, state} for an invitation,
                          // an empty map for anything else
         RawRole,
     };
@@ -137,6 +137,10 @@ public:
     // Another go at a message that did not get out. plaintext drops this one
     // row's encryption; the chat's own switch is left alone.
     Q_INVOKABLE void resend(qlonglong ts, bool plaintext = false);
+    // Answer the invite at ts. tacky joins with the password it kept, or says
+    // no; the card's state comes back on <Edited>.
+    Q_INVOKABLE void acceptInvite(qlonglong ts);
+    Q_INVOKABLE void declineInvite(qlonglong ts);
     Q_INVOKABLE void react(qlonglong ts, const QString &emoji);
     Q_INVOKABLE void reactClear(qlonglong ts);
     // Correct one of our own messages (XEP-0308), and withdraw one (XEP-0424).

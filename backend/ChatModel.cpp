@@ -581,6 +581,24 @@ void ChatModel::resend(qlonglong ts, bool plaintext) {
                                   {QStringLiteral("plaintext"), plaintext ? 1 : 0}});
 }
 
+void ChatModel::acceptInvite(qlonglong ts) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("muc"), QStringLiteral("acceptInvite"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts}});
+}
+
+void ChatModel::declineInvite(qlonglong ts) {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("muc"), QStringLiteral("declineInvite"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), m_chat},
+                                  {QStringLiteral("timestamp"), ts}});
+}
+
 void ChatModel::react(qlonglong ts, const QString &emoji) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty() || emoji.isEmpty())
         return;

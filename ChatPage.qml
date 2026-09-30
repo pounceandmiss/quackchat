@@ -23,7 +23,7 @@ Page {
     // Somewhere other than this chat to go, named by an invite's room.
     signal openChatRequested(string jid, string name, bool groupchat)
 
-    // The account's chat list, for what an invite's card says about its room.
+    // The account's chat list, for the names an invite's card shows.
     // Resolved on demand rather than bound, as ContactDetailsPage does: a
     // binding that calls into App re-runs against a singleton on its way out
     // at shutdown.
@@ -38,67 +38,69 @@ Page {
         function onDataChanged() { page.chatListRevision++ }
         function onModelReset() { page.chatListRevision++ }
         function onRowsInserted() { page.chatListRevision++ }
-        function onRowsRemoved() { page.chatListRevision++ }
+        function onRowsRemoved() {
+            page.chatListRevision++
+            page.closeIfDeclinedAway()
+        }
     }
 
-    function inviteEntry(jid) {
+    // What the list calls a chat, else `fallback`.
+    function listedName(jid, fallback) {
         void page.chatListRevision
-        return page.chatList ? page.chatList.entryFor(jid) : ({})
-    }
-    // The bookmark's name for the room, else its JID, as the list shows it.
-    function inviteRoomTitle(invite) {
-        const room = invite.room ?? ""
-        const name = room !== "" ? (page.inviteEntry(room + "?join").name ?? "") : ""
-        return name !== "" ? name : room
-    }
-    // A member is bookmarked with autojoin, which is the Tk list's "Join" tick.
-    function inviteJoined(invite) {
-        const room = invite.room ?? ""
-        return room !== "" && page.inviteEntry(room + "?join").autojoin === true
+        const name = page.chatList ? (page.chatList.entryFor(jid).name ?? "") : ""
+        return name !== "" ? name : fallback
     }
     // In the room's own chat the room relayed it, so the card says who the
     // room says asked; in a 1:1 the sender asked themselves, and the card
     // names the room.
     function inviteHeadline(invite, outgoing) {
+        const room = invite.room ?? ""
         if (page.chatGroupchat) {
             const inviter = invite.inviter ?? ""
-            if (inviter === "")
-                return qsTr("You were invited to this room")
-            const name = page.inviteEntry(inviter).name ?? ""
-            return qsTr("%1 invited you to this room").arg(name !== "" ? name : inviter)
+            return inviter === "" ? qsTr("You were invited to this room")
+                                  : qsTr("%1 invited you to this room")
+                                        .arg(page.listedName(inviter, inviter))
         }
-        return outgoing ? qsTr("Invitation to %1").arg(page.inviteRoomTitle(invite))
-                        : qsTr("Invited you to %1").arg(page.inviteRoomTitle(invite))
+        const title = page.listedName(room + "?join", room)
+        return outgoing ? qsTr("Invitation to %1").arg(title)
+                        : qsTr("Invited you to %1").arg(title)
     }
     // Once in, a 1:1's card only goes to the room; in the room there is
-    // nowhere left to go.
+    // nowhere left to go. A "no" can still be changed.
     function inviteJoinText(invite) {
-        if (!page.inviteJoined(invite))
+        if (invite.state !== "joined")
             return qsTr("Join")
         return page.chatGroupchat ? "" : qsTr("Open")
     }
-    function inviteCanDecline(invite) {
-        return page.chatGroupchat && !page.inviteJoined(invite)
+    function inviteNote(invite) {
+        return invite.state === "declined" ? qsTr("You declined") : ""
     }
-    // Accepting is joining: a bookmark with autojoin, carrying the password
-    // the invite came with. From a 1:1 the room's chat opens straight away and
-    // fills in as the join lands.
-    function joinInvite(invite) {
+    // tacky joins with the password it kept. From a 1:1 the room's chat opens
+    // straight away and fills in as the join lands.
+    function joinInvite(ts, invite) {
         const room = invite.room ?? ""
-        if (room === "" || !page.chatList)
+        if (room === "" || !page.chatModel)
             return
-        if (!page.inviteJoined(invite))
-            page.chatList.joinRoom(room + "?join", "", invite.password ?? "")
+        if (invite.state !== "joined")
+            page.chatModel.acceptInvite(ts)
         if (page.chatJid !== room + "?join")
-            page.openChatRequested(room + "?join", page.inviteRoomTitle(invite), true)
+            page.openChatRequested(room + "?join", page.listedName(room + "?join", ""), true)
     }
-    // Declining takes an unjoined room out of the list, so the chat closes.
-    function declineInvite(invite) {
-        const room = invite.room ?? ""
-        if (room === "" || !page.chatList)
+    // A room we were only ever invited to goes from the list when we say no;
+    // the chat closes once it has.
+    property bool declinedHere: false
+    function declineInvite(ts) {
+        if (!page.chatModel)
             return
-        page.chatList.declineInvite(room + "?join")
-        page.back()
+        page.declinedHere = page.chatGroupchat
+        page.chatModel.declineInvite(ts)
+    }
+    function closeIfDeclinedAway() {
+        if (page.declinedHere && page.chatList
+                && page.chatList.entryFor(page.chatJid).jid === undefined) {
+            page.declinedHere = false
+            page.back()
+        }
     }
 
     // Android overlays the keyboard instead of resizing the window, so the
@@ -1228,7 +1230,10 @@ Page {
     // report from. Only the page showing that very chat says so, which keeps a
     // pop-out and its shell from both piping up.
     property string callNotice: ""
-    onChatJidChanged: callNotice = ""
+    onChatJidChanged: {
+        callNotice = ""
+        declinedHere = false
+    }
 
     Connections {
         target: App.calls
@@ -1479,9 +1484,10 @@ Page {
                     notice: page.chatGroupchat && bubble.isInvite
                     inviteHeadline: page.inviteHeadline(wrap.invite, wrap.outgoing)
                     inviteJoinText: page.inviteJoinText(wrap.invite)
-                    inviteCanDecline: page.inviteCanDecline(wrap.invite)
-                    onJoinInviteRequested: page.joinInvite(wrap.invite)
-                    onDeclineInviteRequested: page.declineInvite(wrap.invite)
+                    inviteCanDecline: wrap.invite.state === "pending"
+                    inviteNote: page.inviteNote(wrap.invite)
+                    onJoinInviteRequested: page.joinInvite(wrap.timestamp, wrap.invite)
+                    onDeclineInviteRequested: page.declineInvite(wrap.timestamp)
                     onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
                     onAttachmentLoadRequested: (idx) => page.retryAttachment(wrap.timestamp,
                                                                              wrap.attachments, idx)

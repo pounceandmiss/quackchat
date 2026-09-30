@@ -10,7 +10,7 @@
 ChatListModel::ChatListModel(QObject *parent)
     : MapListModel({"jid", "name", "source", "groupchat", "autojoin",
                     "last_activity", "subscription", "room_state", "room_reason",
-                    "unread", "unread_mentions"},
+                    "unread", "unread_mentions", "invited"},
                    parent) {}
 
 // One chat's entry, for the views that hold a JID with no row of this model to
@@ -121,11 +121,6 @@ void ChatListModel::renameBookmark(const QString &jid, const QString &name) {
 
 void ChatListModel::removeBookmark(const QString &jid) {
     sendEdit(QStringLiteral("bookmarks"), QStringLiteral("remove"),
-             {{QStringLiteral("jid"), jid}});
-}
-
-void ChatListModel::declineInvite(const QString &jid) {
-    sendEdit(QStringLiteral("muc"), QStringLiteral("declineInvite"),
              {{QStringLiteral("jid"), jid}});
 }
 

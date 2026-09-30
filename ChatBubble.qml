@@ -55,6 +55,8 @@ Item {
     property string inviteHeadline: ""
     property string inviteJoinText: ""
     property bool inviteCanDecline: false
+    // Where the invite stands, when that is worth a line: "You declined".
+    property string inviteNote: ""
     signal joinInviteRequested()
     signal declineInviteRequested()
     // Drawn centred, as the room's word rather than anyone's message: no side,
@@ -744,6 +746,15 @@ Item {
                         color: Theme.textDim
                         font.pixelSize: 14
                         font.italic: true
+                        wrapMode: Text.Wrap
+                    }
+                    Text {
+                        objectName: "inviteNote"
+                        visible: text !== ""
+                        Layout.maximumWidth: root.maxBubbleWidth
+                        text: root.inviteNote
+                        color: Theme.textDim
+                        font.pixelSize: 13
                         wrapMode: Text.Wrap
                     }
                     RowLayout {
