@@ -59,6 +59,17 @@ Item {
     property string inviteNote: ""
     signal joinInviteRequested()
     signal declineInviteRequested()
+    // A group call invite, as ChatModel hands it over: {room, id, inviter,
+    // video, state, active, live?}; empty for any other message. Drawn as a card the
+    // way an invitation is, and worked out by the page the same way.
+    property var callInvite: ({})
+    readonly property bool isCallInvite: (callInvite.room ?? "") !== ""
+    property string callHeadline: ""
+    property string callJoinText: ""
+    property bool callCanDecline: false
+    property string callNote: ""
+    signal joinCallRequested()
+    signal declineCallRequested()
     // Drawn centred, as the room's word rather than anyone's message: no side,
     // no author, no face.
     property bool notice: false
@@ -779,6 +790,60 @@ Item {
                     }
                 }
 
+                ColumnLayout {
+                    objectName: "callCard"
+                    visible: root.isCallInvite
+                    spacing: 4
+                    Layout.maximumWidth: root.maxBubbleWidth
+
+                    RowLayout {
+                        spacing: 8
+                        Glyph {
+                            path: root.callInvite.video ? Icons.videoCam : Icons.call
+                            size: 18
+                            color: root.callInvite.active ? Theme.positive : Theme.textDim
+                        }
+                        Text {
+                            objectName: "callHeadline"
+                            Layout.maximumWidth: root.maxBubbleWidth - 26
+                            text: root.callHeadline
+                            color: Theme.textPrimary
+                            font.pixelSize: 15
+                            font.bold: true
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                    Text {
+                        objectName: "callNote"
+                        visible: text !== ""
+                        Layout.maximumWidth: root.maxBubbleWidth
+                        text: root.callNote
+                        color: Theme.textDim
+                        font.pixelSize: 13
+                        wrapMode: Text.Wrap
+                    }
+                    RowLayout {
+                        visible: root.callJoinText !== "" || root.callCanDecline
+                        Layout.topMargin: 2
+                        spacing: 8
+                        Button {
+                            objectName: "callJoin"
+                            visible: root.callJoinText !== ""
+                            text: root.callJoinText
+                            enabled: !root.selectionMode
+                            onClicked: root.joinCallRequested()
+                        }
+                        Button {
+                            objectName: "callDecline"
+                            visible: root.callCanDecline
+                            text: qsTr("Decline")
+                            flat: true
+                            enabled: !root.selectionMode
+                            onClicked: root.declineCallRequested()
+                        }
+                    }
+                }
+
                 // What stands in for the content. The header around it stays,
                 // so the row still says who and when.
                 Text {
@@ -806,9 +871,9 @@ Item {
                     textFormat: bodyText.rich ? TextEdit.RichText : TextEdit.PlainText
                     // A bare share has no caption (tacky blanks a body that is
                     // just the url), and an empty line under the image reads as
-                    // a gap in the bubble. An invite's body is the card's
-                    // words again.
-                    visible: text !== "" && !root.isInvite
+                    // a gap in the bubble. An invite's body, or a call's, is
+                    // the card's words again.
+                    visible: text !== "" && !root.isInvite && !root.isCallInvite
                     color: Theme.textPrimary
                     // Left to the style, the highlight is a colour the theme
                     // never picked.

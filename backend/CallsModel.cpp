@@ -1,11 +1,10 @@
 #include "CallsModel.h"
 
 #include "BackendBinding.h"
+#include "MediaPermissions.h"
 #include "TackyBackend.h"
 
-#include <QCoreApplication>
 #include <QLoggingCategory>
-#include <QPermissions>
 
 // Every event in and every transition out, so a window that moves on its own
 // can be read back against what the backend actually said. The level is what
@@ -296,6 +295,10 @@ void CallsModel::applySnapshot(const QString &acc, const QVariantList &rows,
         const QString sid = r.value(QStringLiteral("sid")).toString();
         if (sid.isEmpty())
             continue;
+        // A leg of a group call is listed like any call, but it is the room's
+        // window that shows it, off GroupCallsModel.
+        if (!r.value(QStringLiteral("group")).toString().isEmpty())
+            continue;
         seen.insert(sid);
         if (m_dismissed.contains(key(acc, sid)))
             continue;
@@ -342,47 +345,12 @@ void CallsModel::applySnapshot(const QString &acc, const QVariantList &rows,
 
 void CallsModel::withMicrophone(const QString &acc, const QString &peer,
                                 const std::function<void()> &then) {
-#ifdef Q_OS_ANDROID
-    // Only Android gates the mic here. Desktop Linux has no permission backend
-    // for it, and asking there would just answer Undetermined forever.
-    const QMicrophonePermission perm;
-    switch (qApp->checkPermission(perm)) {
-    case Qt::PermissionStatus::Granted:
-        then();
-        return;
-    case Qt::PermissionStatus::Denied:
-        emit microphoneDenied(acc, peer);
-        return;
-    case Qt::PermissionStatus::Undetermined:
-        // The prompt is modal to the user but async to us, so the call only
-        // goes out once they have answered.
-        qApp->requestPermission(perm, this,
-                                [this, acc, peer, then](const QPermission &p) {
-                                    if (p.status() == Qt::PermissionStatus::Granted)
-                                        then();
-                                    else
-                                        emit microphoneDenied(acc, peer);
-                                });
-        return;
-    }
-#else
-    Q_UNUSED(acc)
-    Q_UNUSED(peer)
-    then();
-#endif
+    media::withMicrophone(this, then,
+                          [this, acc, peer] { emit microphoneDenied(acc, peer); });
 }
 
 void CallsModel::withCamera(bool video, const std::function<void()> &then) {
-#ifdef Q_OS_ANDROID
-    const QCameraPermission perm;
-    if (video && qApp->checkPermission(perm) == Qt::PermissionStatus::Undetermined) {
-        qApp->requestPermission(perm, this, [then](const QPermission &) { then(); });
-        return;
-    }
-#else
-    Q_UNUSED(video)
-#endif
-    then();
+    media::withCamera(this, video, then);
 }
 
 void CallsModel::start(const QString &acc, const QString &to, bool video) {

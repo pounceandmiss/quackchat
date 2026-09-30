@@ -6,12 +6,16 @@
 
 #include <QtTest>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QQmlApplicationEngine>
 #include <QQmlEngine>
 #include <QQmlError>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSignalSpy>
+
+#include "TackyTransport.h"
 
 namespace qmltest {
 
@@ -51,6 +55,44 @@ private:
 
 using Engine = CollectingEngine<QQmlEngine>;
 using AppEngine = CollectingEngine<QQmlApplicationEngine>;
+
+// A transport that goes up and down on command and speaks to nobody. The UI
+// tests otherwise run with no transport at all, which is a different state
+// from one that dropped. No Q_OBJECT: it adds no signals of its own, and a
+// header nothing lists as a source is not moc'ed.
+class FakeTransport : public TackyTransport {
+public:
+    bool start(const QStringList &) override {
+        setConnected(true);
+        return true;
+    }
+    void stop() override { setConnected(false); }
+    bool isConnected() const override { return m_connected; }
+    // Every request's token, by "module/method", so a test can answer one.
+    void send(const QByteArray &frame) override {
+        const QJsonArray a = QJsonDocument::fromJson(frame).array();
+        if (a.size() == 4)
+            m_tokens.insert(a.at(0).toString() + "/" + a.at(1).toString(),
+                            a.at(3).toInt());
+    }
+    int tokenOf(const QString &call) const { return m_tokens.value(call, -1); }
+
+    void deliver(const QByteArray &json) { emit received(QString::fromUtf8(json)); }
+    void answer(const QString &call, const QByteArray &json) {
+        deliver(QByteArray(R"(["result",)") + QByteArray::number(tokenOf(call)) +
+                "," + json + "]");
+    }
+
+private:
+    void setConnected(bool on) {
+        if (m_connected == on)
+            return;
+        m_connected = on;
+        emit connectedChanged();
+    }
+    bool m_connected = false;
+    QHash<QString, int> m_tokens;
+};
 
 // Repeater and view delegates hang off the visual tree, not the QObject one, so
 // findChild never sees them.
@@ -134,6 +176,16 @@ inline bool asked(const QSignalSpy &spy, const QString &module,
         if (call.at(0).toString() == module && call.at(1).toString() == method)
             return true;
     return false;
+}
+
+// The arguments of the last frame for this method, empty when none went out.
+inline QVariantMap askedWith(const QSignalSpy &spy, const QString &module,
+                             const QString &method) {
+    QVariantMap args;
+    for (const QList<QVariant> &call : spy)
+        if (call.at(0).toString() == module && call.at(1).toString() == method)
+            args = call.at(2).toMap();
+    return args;
 }
 
 // QTest::keyClicks is QWidget-only, and these presses have to reach a QWindow.

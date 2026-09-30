@@ -11,6 +11,8 @@ AbstractButton {
     // box to dismiss one that is already over.
     property string iconPath: ""
     property color fill: Theme.accent
+    property color glyphColor: Theme.textOnAccent
+    property color captionColor: Theme.textDim
     property int diameter: 56
 
     implicitWidth: Math.max(diameter, caption.implicitWidth)
@@ -30,7 +32,7 @@ AbstractButton {
             Glyph {
                 anchors.centerIn: parent
                 path: btn.iconPath
-                color: Theme.textOnAccent
+                color: btn.glyphColor
                 size: btn.diameter * 0.5
             }
         }
@@ -40,7 +42,7 @@ AbstractButton {
             anchors.topMargin: 6
             width: btn.width
             text: btn.text
-            color: Theme.textDim
+            color: btn.captionColor
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideRight

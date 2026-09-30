@@ -7,39 +7,11 @@
 #include "AppController.h"
 #include "CallsModel.h"
 #include "ChatListModel.h"
-#include "TackyTransport.h"
+#include "GroupCallsModel.h"
 
 #include "QmlTestSupport.h"
 
 using namespace qmltest;
-
-namespace {
-// A transport that goes up and down on command and speaks to nobody. The UI
-// tests otherwise run with no transport at all, which is a different state
-// from one that dropped.
-class FakeTransport : public TackyTransport {
-    Q_OBJECT
-public:
-    bool start(const QStringList &) override {
-        setConnected(true);
-        return true;
-    }
-    void stop() override { setConnected(false); }
-    bool isConnected() const override { return m_connected; }
-    void send(const QByteArray &) override {}
-
-    void deliver(const QByteArray &json) { emit received(QString::fromUtf8(json)); }
-
-private:
-    void setConnected(bool on) {
-        if (m_connected == on)
-            return;
-        m_connected = on;
-        emit connectedChanged();
-    }
-    bool m_connected = false;
-};
-} // namespace
 
 class TestShell : public QObject {
     Q_OBJECT
@@ -464,6 +436,249 @@ private slots:
         calls->dismiss("a@host", "tk-s");
         QCoreApplication::processEvents();
         QTRY_COMPARE(visibleWindows().size(), before);
+
+        e.assertNoErrors();
+    }
+
+    // A room's call has a window of its own, following a GroupCallsModel row
+    // the way a 1:1 call's follows CallsModel. It is up from the join, so the
+    // wait for <Joined> has somewhere to show, and stays through the end so
+    // the reason can be read.
+    void joiningARoomCallShowsItsWall() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QVERIFY(loadMain(e));
+
+        const int before = visibleWindows().size();
+        GroupCall *call = app->groupCalls()->callFor("me@example.com",
+                                                     "room@muc.example.com?join");
+        QVERIFY(call);
+        QCoreApplication::processEvents();
+        QVERIFY2(!visibleWindowTitled("Group call"), "a window for a call not joined");
+
+        call->join(false);
+        QCoreApplication::processEvents();
+        auto *win = qobject_cast<QQuickWindow *>(visibleWindowTitled("Group call — room@muc.example.com"));
+        QVERIFY2(win, "joining did not raise the call window");
+        QCOMPARE(visibleWindows().size(), before + 1);
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+
+        QQuickItem *wall = findItem(win->contentItem(), "groupCallWall");
+        QVERIFY(wall);
+        QVERIFY(wall->width() > 0 && wall->height() > 0);
+        // Alone: one tile, ours, filling the wall's width or height.
+        QQuickItem *self = findItem(win->contentItem(), "groupCallSelfTile");
+        QVERIFY(self);
+        QCOMPARE(findItems(win->contentItem(), "groupCallTile").size(), 0);
+        QVERIFY(self->width() > 0 && self->height() > 0);
+        const QRectF wallRect = itemRect(wall, win->contentItem());
+        QVERIFY(wallRect.contains(itemRect(self, win->contentItem())));
+
+        GroupCallsModel *gc = app->groupCalls();
+        gc->handleEvent("groupcall", "Joined",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "room@muc.example.com"}});
+        gc->handleEvent("groupcall", "PeerJoined",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "room@muc.example.com"},
+                                    {"nick", "bob"}, {"peer", "bob@example.com/x"},
+                                    {"sid", "tk-b"}, {"video", false}});
+        gc->handleEvent("groupcall", "PeerJoined",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "room@muc.example.com"},
+                                    {"nick", "cat"}, {"peer", "cat@example.com/x"},
+                                    {"sid", "tk-c"}, {"video", false}});
+        gc->handleEvent("calls", "Active",
+                        QVariantMap{{"acc", "me@example.com"}, {"sid", "tk-b"}});
+        QCoreApplication::processEvents();
+
+        // Three tiles, all inside the wall, none on top of another, and all of
+        // one size: a wall is a grid, not a pile.
+        QList<QQuickItem *> tiles = findItems(win->contentItem(), "groupCallTile");
+        QCOMPARE(tiles.size(), 2);
+        tiles << self;
+        QTRY_VERIFY(tiles.at(1)->x() != tiles.at(0)->x() ||
+                    tiles.at(1)->y() != tiles.at(0)->y());
+        for (QQuickItem *t : std::as_const(tiles)) {
+            // Tiles animate into their new size and place.
+            QTRY_COMPARE(t->width(), self->width());
+            QTRY_COMPARE(t->height(), self->height());
+            QVERIFY(t->width() > 100 && t->height() > 56);
+            QTRY_VERIFY2(wallRect.contains(itemRect(t, win->contentItem())),
+                         "a tile lies outside the wall");
+        }
+        for (int i = 0; i < tiles.size(); ++i)
+            for (int j = i + 1; j < tiles.size(); ++j)
+                QVERIFY2(!itemRect(tiles.at(i), win->contentItem())
+                              .intersects(itemRect(tiles.at(j), win->contentItem())),
+                         "two tiles overlap");
+
+        QQuickItem *count = findItem(win->contentItem(), "groupCallCount");
+        QVERIFY(count);
+        QCOMPARE(count->property("text").toString(), QString("3"));
+
+        // The call ending on us keeps the window up with the reason.
+        gc->handleEvent("groupcall", "Left",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "room@muc.example.com"},
+                                    {"reason", "left the room"}});
+        QCoreApplication::processEvents();
+        QCOMPARE(call->phase(), QString("ended"));
+        QVERIFY(visibleWindowTitled("Group call — room@muc.example.com"));
+        QQuickItem *leave = findItem(win->contentItem(), "groupCallLeave");
+        QVERIFY(leave);
+        QCOMPARE(leave->property("text").toString(), QString("Close"));
+
+        // Dismissing the row is what closes it.
+        call->dismiss();
+        QCoreApplication::processEvents();
+        QTRY_COMPARE(visibleWindows().size(), before);
+
+        e.assertNoErrors();
+    }
+
+    // Closing the window is leaving the call, not walking out on it; a call
+    // we left has nothing to say, so the window goes by itself.
+    void closingAGroupCallWindowLeaves() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QVERIFY(loadMain(e));
+
+        const int before = visibleWindows().size();
+        GroupCall *call = app->groupCalls()->callFor("me@example.com",
+                                                     "room@muc.example.com");
+        call->join(true);
+        app->groupCalls()->handleEvent("groupcall", "Joined",
+                                       QVariantMap{{"acc", "me@example.com"},
+                                                   {"jid", "room@muc.example.com"}});
+        QCoreApplication::processEvents();
+        QWindow *win = visibleWindowTitled("Group call — room@muc.example.com");
+        QVERIFY(win);
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        win->close();
+        QCoreApplication::processEvents();
+        QVERIFY(asked(sent, "groupcall", "leave"));
+        QCOMPARE(call->phase(), QString("ended"));
+        QTRY_COMPARE_WITH_TIMEOUT(call->phase(), QString("idle"), 4000);
+        QTRY_COMPARE(visibleWindows().size(), before);
+
+        e.assertNoErrors();
+    }
+
+    // Two rooms' calls are two windows: there is no one-at-a-time rule here,
+    // since they are not two views of one call.
+    void eachRoomsCallHasItsOwnWindow() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QVERIFY(loadMain(e));
+
+        const int before = visibleWindows().size();
+        app->groupCalls()->callFor("me@example.com", "one@muc.example.com")->join(false);
+        app->groupCalls()->callFor("me@example.com", "two@muc.example.com")->join(false);
+        QCoreApplication::processEvents();
+        QVERIFY(visibleWindowTitled("Group call — one@muc.example.com"));
+        QVERIFY(visibleWindowTitled("Group call — two@muc.example.com"));
+        QCOMPARE(visibleWindows().size(), before + 2);
+
+        app->groupCalls()->callFor("me@example.com", "one@muc.example.com")->leave();
+        app->groupCalls()->callFor("me@example.com", "two@muc.example.com")->leave();
+        QTRY_COMPARE_WITH_TIMEOUT(visibleWindows().size(), before, 4000);
+
+        e.assertNoErrors();
+    }
+
+    // Someone calling a chat of ours rings: a dialog naming who and where, and
+    // its answers go to the invite stored in that chat.
+    void aCallInviteRaisesADialog() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QVERIFY(loadMain(e));
+
+        const int before = visibleWindows().size();
+        GroupCallsModel *gc = app->groupCalls();
+        gc->handleEvent("groupcall", "Invited",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "k3j9@muc.example.com"},
+                                    {"chat", "room@muc.example.com?join"},
+                                    {"timestamp", 42},
+                                    {"video", true},
+                                    {"from", "bob@example.com"}});
+        QCoreApplication::processEvents();
+        auto *dlg = qobject_cast<QQuickWindow *>(visibleWindowTitled("Incoming group call"));
+        QVERIFY2(dlg, "no dialog for the invite");
+        QCOMPARE(visibleWindows().size(), before + 1);
+        QVERIFY(QTest::qWaitForWindowExposed(dlg));
+        QQuickItem *join = findItem(dlg->contentItem(), "groupCallInviteJoin");
+        QVERIFY(join);
+        QVERIFY(join->isVisible());
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QVERIFY(QMetaObject::invokeMethod(join, "clicked"));
+        QCoreApplication::processEvents();
+        const QVariantMap asks = askedWith(sent, "groupcall", "join");
+        QCOMPARE(asks.value("chat").toString(), QString("room@muc.example.com?join"));
+        QCOMPARE(asks.value("timestamp").toLongLong(), 42);
+        QCOMPARE(asks.value("video").toInt(), 1);
+        QTRY_VERIFY(!visibleWindowTitled("Incoming group call"));
+        QVERIFY(visibleWindowTitled("Group call — room@muc.example.com"));
+
+        GroupCall *call = gc->find("me@example.com", "room@muc.example.com");
+        QVERIFY(call);
+        call->leave();
+        call->dismiss();
+        QTRY_COMPARE(visibleWindows().size(), before);
+
+        e.assertNoErrors();
+    }
+
+    // Declining from the ring turns the stored invite down.
+    void aCallInviteCanBeDeclined() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QVERIFY(loadMain(e));
+
+        GroupCallsModel *gc = app->groupCalls();
+        gc->handleEvent("groupcall", "Invited",
+                        QVariantMap{{"acc", "me@example.com"},
+                                    {"jid", "k3j9@muc.example.com"},
+                                    {"chat", "bob@example.com"},
+                                    {"timestamp", 7},
+                                    {"video", true},
+                                    {"from", "bob@example.com"}});
+        QCoreApplication::processEvents();
+        auto *dlg = qobject_cast<QQuickWindow *>(visibleWindowTitled("Incoming group call"));
+        QVERIFY(dlg);
+        QVERIFY(QTest::qWaitForWindowExposed(dlg));
+        QQuickItem *no = findItem(dlg->contentItem(), "groupCallInviteDecline");
+        QVERIFY(no);
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QVERIFY(QMetaObject::invokeMethod(no, "clicked"));
+        QCoreApplication::processEvents();
+        const QVariantMap asks = askedWith(sent, "groupcall", "decline");
+        QCOMPARE(asks.value("chat").toString(), QString("bob@example.com"));
+        QCOMPARE(asks.value("timestamp").toLongLong(), 7);
+        QTRY_VERIFY(!visibleWindowTitled("Incoming group call"));
 
         e.assertNoErrors();
     }

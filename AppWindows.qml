@@ -33,6 +33,7 @@ QtObject {
     property Component _contactComp: Component { ContactDetailsWindow {} }
     property Component _roomComp: Component { MucDetailsWindow {} }
     property Component _xmlComp: Component { MessageXmlWindow {} }
+    property Component _groupInviteComp: Component { GroupCallInviteDialog {} }
 
     // Call windows are not spawned on demand - they follow App.calls, which is
     // the only record of what is in flight.
@@ -126,6 +127,47 @@ QtObject {
                 remoteVideo: row.remoteVideo
                 preview: row.preview
             }
+        }
+    }
+
+    // Group calls follow App.groupCalls the same way. Every room the app has
+    // heard of has a row, so the window is built for each and shown only while
+    // its call has a phase to show - and there is no one-at-a-time rule: two
+    // rooms' calls are two walls, not two views of one call.
+    property Instantiator _groupCalls: Instantiator {
+        model: App.groupCalls
+
+        delegate: QtObject {
+            id: groupRow
+            required property GroupCall call
+
+            property GroupCallWindow window: GroupCallWindow {
+                visible: groupRow.call.phase !== "idle"
+                call: groupRow.call
+            }
+        }
+    }
+
+    // The banner's way back to a call's window from the chat.
+    function raiseGroupCall(account, jid) {
+        const n = mgr._groupCalls.count
+        for (let i = 0; i < n; ++i) {
+            const row = mgr._groupCalls.objectAt(i)
+            if (row && row.call.account === account && row.call.jid === jid
+                    && row.window.visible)
+                return _raise(row.window)
+        }
+        return null
+    }
+
+    // Someone calling a chat of ours: the dialog rings, and answers the invite
+    // stored in that chat. Held like any other spawned window.
+    property Connections _groupInvites: Connections {
+        target: App.groupCalls
+        function onInvited(account, chat, timestamp, room, from, video) {
+            mgr._track(mgr._groupInviteComp.createObject(null, {
+                account: account, chat: chat, timestamp: timestamp,
+                room: room, from: from, video: video }))
         }
     }
 

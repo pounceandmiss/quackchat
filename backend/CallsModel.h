@@ -30,6 +30,10 @@
 //   failed      terminal, unrecoverable                   <Failed>
 // A call ends on exactly one of <Ended>/<Failed>; <Warning> is informational
 // and only ever fills in the `warning` role.
+//
+// A group call's legs are `calls` sessions too, but they never announce
+// themselves here - no <Outgoing>/<Incoming> - and `calls list` marks them with
+// the room. They belong to GroupCallsModel, and this model leaves them alone.
 #ifndef CALLSMODEL_H
 #define CALLSMODEL_H
 

@@ -23,6 +23,7 @@
 #include "CameraDevices.h"
 #include "ChatListModel.h"
 #include "ChatSession.h"
+#include "GroupCallsModel.h"
 #include "NotificationController.h"
 #include "StorageController.h"
 #include "TackyBackend.h"
@@ -37,6 +38,8 @@ class AppController : public QObject {
     // App-wide, not per-window: a call outlives the view that started it, and
     // there is no way to re-enumerate one from the backend.
     Q_PROPERTY(CallsModel *calls READ calls CONSTANT)
+    // The rooms' calls, kept beside the 1:1 ones for the same reason.
+    Q_PROPERTY(GroupCallsModel *groupCalls READ groupCalls CONSTANT)
     Q_PROPERTY(AudioDevices *audio READ audio CONSTANT)
     Q_PROPERTY(CameraDevices *video READ video CONSTANT)
     // The preferences that are the app's rather than an account's; tacky keeps
@@ -65,6 +68,7 @@ public:
     AccountsModel *accounts() { return &m_accounts; }
     AvatarController *avatars() { return &m_avatars; }
     CallsModel *calls() { return &m_calls; }
+    GroupCallsModel *groupCalls() { return &m_groupCalls; }
     AudioDevices *audio() { return &m_audio; }
     CameraDevices *video() { return &m_video; }
     AppSettings *settings() { return &m_settings; }
@@ -159,6 +163,7 @@ private:
     AccountsModel m_accounts;
     AvatarController m_avatars;
     CallsModel m_calls;
+    GroupCallsModel m_groupCalls;
     AudioDevices m_audio;
     CameraDevices m_video;
     AppSettings m_settings;

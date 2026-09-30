@@ -166,10 +166,13 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.mediaBackend() == QLatin1String("webrtc"), 5000);
-    // Stored is not running: this build has no webrtc library, so the backend
-    // answers rtc however the setting reads.
-    QTRY_VERIFY_WITH_TIMEOUT(
-        readback.activeMediaBackend() == QLatin1String("rtc"), 5000);
+    // Stored is not running: the backend answers with what it could open,
+    // which is webrtc only where the build staged its library beside us.
+    const QString dir = QCoreApplication::applicationDirPath();
+    const bool haveWebrtc = QFileInfo::exists(dir + "/libtacky_webrtc.so")
+                            || QFileInfo::exists(dir + "/libtacky_webrtc.dll");
+    const QString running = haveWebrtc ? QStringLiteral("webrtc") : QStringLiteral("rtc");
+    QTRY_VERIFY_WITH_TIMEOUT(readback.activeMediaBackend() == running, 5000);
 
     backend.stop();
 }

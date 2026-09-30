@@ -4,7 +4,7 @@
 <context>
     <name>ChatPage</name>
     <message numerus="yes">
-        <location filename="../ChatPage.qml" line="830"/>
+        <location filename="../ChatPage.qml" line="1088"/>
         <source>%n selected</source>
         <translation>
             <numerusform>%n selected</numerusform>
@@ -13,9 +13,20 @@
     </message>
 </context>
 <context>
+    <name>GroupCallBanner</name>
+    <message numerus="yes">
+        <location filename="../GroupCallBanner.qml" line="69"/>
+        <source>%n person(s) in the call</source>
+        <translation>
+            <numerusform>%n person in the call</numerusform>
+            <numerusform>%n people in the call</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>MucDetailsPage</name>
     <message numerus="yes">
-        <location filename="../MucDetailsPage.qml" line="573"/>
+        <location filename="../MucDetailsPage.qml" line="583"/>
         <source>%n person(s)</source>
         <translation>
             <numerusform>%n person</numerusform>

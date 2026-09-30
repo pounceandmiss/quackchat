@@ -75,6 +75,12 @@ there - what Preferences calls Automatic. The same picker pins `rtc` or
 `webrtc` instead, and `--media-backend rtc|webrtc` overrides the choice for one
 run.
 
+Group calls (XEP-0272 Muji, as Dino and Movim do them) run as a mesh: one
+ordinary call per participant, all on one camera. A call started here gets a
+room of its own, as Dino's do; one held in a group chat itself, as Movim's
+are, is joined there, and that room has to show real JIDs for the legs to
+reach anyone.
+
 Building it needs a checkout of the rtc-webrtc repository holding the prebuilts
 its README lists - libwebrtc itself, Chromium's clang, and the MSVC SDK for
 Windows. They are large, and unpacked by hand, so no build reaches for them

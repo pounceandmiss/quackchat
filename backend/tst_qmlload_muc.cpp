@@ -1,10 +1,12 @@
 // Rooms: the details page, its occupants, and the bookmark a join writes.
 #include <QtTest>
 #include <QQmlComponent>
+#include <QSignalSpy>
 
 #include "AppController.h"
 #include "ChatListModel.h"
 #include "ChatModel.h"
+#include "GroupCallsModel.h"
 #include "MucRoomModel.h"
 #include "TackyBackend.h"
 
@@ -367,6 +369,11 @@ private slots:
         Engine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
+        // Something for the join to go to: an unstarted backend answers every
+        // request "not sent", which would end the join before it was looked at.
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
 
         QQuickWindow win;
         win.resize(480, 600);
@@ -548,6 +555,159 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A group call invite as tacky stores it: {room id inviter video state
+    // active ?live?}, posted to the room by amy. `live` is absent until the
+    // call's room has answered.
+    static QVariantMap callRow(const QString &state, bool active = false,
+                               bool video = false, const QVariant &live = {}) {
+        QVariantMap row{
+            {"timestamp", 100},
+            {"from_jid", "room@muc.example.com/amy"},
+            {"content", QVariantMap{{"type", "call"},
+                                    {"room", "k3j9@muc.example.com"},
+                                    {"id", "inv1"},
+                                    {"inviter", "amy@example.com"},
+                                    {"video", video},
+                                    {"state", state},
+                                    {"active", active},
+                                    {"body", "Group call"}}},
+            {"chat_jid", "room@muc.example.com?join"}};
+        if (live.isValid()) {
+            QVariantMap content = row.value("content").toMap();
+            content.insert("live", live);
+            row.insert("content", content);
+        }
+        return row;
+    }
+
+    // A call started in a room is a card there - the room's notice, naming who
+    // started it - with Join and Decline answering the stored invite; what
+    // became of it replaces the buttons as tacky reports it.
+    void callCardAnswersTheCall() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"amy@example.com","name":"Amy","source":"roster",
+             "last_activity":300},
+            {"jid":"room@muc.example.com?join","name":"The Room",
+             "source":"bookmarks","groupchat":true,"autojoin":true,
+             "last_activity":200}
+        ])")
+                             .array()
+                             .toVariantList());
+
+        QQuickWindow win;
+        win.resize(500, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+        QScopedPointer<QObject> holder;
+        QQuickItem *page = openChatPage(e, win, holder, "room@muc.example.com?join", true);
+        QVERIFY(page);
+        auto *model = qobject_cast<ChatModel *>(
+            page->property("chatModel").value<QObject *>());
+        QVERIFY(model);
+        model->applyBatch({callRow("pending", false, true, true)});
+
+        QQuickItem *join = nullptr;
+        QTRY_VERIFY((join = findItem(page, "callJoin")) && join->isVisible());
+        QCOMPARE(findItem(page, "callHeadline")->property("text").toString(),
+                 QString("Amy started a group video call"));
+        QCOMPARE(join->property("text").toString(), QString("Join"));
+        QVERIFY(findItem(page, "callDecline")->isVisible());
+        QVERIFY(!findItem(page, "callNote")->isVisible());
+        QVERIFY(!findItem(page, "bubbleText")->isVisible());
+        QVERIFY(findItem(page, "bubbleBody")->parentItem()->parentItem()
+                    ->property("notice").toBool());
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        click(win, join);
+        QTRY_VERIFY(asked(sent, "groupcall", "join"));
+        const QVariantMap asks = askedWith(sent, "groupcall", "join");
+        QCOMPARE(asks.value("chat").toString(), QString("room@muc.example.com?join"));
+        QCOMPARE(asks.value("timestamp").toLongLong(), 100);
+        QCOMPARE(asks.value("video").toInt(), 1);
+        GroupCall *gc = app->groupCalls()->find("me@example.com", "room@muc.example.com");
+        QVERIFY(gc);
+        QCOMPARE(gc->callJid(), QString("k3j9@muc.example.com"));
+        gc->leave();
+        gc->dismiss();
+
+        // Declining names the same message.
+        QVERIFY(QMetaObject::invokeMethod(findItem(page, "callDecline"), "clicked"));
+        const QVariantMap no = askedWith(sent, "groupcall", "decline");
+        QCOMPARE(no.value("chat").toString(), QString("room@muc.example.com?join"));
+        QCOMPARE(no.value("timestamp").toLongLong(), 100);
+
+        // Taken back before we answered: a missed call, nothing left to press.
+        edited(model, "room@muc.example.com?join", callRow("missed"));
+        QTRY_VERIFY(!join->isVisible());
+        QVERIFY(!findItem(page, "callDecline")->isVisible());
+        QCOMPARE(findItem(page, "callNote")->property("text").toString(),
+                 QString("Missed call"));
+
+        // In it: the card goes back to the call.
+        edited(model, "room@muc.example.com?join", callRow("joined", true));
+        QTRY_VERIFY(join->isVisible());
+        QCOMPARE(join->property("text").toString(), QString("Open call"));
+        QCOMPARE(findItem(page, "callNote")->property("text").toString(),
+                 QString("You're in this call"));
+
+        // Left it while others are still in: the way back in.
+        edited(model, "room@muc.example.com?join", callRow("joined", false, true, true));
+        QTRY_COMPARE(join->property("text").toString(), QString("Rejoin"));
+        QVERIFY(join->isVisible());
+        QVERIFY(!findItem(page, "callDecline")->isVisible());
+        QCOMPARE(findItem(page, "callNote")->property("text").toString(),
+                 QString("You joined"));
+        sent.clear();
+        click(win, join);
+        QTRY_VERIFY(asked(sent, "groupcall", "join"));
+        QCOMPARE(askedWith(sent, "groupcall", "join").value("timestamp").toLongLong(), 100);
+        gc->leave();
+        gc->dismiss();
+
+        // Everyone gone: a record of the call, nothing to press.
+        edited(model, "room@muc.example.com?join", callRow("joined"));
+        QTRY_VERIFY(!join->isVisible());
+        QVERIFY(!findItem(page, "callDecline")->isVisible());
+        QCOMPARE(findItem(page, "callNote")->property("text").toString(),
+                 QString("You joined"));
+
+        // Declined, or answered on another device: joinable while it goes on,
+        // a record once it is over.
+        for (const QString &state : {QString("declined"), QString("elsewhere")}) {
+            edited(model, "room@muc.example.com?join", callRow(state, false, false, true));
+            QTRY_VERIFY(join->isVisible());
+            QCOMPARE(join->property("text").toString(), QString("Join"));
+            QVERIFY(!findItem(page, "callDecline")->isVisible());
+            edited(model, "room@muc.example.com?join", callRow(state));
+            QTRY_VERIFY(!join->isVisible());
+        }
+        QCOMPARE(findItem(page, "callNote")->property("text").toString(),
+                 QString("Answered on another device"));
+
+        // Never answered, the room not asked yet: it can still be answered.
+        edited(model, "room@muc.example.com?join", callRow("pending"));
+        QTRY_VERIFY(join->isVisible());
+        QCOMPARE(join->property("text").toString(), QString("Join"));
+        QVERIFY(findItem(page, "callDecline")->isVisible());
+
+        // Never answered, and now over: nothing to answer.
+        edited(model, "room@muc.example.com?join", callRow("pending", false, false, false));
+        QTRY_COMPARE(findItem(page, "callNote")->property("text").toString(),
+                     QString("The call has ended"));
+        QVERIFY(!join->isVisible());
+        QVERIFY(!findItem(page, "callDecline")->isVisible());
+
+        e.assertNoErrors();
+    }
+
     // An invite the room relayed sits in the room's own chat, listed before
     // we have joined. It is the room's word, so it is a centred notice naming
     // who the room says asked. Join opens nothing new; Decline closes the chat
@@ -668,6 +828,102 @@ private slots:
                                      {"last_activity", 200}});
         QTRY_COMPARE(subtitle->property("text").toString(),
                      QString("room@muc.example.com?join"));
+
+        e.assertNoErrors();
+    }
+
+    // A room's chat says when the room has a call going, above the feed, with
+    // the way in; once we are in it says so instead, and the header's call
+    // buttons - which would only join the same call again - step aside.
+    void aRoomsChatShowsItsCallAndTheWayIn() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        // Something for the join to go to: an unstarted backend answers every
+        // request "not sent", which would end the join before it was looked at.
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+
+        QQuickWindow win;
+        win.resize(480, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ChatPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"chatJid", "room@muc.example.com?join"},
+             {"chatName", "The Room"},
+             {"chatGroupchat", true},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+        QCoreApplication::processEvents();
+
+        // Opening the chat asked the room's status, and there is nothing to
+        // show until it says there is.
+        GroupCall *call = app->groupCalls()->find("me@example.com",
+                                                  "room@muc.example.com");
+        QVERIFY2(call, "the page did not ask after the room's call");
+        QQuickItem *banner = findItem(win.contentItem(), "groupCallBanner");
+        QVERIFY(banner);
+        QVERIFY(!banner->isVisible());
+        QCOMPARE(banner->height(), 0.0);
+        QQuickItem *feed = findItem(win.contentItem(), "chatFeed");
+        QVERIFY(feed);
+        const qreal feedTop = itemRect(feed, win.contentItem()).top();
+
+        app->groupCalls()->handleEvent(
+            "groupcall", "Changed",
+            QVariantMap{{"acc", "me@example.com"}, {"jid", "room@muc.example.com"},
+                        {"active", true}, {"count", 2}, {"joined", false}});
+        QCoreApplication::processEvents();
+        QTRY_VERIFY(banner->isVisible());
+        QTRY_VERIFY(banner->height() > 40);
+        QTRY_COMPARE(banner->width(), page->width());
+        // Above the feed, which moved down to make room rather than under it.
+        const QRectF bannerRect = itemRect(banner, win.contentItem());
+        QTRY_VERIFY(itemRect(feed, win.contentItem()).top() >= bannerRect.bottom());
+        QVERIFY(itemRect(feed, win.contentItem()).top() > feedTop);
+        QQuickItem *title = findItem(banner, "groupCallBannerTitle");
+        QVERIFY(title);
+        QCOMPARE(title->property("text").toString(), QString("Call in progress"));
+        QQuickItem *join = findItem(banner, "groupCallBannerJoin");
+        QVERIFY(join);
+        QVERIFY(join->isVisible());
+        QQuickItem *callButton = findItem(win.contentItem(), "callButton");
+        QVERIFY(callButton);
+        QVERIFY(callButton->isVisible());
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QVERIFY(QMetaObject::invokeMethod(join, "clicked"));
+        QVERIFY(asked(sent, "groupcall", "join"));
+        QCOMPARE(sent.last().at(2).toMap().value("jid").toString(),
+                 QString("room@muc.example.com"));
+        QCOMPARE(sent.last().at(2).toMap().value("video").toInt(), 0);
+        QCOMPARE(call->phase(), QString("joining"));
+
+        QTRY_COMPARE(title->property("text").toString(),
+                     QString("You're in this room's call"));
+        QVERIFY(!join->isVisible());
+        QVERIFY(findItem(banner, "groupCallBannerOpen")->isVisible());
+        QVERIFY(!callButton->isVisible());
+        QVERIFY(!findItem(win.contentItem(), "videoCallButton")->isVisible());
+
+        // The header's video button on a room is a video join.
+        call->leave();
+        call->dismiss();
+        QTRY_VERIFY(callButton->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(
+            findItem(win.contentItem(), "videoCallButton"), "clicked"));
+        QCOMPARE(sent.last().at(0).toString(), QString("groupcall"));
+        QCOMPARE(sent.last().at(1).toString(), QString("join"));
+        QCOMPARE(sent.last().at(2).toMap().value("video").toInt(), 1);
 
         e.assertNoErrors();
     }

@@ -67,6 +67,8 @@ public:
         FailReasonRole,  // why a failed row failed: encrypt, delivery, or ""
         InviteRole,      // {room, inviter, reason, state} for an invitation,
                          // an empty map for anything else
+        CallInviteRole,  // {room, id, inviter, video, state, active} for a
+                         // group call invite, an empty map for anything else
         RawRole,
     };
     Q_ENUM(Role)

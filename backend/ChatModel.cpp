@@ -39,6 +39,21 @@ static QVariantMap inviteOf(const QVariantMap &m) {
     return c;
 }
 
+// The group call invite a message carries: the call's room, the invite id,
+// who sent it, video, and what became of it for us. Empty for anything else.
+static QVariantMap callInviteOf(const QVariantMap &m) {
+    if (m.value(QStringLiteral("retracted")).toBool())
+        return {};
+    QVariantMap c = m.value(QStringLiteral("content")).toMap();
+    if (c.value(QStringLiteral("type")).toString() != QLatin1String("call"))
+        return {};
+    c.remove(QStringLiteral("type"));
+    c.remove(QStringLiteral("body"));
+    c.remove(QStringLiteral("formatting"));
+    c.remove(QStringLiteral("matches"));
+    return c;
+}
+
 // The spans index into whichever string bodyOf returned, so both come from the
 // same content variant. A retraction empties that body, and an empty body needs
 // no markup, so the tombstone falls out without a case of its own.
@@ -183,6 +198,7 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case EncryptionRole:   return m.value(QStringLiteral("encryption")).toString();
     case FailReasonRole:   return m.value(QStringLiteral("fail_reason")).toString();
     case InviteRole:       return inviteOf(m);
+    case CallInviteRole:   return callInviteOf(m);
     case RawRole:          return m;
     default:               return {};
     }
@@ -206,6 +222,7 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {EncryptionRole, "encryption"},
         {FailReasonRole, "failReason"},
         {InviteRole, "invite"},
+        {CallInviteRole, "callInvite"},
         {RawRole, "raw"},
     };
 }

@@ -86,6 +86,59 @@ Page {
         if (page.chatJid !== room + "?join")
             page.openChatRequested(room + "?join", page.listedName(room + "?join", ""), true)
     }
+    // A group call invite's card. Who started it: the invite's sender by name,
+    // or the room nick that posted it when the room hides who that was.
+    function callHeadline(call, outgoing, author) {
+        const video = call.video === true
+        if (outgoing)
+            return video ? qsTr("You started a group video call")
+                         : qsTr("You started a group call")
+        const inviter = call.inviter ?? ""
+        const who = inviter !== "" ? page.listedName(inviter, inviter)
+                                   : (author !== "" ? author : qsTr("Someone"))
+        return video ? qsTr("%1 started a group video call").arg(who)
+                     : qsTr("%1 started a group call").arg(who)
+    }
+    // Joinable while its room says someone is in the call (`live`), whatever
+    // we answered before; until the room answers, only an unanswered invite
+    // is. In the call, the card opens its window.
+    function callJoinText(call) {
+        if (call.active)
+            return qsTr("Open call")
+        if (call.live === true)
+            return call.state === "joined" ? qsTr("Rejoin") : qsTr("Join")
+        return call.live === undefined && call.state === "pending" ? qsTr("Join") : ""
+    }
+    function callNote(call) {
+        if (call.active)
+            return qsTr("You're in this call")
+        if (call.state === "pending" && call.live === false)
+            return qsTr("The call has ended")
+        switch (call.state) {
+        case "missed":    return qsTr("Missed call")
+        case "declined":  return qsTr("You declined")
+        case "elsewhere": return qsTr("Answered on another device")
+        case "ended":     return qsTr("The call had ended")
+        case "joined":    return qsTr("You joined")
+        }
+        return ""
+    }
+    function joinCall(ts, call) {
+        const gc = App.groupCalls.callFor(page.account, page.chatJid)
+        if (!gc)
+            return
+        if (call.active) {
+            AppWindows.raiseGroupCall(gc.account, gc.jid)
+            return
+        }
+        gc.answerInvite(page.chatJid, ts, call.room ?? "", call.video === true)
+    }
+    function declineCall(ts) {
+        const gc = App.groupCalls.callFor(page.account, page.chatJid)
+        if (gc)
+            gc.declineInvite(page.chatJid, ts)
+    }
+
     // A room we were only ever invited to goes from the list when we say no;
     // the chat closes once it has.
     property bool declinedHere: false
@@ -257,6 +310,19 @@ Page {
     // shell and a pop-out window on the same chat get the same session, and so
     // read one history window and compose into one draft. Null until a chat is
     // open, which every use below has to allow for.
+    // The room's call, for the header buttons and the banner. Null for a 1:1
+    // chat, which calls its peer directly.
+    readonly property GroupCall groupCall: page.hasChat && page.chatGroupchat
+        ? App.groupCalls.callFor(page.account, page.chatJid) : null
+    readonly property bool inGroupCall: page.groupCall ? page.groupCall.inCall : false
+
+    function startCall(video) {
+        if (page.groupCall)
+            page.groupCall.join(video)
+        else
+            App.calls.start(page.account, page.chatJid, video)
+    }
+
     readonly property ChatSession session: App.chatFor(page.account, page.chatJid,
                                                        page.chatGroupchat)
     readonly property ChatModel chatModel: page.session ? page.session.messages : null
@@ -965,23 +1031,26 @@ Page {
                 glyphColor: Theme.textDim
                 onClicked: page.openDetails()
             }
-            // 1:1 only - tacky rings a bare JID over Jingle Message Initiation,
-            // which has no meaning for a room.
+            // A 1:1 chat rings its peer over Jingle Message Initiation; a room
+            // starts or joins the call held in the room itself (XEP-0272),
+            // which rings nobody. Same two buttons either way.
             IconButton {
-                visible: page.hasChat && !page.chatGroupchat
-                Accessible.name: qsTr("Call")
+                objectName: "callButton"
+                visible: page.hasChat && !page.inGroupCall
+                Accessible.name: page.chatGroupchat ? qsTr("Group call") : qsTr("Call")
                 iconPath: Icons.call
                 iconSize: 20
                 glyphColor: Theme.positive
-                onClicked: App.calls.start(page.account, page.chatJid)
+                onClicked: page.startCall(false)
             }
             IconButton {
-                visible: page.hasChat && !page.chatGroupchat
-                Accessible.name: qsTr("Video call")
+                objectName: "videoCallButton"
+                visible: page.hasChat && !page.inGroupCall
+                Accessible.name: page.chatGroupchat ? qsTr("Group video call") : qsTr("Video call")
                 iconPath: Icons.videoCam
                 iconSize: 20
                 glyphColor: Theme.positive
-                onClicked: App.calls.start(page.account, page.chatJid, true)
+                onClicked: page.startCall(true)
             }
             IconButton {
                 objectName: "chatSearchButton"
@@ -1288,6 +1357,14 @@ Page {
         spacing: 0
         visible: page.hasChat
 
+        // A room with a call going says so above the feed. Collapses to
+        // nothing otherwise, which for a 1:1 chat is always.
+        GroupCallBanner {
+            objectName: "groupCallBanner"
+            Layout.fillWidth: true
+            call: page.groupCall
+        }
+
         ListView {
             id: feed
             objectName: "chatFeed"
@@ -1446,6 +1523,7 @@ Page {
                 required property var reactions
                 required property var attachments
                 required property var invite
+                required property var callInvite
                 // BottomToTop over a newest-first model puts row index - 1
                 // below this one on screen, so a row whose section differs from
                 // the previous one is the foot of its run. Index 0 has no
@@ -1481,13 +1559,23 @@ Page {
                     showAvatar: wrap.runEnd
                     attachments: wrap.attachments
                     invite: wrap.invite
-                    notice: page.chatGroupchat && bubble.isInvite
+                    notice: page.chatGroupchat && (bubble.isInvite || bubble.isCallInvite)
                     inviteHeadline: page.inviteHeadline(wrap.invite, wrap.outgoing)
                     inviteJoinText: page.inviteJoinText(wrap.invite)
                     inviteCanDecline: wrap.invite.state === "pending"
                     inviteNote: page.inviteNote(wrap.invite)
                     onJoinInviteRequested: page.joinInvite(wrap.timestamp, wrap.invite)
                     onDeclineInviteRequested: page.declineInvite(wrap.timestamp)
+                    callInvite: wrap.callInvite
+                    callHeadline: bubble.isCallInvite
+                        ? page.callHeadline(wrap.callInvite, wrap.outgoing,
+                                            page.authorName(wrap.from)) : ""
+                    callJoinText: bubble.isCallInvite ? page.callJoinText(wrap.callInvite) : ""
+                    callCanDecline: wrap.callInvite.state === "pending" && wrap.callInvite.live !== false
+                                    && !wrap.callInvite.active
+                    callNote: bubble.isCallInvite ? page.callNote(wrap.callInvite) : ""
+                    onJoinCallRequested: page.joinCall(wrap.timestamp, wrap.callInvite)
+                    onDeclineCallRequested: page.declineCall(wrap.timestamp)
                     onAttachmentOpenRequested: (idx) => page.chatModel.openAttachment(wrap.timestamp, idx)
                     onAttachmentLoadRequested: (idx) => page.retryAttachment(wrap.timestamp,
                                                                              wrap.attachments, idx)

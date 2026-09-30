@@ -285,6 +285,10 @@ qt_add_qml_module(quack
         IconButton.qml
         CallWindow.qml
         IncomingCallDialog.qml
+        GroupCallWindow.qml
+        GroupCallTile.qml
+        GroupCallInviteDialog.qml
+        GroupCallBanner.qml
         CallButton.qml
         AudioLevelRow.qml
         AppWindows.qml
@@ -322,6 +326,9 @@ qt_add_qml_module(quack
         ${_notifier}
         backend/BackendBinding.h
         backend/CallsModel.cpp backend/CallsModel.h
+        backend/GroupCall.cpp backend/GroupCall.h
+        backend/MediaPermissions.h
+        backend/GroupCallsModel.cpp backend/GroupCallsModel.h
         backend/AudioDevices.cpp backend/AudioDevices.h
         backend/CameraDevices.cpp backend/CameraDevices.h
         backend/FrameStream.cpp backend/FrameStream.h
@@ -503,7 +510,7 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_chatsession tst_author
           tst_accountsmodel tst_omemodevices tst_omemochat tst_accountsettings
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
-          tst_calls tst_audiodevices tst_appsettings tst_notifications
+          tst_calls tst_groupcalls tst_audiodevices tst_appsettings tst_notifications
           tst_registration tst_i18n tst_logging tst_storage tst_framestream)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
