@@ -259,6 +259,30 @@ Page {
                     text: qsTr("One picture per run of messages from the same person.")
                     wrapMode: Text.WordWrap
                 }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 4
+                    implicitHeight: 1
+                    color: Theme.hairline
+                }
+
+                Caption { text: qsTr("Chat list") }
+                Repeater {
+                    model: [
+                        { label: qsTr("Full rows"), value: "full" },
+                        { label: qsTr("Compact"), value: "compact" },
+                        { label: qsTr("Compact, two columns"), value: "columns" }
+                    ]
+                    delegate: OptionRow {
+                        required property var modelData
+                        objectName: "chatListStyle_" + modelData.value
+                        text: modelData.label
+                        selected: App.settings.chatListStyle === modelData.value
+                        onClicked: App.settings.setChatListStyle(modelData.value)
+                    }
+                }
             }
 
             // Nothing here takes effect now: both actions only request a

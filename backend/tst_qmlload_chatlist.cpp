@@ -707,6 +707,76 @@ private slots:
 
         e.assertNoErrors();
     }
+
+    // Compact rows are one line with no subtitle; columns puts two to a line.
+    void compactAndColumnStyles() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"unread":3},
+            {"jid":"b@example.com","name":"Bob","last_activity":200},
+            {"jid":"c@example.com","name":"Cy","last_activity":100}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 3);
+        auto rowAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return item;
+        };
+        auto setStyle = [&](const char *style) {
+            app->settings()->handleEvent(
+                "setting", "Changed",
+                QVariantMap{{"key", "chat_list_style"}, {"value", style}});
+            win.grabWindow();
+        };
+
+        win.grabWindow();
+        QCOMPARE(rowAt(0)->width(), list->width());
+        QVERIFY(findItem(rowAt(0), "chatRowSubtitle")->isVisible());
+
+        setStyle("columns");
+        QCOMPARE(rowAt(0)->width(), qreal(int(list->width() / 2)));
+        // Side by side, not under one another.
+        QCOMPARE(rowAt(1)->y(), rowAt(0)->y());
+        QVERIFY(rowAt(1)->x() > rowAt(0)->x());
+        QVERIFY(rowAt(0)->height() < 64);
+        QVERIFY(!findItem(rowAt(0), "chatRowSubtitle")->isVisible());
+        // The badge still has room in half a row.
+        QVERIFY(findItem(rowAt(0), "unreadBadge")->isVisible());
+
+        setStyle("compact");
+        QCOMPARE(rowAt(0)->width(), list->width());
+        QVERIFY(rowAt(1)->y() > rowAt(0)->y());
+        QVERIFY(!findItem(rowAt(0), "chatRowSubtitle")->isVisible());
+
+        e.assertNoErrors();
+    }
 };
 
 QTEST_MAIN(TestChatList)

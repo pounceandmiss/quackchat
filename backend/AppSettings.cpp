@@ -20,6 +20,12 @@ const QLatin1String kLogToFile("log_to_file");
 const QLatin1String kLogLevel("log_level");
 const QLatin1String kLogNative("log_native");
 const QLatin1String kChatAvatars("chat_avatars");
+const QLatin1String kChatListStyle("chat_list_style");
+
+bool isChatListStyle(const QString &style) {
+    return style == QLatin1String("full") || style == QLatin1String("compact")
+           || style == QLatin1String("columns");
+}
 } // namespace
 
 AppSettings::AppSettings(QObject *parent) : QObject(parent) {}
@@ -55,6 +61,9 @@ void AppSettings::refresh() {
     m_chatAvatarsToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kChatAvatars}});
+    m_chatListStyleToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kChatListStyle}});
     m_mediaBackendToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kMediaBackend}});
@@ -77,6 +86,8 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kLogNative, data.toString());
     else if (token == m_chatAvatarsToken)
         applyValue(kChatAvatars, data.toString());
+    else if (token == m_chatListStyleToken)
+        applyValue(kChatListStyle, data.toString());
     else if (token == m_mediaBackendToken)
         applyValue(kMediaBackend, data.toString());
     else if (token == m_activeBackendToken) {
@@ -104,6 +115,8 @@ void AppSettings::handleError(int token, const QString &message) {
         m_logNativeToken = -1;
     else if (token == m_chatAvatarsToken)
         m_chatAvatarsToken = -1;
+    else if (token == m_chatListStyleToken)
+        m_chatListStyleToken = -1;
     else if (token == m_mediaBackendToken)
         m_mediaBackendToken = -1;
     else if (token == m_activeBackendToken)
@@ -169,6 +182,12 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_chatAvatars = on;
         emit chatAvatarsChanged();
+    } else if (key == kChatListStyle) {
+        // An unknown style, from a newer build say, keeps the current one.
+        if (!isChatListStyle(value) || m_chatListStyle == value)
+            return;
+        m_chatListStyle = value;
+        emit chatListStyleChanged();
     }
 }
 
@@ -203,6 +222,12 @@ void AppSettings::setLogNative(bool on) {
 
 void AppSettings::setChatAvatars(bool on) {
     write(kChatAvatars, on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void AppSettings::setChatListStyle(const QString &style) {
+    if (!isChatListStyle(style))
+        return;
+    write(kChatListStyle, style);
 }
 
 // Only what this build offers, plus "" for automatic: tacky would accept any

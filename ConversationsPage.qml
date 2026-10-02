@@ -68,7 +68,7 @@ Page {
         if (row < 0)
             return
         const entry = visibleChats.entryAt(row)
-        listView.positionViewAtIndex(row, ListView.Contain)
+        listView.positionViewAtIndex(row, GridView.Contain)
         page.openChat(entry.jid, entry.name ?? "", entry.groupchat === true)
     }
 
@@ -263,12 +263,19 @@ Page {
         }
     }
 
-    ListView {
+    // Compact rows are one line each, with no preview under the name;
+    // "columns" puts two of them side by side.
+    readonly property bool compactRows: App.settings.chatListStyle !== "full"
+
+    // A grid rather than a list so compact rows can go two to a line.
+    GridView {
         id: listView
         objectName: "chatList"
         anchors.fill: parent
         model: visibleChats
         clip: true
+        cellWidth: App.settings.chatListStyle === "columns" ? Math.floor(width / 2) : width
+        cellHeight: page.compactRows ? 36 : 64
 
         ScrollBar.vertical: ThinScrollBar {}
 
@@ -294,8 +301,8 @@ Page {
             // too, and naming each one here would be a second copy of the
             // entry's shape.
             required property var raw
-            width: ListView.view.width
-            height: 64
+            width: GridView.view.cellWidth
+            height: GridView.view.cellHeight
             onClicked: page.openChat(jid, name, groupchat)
 
             readonly property bool current: row.jid === page.currentJid
@@ -349,7 +356,7 @@ Page {
                     objectName: "currentChatTab"
                     anchors.verticalCenter: parent.verticalCenter
                     width: 4
-                    height: row.current ? 44 : 0
+                    height: row.current ? row.height - 20 : 0
                     radius: 2
                     color: Theme.accentDeep
                     visible: height > 0
@@ -357,17 +364,20 @@ Page {
                 }
             }
 
+            // Tighter in compact rows, which can be half the window wide.
+            readonly property int edge: page.compactRows ? 8 : 14
+
             contentItem: RowLayout {
-                spacing: 12
+                spacing: page.compactRows ? 8 : 12
 
                 Avatar {
-                    Layout.leftMargin: 14
-                    Layout.preferredWidth: 44
-                    Layout.preferredHeight: 44
+                    Layout.leftMargin: row.edge
+                    Layout.preferredWidth: page.compactRows ? 20 : 44
+                    Layout.preferredHeight: page.compactRows ? 20 : 44
                     account: page.account
                     jid: row.jid
                     label: row.title
-                    initialsPixelSize: 16
+                    initialsPixelSize: page.compactRows ? 10 : 16
                 }
 
                 ColumnLayout {
@@ -377,9 +387,11 @@ Page {
                         objectName: "chatRowTitle"
                         Layout.fillWidth: true
                         text: row.title
-                        color: row.titleColor
-                        font.pixelSize: 16
-                        font.bold: true
+                        // Compact rows have no subtitle to say "Invitation",
+                        // so the name takes its colour instead.
+                        color: page.compactRows && row.invited ? Theme.accent : row.titleColor
+                        font.pixelSize: page.compactRows ? 14 : 16
+                        font.bold: !page.compactRows
                         // A room mid-join, so the row reads as transient rather
                         // than as one more dimmed idle room.
                         font.italic: row.groupchat && row.room_state === "joining"
@@ -391,6 +403,7 @@ Page {
                     Text {
                         objectName: "chatRowSubtitle"
                         Layout.fillWidth: true
+                        visible: !page.compactRows
                         text: row.invited ? qsTr("Invitation · %1").arg(row.jid)
                                           : row.preview !== "" ? row.preview : row.jid
                         // Someone's message, so a "<b>" in it is two characters.
@@ -402,7 +415,7 @@ Page {
                 }
 
                 Glyph {
-                    Layout.rightMargin: 14
+                    Layout.rightMargin: row.edge
                     visible: row.groupchat
                     path: Icons.group
                     color: Theme.textDim
@@ -414,7 +427,7 @@ Page {
                 // so it gets a mark of its own beside the count.
                 Text {
                     objectName: "mentionMark"
-                    Layout.rightMargin: 14
+                    Layout.rightMargin: row.edge
                     visible: row.unread_mentions > 0
                     text: "@"
                     color: Theme.accent
@@ -426,7 +439,7 @@ Page {
                 // has room for. Hidden at zero, so the layout skips it.
                 Rectangle {
                     objectName: "unreadBadge"
-                    Layout.rightMargin: 14
+                    Layout.rightMargin: row.edge
                     visible: row.unread > 0
                     implicitHeight: 20
                     implicitWidth: Math.max(height, unreadText.implicitWidth + 12)

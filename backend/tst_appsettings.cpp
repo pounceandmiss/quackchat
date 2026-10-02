@@ -26,6 +26,7 @@ private slots:
     void changedEventsAreGlobal();
     void settingsRoundTripThroughTheBackend();
     void chatAvatarsIsOnUntilItIsTurnedOff();
+    void chatListStyleIgnoresStylesItDoesNotKnow();
     void refreshesWhenTheBackendConnects();
     void theMediaBackendDefaultsToAutomatic();
     void theMediaBackendReachesTheTacoArgs();
@@ -59,6 +60,7 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
     keys.sort();
     QCOMPARE(keys, QStringList({"attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
+                                "chat_list_style",
                                 "log_level", "log_native", "log_to_file",
                                 "media_backend"}));
     // The running backend is asked for alongside them, and is not a setting.
@@ -107,6 +109,23 @@ void TestAppSettings::chatAvatarsIsOnUntilItIsTurnedOff() {
     QCOMPARE(changed.count(), 2);
 }
 
+// Unset means full rows, and a style this build doesn't know is ignored.
+void TestAppSettings::chatListStyleIgnoresStylesItDoesNotKnow() {
+    AppSettings s;
+    QCOMPARE(s.chatListStyle(), QString("full"));
+
+    QSignalSpy changed(&s, &AppSettings::chatListStyleChanged);
+    feed(s, R"(["event","setting","Changed",{"key":"chat_list_style","value":"columns"}])");
+    QCOMPARE(s.chatListStyle(), QString("columns"));
+    QCOMPARE(changed.count(), 1);
+
+    feed(s, R"(["event","setting","Changed",{"key":"chat_list_style","value":"tiles"}])");
+    QCOMPARE(s.chatListStyle(), QString("columns"));
+    s.setChatListStyle(QStringLiteral("tiles")); // no backend, and no write
+    QCOMPARE(s.chatListStyle(), QString("columns"));
+    QCOMPARE(changed.count(), 1);
+}
+
 void TestAppSettings::changedEventsAreGlobal() {
     AppSettings s;
     QSignalSpy policy(&s, &AppSettings::attachmentAutofetchChanged);
@@ -148,6 +167,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setLogLevel(QStringLiteral("debug"));
     s.setLogNative(true);
     s.setChatAvatars(false);
+    s.setChatListStyle(QStringLiteral("columns"));
     s.setMediaBackend(QStringLiteral("webrtc"));
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
@@ -164,6 +184,8 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     // Off is the value that has to travel: readback starts on, so this only
     // passes once the stored "0" has come back.
     QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        readback.chatListStyle() == QLatin1String("columns"), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.mediaBackend() == QLatin1String("webrtc"), 5000);
     // Stored is not running: the backend answers with what it could open,

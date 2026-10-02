@@ -39,6 +39,10 @@ class AppSettings : public QObject {
     // Whether the chat feed draws a face beside each run of messages. A key of
     // our own: the Tk client draws them either way.
     Q_PROPERTY(bool chatAvatars READ chatAvatars NOTIFY chatAvatarsChanged)
+    // full | compact | columns: the conversations list's rows. compact is one
+    // line per chat, and columns puts two of those side by side. A key of our
+    // own.
+    Q_PROPERTY(QString chatListStyle READ chatListStyle NOTIFY chatListStyleChanged)
     // "" (tacky picks) | rtc | webrtc, stored by tacky, which reads it when it
     // picks a backend. Takes effect at the next start.
     Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
@@ -57,6 +61,7 @@ public:
     QString logLevel() const { return m_logLevel; }
     bool logNative() const { return m_logNative; }
     bool chatAvatars() const { return m_chatAvatars; }
+    QString chatListStyle() const { return m_chatListStyle; }
     QString mediaBackend() const { return m_mediaBackend; }
     QString activeMediaBackend() const { return m_activeMediaBackend; }
 
@@ -71,6 +76,8 @@ public:
     Q_INVOKABLE void setLogLevel(const QString &level);
     Q_INVOKABLE void setLogNative(bool on);
     Q_INVOKABLE void setChatAvatars(bool on);
+    // Unknown styles are ignored.
+    Q_INVOKABLE void setChatListStyle(const QString &style);
     // Unknown names are ignored.
     Q_INVOKABLE void setMediaBackend(const QString &name);
 
@@ -87,6 +94,7 @@ signals:
     void logLevelChanged();
     void logNativeChanged();
     void chatAvatarsChanged();
+    void chatListStyleChanged();
     void mediaBackendChanged();
     void activeMediaBackendChanged();
 
@@ -102,6 +110,7 @@ private:
     QString m_logLevel = QStringLiteral("warning");
     bool m_logNative = false;
     bool m_chatAvatars = true;
+    QString m_chatListStyle = QStringLiteral("full");
     QString m_mediaBackend;   // "" until stored: the automatic choice
     QString m_activeMediaBackend;
 
@@ -111,6 +120,7 @@ private:
     int m_logLevelToken = -1;
     int m_logNativeToken = -1;
     int m_chatAvatarsToken = -1;
+    int m_chatListStyleToken = -1;
     int m_mediaBackendToken = -1;
     int m_activeBackendToken = -1;
 };
