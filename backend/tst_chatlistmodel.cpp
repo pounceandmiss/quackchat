@@ -5,6 +5,8 @@
 #include <QSignalSpy>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QScopeGuard>
+#include <QTranslator>
 
 #include "ChatListModel.h"
 #include "TackyBackend.h"
@@ -34,6 +36,7 @@ private slots:
     void integrationRefreshEmpty();
     void failedLoadIsNotAnEmptyList();
     void carriesMentionsAndRoomReason();
+    void previewsTheNewestMessage();
     void contactEditsGoOutAsRosterCommands();
     void roomEditsGoOutAsBookmarkCommands();
     void editsWithoutAnAccountOrJidAreDropped();
@@ -235,6 +238,55 @@ void TestChatList::carriesMentionsAndRoomReason() {
              QByteArray("unread_mentions"));
     QCOMPARE(m.roleNames().value(ChatListModel::RoomReasonRole),
              QByteArray("room_reason"));
+}
+
+// tacky hands over the newest message whole; the row wants one line of it.
+void TestChatList::previewsTheNewestMessage() {
+    // "%n attachment(s)" only reads as English through the source catalogue,
+    // as it does in the app.
+    QTranslator t;
+    QVERIFY(t.load(QStringLiteral("quack_en"), QStringLiteral(":/i18n")));
+    QVERIFY(QCoreApplication::installTranslator(&t));
+    auto untranslate = qScopeGuard([&t] { QCoreApplication::removeTranslator(&t); });
+
+    ChatListModel m;
+    m.setAccount("me@h");
+    m.applyList(entriesFrom(R"([
+        {"jid":"a@h","last_activity":9,"last_message":{"from_jid":"a@h/phone",
+         "is_outgoing":false,"content":{"type":"text","body":"hey,\n  look"}}},
+        {"jid":"b@h","last_activity":8,"last_message":{"is_outgoing":true,
+         "content":{"type":"text","body":"on my way"}}},
+        {"jid":"r@muc?join","groupchat":true,"last_activity":7,
+         "last_message":{"from_jid":"r@muc/Romeo","is_outgoing":false,
+         "content":{"type":"media","caption":"","attachments":[
+           {"type":"image","name":"roof.jpg"}]}}},
+        {"jid":"c@h","last_activity":6,"last_message":{"retracted":true,
+         "content":{"type":"text","body":""}}},
+        {"jid":"d@h","last_activity":5,"last_message":{"content":{"type":"media",
+         "caption":"","attachments":[{"type":"file","name":"a.pdf"},
+                                     {"type":"file","name":"b.pdf"}]}}},
+        {"jid":"e@h","last_activity":4,"last_message":{"content":{"type":"media",
+         "caption":"","attachments":[{"type":"file","name":"notes.txt"}]}}},
+        {"jid":"f@h","last_activity":0}
+    ])"));
+    QStringList previews;
+    for (int i = 0; i < m.rowCount(); ++i)
+        previews << m.data(m.index(i), ChatListModel::PreviewRole).toString();
+    // A 1:1 peer goes unnamed, the row being theirs; a chat with no history has
+    // nothing to say, and the row falls back on its JID.
+    QCOMPARE(previews, QStringList({"hey, look", "You: on my way",
+                                    "Romeo: Photo", "Message deleted",
+                                    "2 attachments", "notes.txt", ""}));
+    QCOMPARE(m.roleNames().value(ChatListModel::PreviewRole), QByteArray("preview"));
+
+    // A new message re-emits the entry, and the preview follows it.
+    feedEvent(m, R"(["event","chatlist","Item",
+        {"acc":"me@h","jid":"f@h","item":{"jid":"f@h","last_activity":10,
+         "last_message":{"is_outgoing":false,
+         "content":{"type":"text","body":"<b>hi</b>"}}}}])");
+    QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("f@h"));
+    QCOMPARE(m.data(m.index(0), ChatListModel::PreviewRole).toString(),
+             QString("<b>hi</b>"));
 }
 
 void TestChatList::contactEditsGoOutAsRosterCommands() {

@@ -10,7 +10,7 @@
 ChatListModel::ChatListModel(QObject *parent)
     : MapListModel({"jid", "name", "source", "groupchat", "autojoin",
                     "last_activity", "subscription", "room_state", "room_reason",
-                    "unread", "unread_mentions", "invited"},
+                    "unread", "unread_mentions", "invited", "preview"},
                    parent) {}
 
 // One chat's entry, for the views that hold a JID with no row of this model to
@@ -180,6 +180,66 @@ bool ChatListModel::lessThan(const QVariantMap &a, const QVariantMap &b) {
            b.value(QStringLiteral("jid")).toString();
 }
 
+// A caption-less share: "Photo", the file's name, or how many there are.
+static QString attachmentPreview(const QVariantList &atts) {
+    if (atts.isEmpty())
+        return {};
+    if (atts.size() > 1)
+        return ChatListModel::tr("%n attachment(s)", nullptr, int(atts.size()));
+    const QVariantMap a = atts.first().toMap();
+    if (a.value(QStringLiteral("type")).toString() == QLatin1String("image"))
+        return ChatListModel::tr("Photo");
+    const QString name = a.value(QStringLiteral("name")).toString();
+    return name.isEmpty() ? ChatListModel::tr("File") : name;
+}
+
+// One line for the row under the chat's name, worded the way tacky's own list
+// words it: who said the newest message, then what. Your own are "You:", a
+// room-mate's carry their nick, and a 1:1 peer's carry nothing, since the row
+// is already named after them. Invites and calls ship a fallback body, so only
+// media needs a case of its own.
+static QString previewOf(const QVariantMap &entry) {
+    const QVariantMap m = entry.value(QStringLiteral("last_message")).toMap();
+    if (m.isEmpty())
+        return {};
+    QString text;
+    if (m.value(QStringLiteral("retracted")).toBool()) {
+        text = ChatListModel::tr("Message deleted");
+    } else {
+        const QVariantMap c = m.value(QStringLiteral("content")).toMap();
+        if (c.value(QStringLiteral("type")).toString() == QLatin1String("media")) {
+            text = c.value(QStringLiteral("caption")).toString();
+            if (text.trimmed().isEmpty())
+                text = attachmentPreview(
+                    c.value(QStringLiteral("attachments")).toList());
+        } else {
+            text = c.value(QStringLiteral("body")).toString();
+        }
+    }
+    // The row elides what is left; the cap only spares it laying out a whole
+    // pasted log to show its first forty characters.
+    text = text.left(200).simplified();
+    if (text.isEmpty())
+        return {};
+
+    QString who;
+    if (m.value(QStringLiteral("is_outgoing")).toBool()) {
+        who = ChatListModel::tr("You");
+    } else if (entry.value(QStringLiteral("groupchat")).toBool()) {
+        const QString from = m.value(QStringLiteral("from_jid")).toString();
+        const int slash = from.indexOf(QLatin1Char('/'));
+        if (slash >= 0)
+            who = from.mid(slash + 1);
+    }
+    //: Chat list preview: who sent the newest message, then what it said
+    return who.isEmpty() ? text : ChatListModel::tr("%1: %2").arg(who, text);
+}
+
+QVariantMap ChatListModel::withPreview(QVariantMap entry) {
+    entry.insert(QStringLiteral("preview"), previewOf(entry));
+    return entry;
+}
+
 int ChatListModel::indexOfJid(const QString &jid) const {
     for (int i = 0; i < m_items.size(); ++i)
         if (m_items.at(i).value(QStringLiteral("jid")).toString() == jid)
@@ -199,12 +259,13 @@ void ChatListModel::applyList(const QVariantList &entries) {
     m_items.clear();
     m_items.reserve(entries.size());
     for (const QVariant &v : entries)
-        m_items.append(v.toMap());
+        m_items.append(withPreview(v.toMap()));
     std::sort(m_items.begin(), m_items.end(), &ChatListModel::lessThan);
     endResetModel();
 }
 
-void ChatListModel::applyItem(const QVariantMap &entry) {
+void ChatListModel::applyItem(const QVariantMap &item) {
+    const QVariantMap entry = withPreview(item);
     const QString jid = entry.value(QStringLiteral("jid")).toString();
     if (jid.isEmpty())
         return;

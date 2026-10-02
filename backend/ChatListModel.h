@@ -31,6 +31,7 @@ public:
         UnreadRole,
         UnreadMentionsRole,
         InvitedRole, // a room we are not in, listed for an invite still waiting
+        PreviewRole, // the newest message as one line; "" for a chat with no history
     };
     Q_ENUM(Role)
 
@@ -101,6 +102,9 @@ private:
     static bool lessThan(const QVariantMap &a, const QVariantMap &b);
     int indexOfJid(const QString &jid) const;
     int insertPos(const QVariantMap &entry) const;
+    // The entry with its `preview` worked out from `last_message`, once, as it
+    // arrives - not on every repaint of the row.
+    static QVariantMap withPreview(QVariantMap entry);
 
     // One roster/bookmark edit: stamps the account on and sends it, or drops it
     // when there is no account or no JID to act on.

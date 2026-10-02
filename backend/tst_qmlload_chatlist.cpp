@@ -86,6 +86,58 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Under the name: the newest message, or the JID while there is none. It
+    // is somebody's text, so markup in it stays text.
+    void rowsPreviewTheNewestMessage() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"a@example.com","name":"Amy","last_activity":300,
+             "last_message":{"is_outgoing":true,
+             "content":{"type":"text","body":"<b>see you</b>"}}},
+            {"jid":"b@example.com","name":"Bob","last_activity":0}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 2);
+        win.grabWindow();
+
+        auto subtitle = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return findItem(item, "chatRowSubtitle");
+        };
+        QVERIFY(subtitle(0));
+        QCOMPARE(subtitle(0)->property("text").toString(), QString("You: <b>see you</b>"));
+        QCOMPARE(subtitle(0)->property("textFormat").toInt(), 0); // Text.PlainText
+        QCOMPARE(subtitle(1)->property("text").toString(), QString("b@example.com"));
+
+        e.assertNoErrors();
+    }
+
     // A room's row says what state it is in, which is the only place a failed
     // join or a room we have been dropped from is visible without opening it.
     void roomRowsAreStyledByTheirState() {

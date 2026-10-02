@@ -2,6 +2,17 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en" sourcelanguage="en">
 <context>
+    <name>ChatListModel</name>
+    <message numerus="yes">
+        <location filename="../backend/ChatListModel.cpp" line="188"/>
+        <source>%n attachment(s)</source>
+        <translation>
+            <numerusform>%n attachment</numerusform>
+            <numerusform>%n attachments</numerusform>
+        </translation>
+    </message>
+</context>
+<context>
     <name>ChatPage</name>
     <message numerus="yes">
         <location filename="../ChatPage.qml" line="1088"/>

@@ -289,6 +289,7 @@ Page {
             required property int unread_mentions
             required property string room_state
             required property bool invited
+            required property string preview
             // The whole entry, for the row menu: it wants the bookmark fields
             // too, and naming each one here would be a second copy of the
             // entry's shape.
@@ -384,12 +385,16 @@ Page {
                         font.italic: row.groupchat && row.room_state === "joining"
                         elide: Text.ElideRight
                     }
-                    // An unjoined room is only here because someone asked you
-                    // in, which is the thing to say about it.
+                    // The newest message, or the JID for a chat with none. An
+                    // unjoined room is only here because someone asked you in,
+                    // which is the thing to say about it.
                     Text {
                         objectName: "chatRowSubtitle"
                         Layout.fillWidth: true
-                        text: row.invited ? qsTr("Invitation · %1").arg(row.jid) : row.jid
+                        text: row.invited ? qsTr("Invitation · %1").arg(row.jid)
+                                          : row.preview !== "" ? row.preview : row.jid
+                        // Someone's message, so a "<b>" in it is two characters.
+                        textFormat: Text.PlainText
                         color: row.invited ? Theme.accent : Theme.textDim
                         font.pixelSize: 12
                         elide: Text.ElideRight
