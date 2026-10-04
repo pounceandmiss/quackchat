@@ -461,6 +461,37 @@ Page {
                     text: qsTr("Turn this on, do the thing that goes wrong, then send the log with your report.")
                     wrapMode: Text.WordWrap
                 }
+                Caption {
+                    objectName: "logPrivacyWarning"
+                    Layout.fillWidth: true
+                    color: Theme.negative
+                    text: qsTr("May contain private information, including message content.")
+                    wrapMode: Text.WordWrap
+                }
+
+                CheckBox {
+                    id: redactBox
+                    objectName: "logRedactBox"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    padding: 0
+                    text: qsTr("Hide message text")
+                    checked: App.settings.logRedact
+                    onToggled: App.settings.setLogRedact(checked)
+                    contentItem: Text {
+                        text: redactBox.text
+                        color: Theme.textPrimary
+                        font.pixelSize: 14
+                        leftPadding: redactBox.indicator.width + 8
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    color: Theme.negative
+                    text: qsTr("Best effort: it can miss things.")
+                    wrapMode: Text.WordWrap
+                }
 
                 Rectangle {
                     Layout.fillWidth: true
@@ -491,7 +522,7 @@ Page {
                 }
                 Caption {
                     Layout.fillWidth: true
-                    text: qsTr("Debug and Verbose add every stanza the connection carries, message text included.")
+                    text: qsTr("Debug and Verbose add every stanza the connection carries.")
                     wrapMode: Text.WordWrap
                 }
 

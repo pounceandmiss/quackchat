@@ -19,6 +19,7 @@ const QLatin1String kAutofetchMax("attachment_autofetch_max");
 const QLatin1String kLogToFile("log_to_file");
 const QLatin1String kLogLevel("log_level");
 const QLatin1String kLogNative("log_native");
+const QLatin1String kLogRedact("log_redact_content");
 const QLatin1String kChatAvatars("chat_avatars");
 const QLatin1String kChatListStyle("chat_list_style");
 
@@ -58,6 +59,9 @@ void AppSettings::refresh() {
     m_logNativeToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kLogNative}});
+    m_logRedactToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kLogRedact}});
     m_chatAvatarsToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kChatAvatars}});
@@ -84,6 +88,8 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kLogLevel, data.toString());
     else if (token == m_logNativeToken)
         applyValue(kLogNative, data.toString());
+    else if (token == m_logRedactToken)
+        applyValue(kLogRedact, data.toString());
     else if (token == m_chatAvatarsToken)
         applyValue(kChatAvatars, data.toString());
     else if (token == m_chatListStyleToken)
@@ -113,6 +119,8 @@ void AppSettings::handleError(int token, const QString &message) {
         m_logLevelToken = -1;
     else if (token == m_logNativeToken)
         m_logNativeToken = -1;
+    else if (token == m_logRedactToken)
+        m_logRedactToken = -1;
     else if (token == m_chatAvatarsToken)
         m_chatAvatarsToken = -1;
     else if (token == m_chatListStyleToken)
@@ -176,6 +184,12 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_logNative = on;
         emit logNativeChanged();
+    } else if (key == kLogRedact) {
+        const bool on = value != QLatin1String("0");
+        if (m_logRedact == on)
+            return;
+        m_logRedact = on;
+        emit logRedactChanged();
     } else if (key == kChatAvatars) {
         const bool on = value != QLatin1String("0");
         if (m_chatAvatars == on)
@@ -218,6 +232,10 @@ void AppSettings::setLogLevel(const QString &level) {
 
 void AppSettings::setLogNative(bool on) {
     write(kLogNative, on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void AppSettings::setLogRedact(bool on) {
+    write(kLogRedact, on ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
 void AppSettings::setChatAvatars(bool on) {

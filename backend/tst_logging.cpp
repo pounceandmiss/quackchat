@@ -18,6 +18,7 @@ private slots:
     void theToggleReachesTheBackend();
     void theLevelReachesTheBackend();
     void theWebrtcSwitchBecomesANativeLevel();
+    void theRedactSwitchReachesTheBackend();
     void anExplicitDebugFileOwnsTheSink();
     void eachDebugFlagOwnsOnlyItsOwnSetting();
     void loggingToAFileRoundTripsThroughTheBackend();
@@ -161,6 +162,26 @@ void TestLogging::theWebrtcSwitchBecomesANativeLevel() {
     QVERIFY(!logCalls(sent, "setnativelevel").first().toMap().contains("source"));
 }
 
+// On unless stored off, like tacky's own default, and sent even under
+// --debug-file: that flag picks where the log goes, not what goes into it.
+void TestLogging::theRedactSwitchReachesTheBackend() {
+    AppController app;
+    app.setDebugArgs({{}, QStringLiteral("/tmp/quack-test.log"), {}, {}});
+    QSignalSpy sent(app.backend(), &TackyBackend::sent);
+
+    openBackend(app);
+    QCOMPARE(logCalls(sent, "setredact").size(), 1);
+    QCOMPARE(logCalls(sent, "setredact").first().toMap().value("enabled").toBool(),
+             true);
+
+    sent.clear();
+    store(app.settings(), QStringLiteral("log_redact_content"),
+          QStringLiteral("0"));
+    QCOMPARE(logCalls(sent, "setredact").size(), 1);
+    QCOMPARE(logCalls(sent, "setredact").first().toMap().value("enabled").toBool(),
+             false);
+}
+
 // Each flag owns its own setting, and only its own: --debug-level says nothing
 // about the file or the native loggers.
 void TestLogging::eachDebugFlagOwnsOnlyItsOwnSetting() {
@@ -268,6 +289,22 @@ void TestLogging::loggingToAFileRoundTripsThroughTheBackend() {
         }(),
         5000);
     QCOMPARE(native, QString("debug"));
+
+    // On by default, and off only for what we say.
+    backend.notify(QStringLiteral("log"), QStringLiteral("setredact"),
+                   QVariantMap{{QStringLiteral("enabled"), false}});
+    QVariant redact;
+    const int redactTok =
+        backend.request(QStringLiteral("log"), QStringLiteral("getredact"));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&] {
+            for (const QList<QVariant> &r : results)
+                if (r.at(0).toInt() == redactTok)
+                    redact = r.at(1);
+            return redact.isValid();
+        }(),
+        5000);
+    QCOMPARE(redact.toBool(), false);
 
     backend.stop();
 }

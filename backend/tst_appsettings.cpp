@@ -61,7 +61,8 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
     QCOMPARE(keys, QStringList({"attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
                                 "chat_list_style",
-                                "log_level", "log_native", "log_to_file",
+                                "log_level", "log_native",
+                                "log_redact_content", "log_to_file",
                                 "media_backend"}));
     // The running backend is asked for alongside them, and is not a setting.
     QCOMPARE(others, QStringList({"media/backend"}));
@@ -166,6 +167,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setLogToFile(true);
     s.setLogLevel(QStringLiteral("debug"));
     s.setLogNative(true);
+    s.setLogRedact(false);
     s.setChatAvatars(false);
     s.setChatListStyle(QStringLiteral("columns"));
     s.setMediaBackend(QStringLiteral("webrtc"));
@@ -181,6 +183,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(readback.logToFile(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.logLevel() == QLatin1String("debug"), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.logNative(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!readback.logRedact(), 5000);
     // Off is the value that has to travel: readback starts on, so this only
     // passes once the stored "0" has come back.
     QTRY_VERIFY_WITH_TIMEOUT(!readback.chatAvatars(), 5000);

@@ -36,6 +36,9 @@ class AppSettings : public QObject {
     // own output and are voluminous with it, so this is a switch rather than a
     // level of its own.
     Q_PROPERTY(bool logNative READ logNative NOTIFY logNativeChanged)
+    // Whether message text is blanked out of it. Best effort, and on unless
+    // turned off; the same key as the Tk client's.
+    Q_PROPERTY(bool logRedact READ logRedact NOTIFY logRedactChanged)
     // Whether the chat feed draws a face beside each run of messages. A key of
     // our own: the Tk client draws them either way.
     Q_PROPERTY(bool chatAvatars READ chatAvatars NOTIFY chatAvatarsChanged)
@@ -60,6 +63,7 @@ public:
     bool logToFile() const { return m_logToFile; }
     QString logLevel() const { return m_logLevel; }
     bool logNative() const { return m_logNative; }
+    bool logRedact() const { return m_logRedact; }
     bool chatAvatars() const { return m_chatAvatars; }
     QString chatListStyle() const { return m_chatListStyle; }
     QString mediaBackend() const { return m_mediaBackend; }
@@ -75,6 +79,7 @@ public:
     Q_INVOKABLE void setLogToFile(bool on);
     Q_INVOKABLE void setLogLevel(const QString &level);
     Q_INVOKABLE void setLogNative(bool on);
+    Q_INVOKABLE void setLogRedact(bool on);
     Q_INVOKABLE void setChatAvatars(bool on);
     // Unknown styles are ignored.
     Q_INVOKABLE void setChatListStyle(const QString &style);
@@ -93,6 +98,7 @@ signals:
     void logToFileChanged();
     void logLevelChanged();
     void logNativeChanged();
+    void logRedactChanged();
     void chatAvatarsChanged();
     void chatListStyleChanged();
     void mediaBackendChanged();
@@ -109,6 +115,7 @@ private:
     bool m_logToFile = false;
     QString m_logLevel = QStringLiteral("warning");
     bool m_logNative = false;
+    bool m_logRedact = true;
     bool m_chatAvatars = true;
     QString m_chatListStyle = QStringLiteral("full");
     QString m_mediaBackend;   // "" until stored: the automatic choice
@@ -119,6 +126,7 @@ private:
     int m_logToFileToken = -1;
     int m_logLevelToken = -1;
     int m_logNativeToken = -1;
+    int m_logRedactToken = -1;
     int m_chatAvatarsToken = -1;
     int m_chatListStyleToken = -1;
     int m_mediaBackendToken = -1;

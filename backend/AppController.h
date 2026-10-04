@@ -155,6 +155,7 @@ private:
     void applyLogToFile();
     void applyLogLevel();
     void applyLogNative();
+    void applyLogRedact();
     QStringList tacoArgs(const QString &mediaBackend) const;
     void onResult(int token, const QVariant &data);
     void onEvent(const QString &module, const QString &name, const QVariant &args);

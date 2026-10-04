@@ -39,6 +39,8 @@ AppController::AppController(QObject *parent) : QObject(parent) {
             &AppController::applyLogLevel);
     connect(&m_settings, &AppSettings::logNativeChanged, this,
             &AppController::applyLogNative);
+    connect(&m_settings, &AppSettings::logRedactChanged, this,
+            &AppController::applyLogRedact);
     // Not on `connected`: a locked store has no `log` module to talk to yet.
     // StorageController is bound to `connected` itself, so its status answer is
     // the later signal and the only one that means the backend is open.
@@ -78,6 +80,7 @@ void AppController::applyStoredPreferences() {
     applyLogToFile();
     applyLogLevel();
     applyLogNative();
+    applyLogRedact();
     m_accounts.refresh();
     m_audio.refresh();
     m_settings.refresh();
@@ -113,6 +116,14 @@ void AppController::applyLogNative() {
         QVariantMap{{QStringLiteral("level"), m_settings.logNative()
                                                   ? QStringLiteral("debug")
                                                   : QStringLiteral("none")}});
+}
+
+// No debug flag owns this one: --debug-file chooses where the log goes, not
+// what may go into it.
+void AppController::applyLogRedact() {
+    m_backend.notify(
+        QStringLiteral("log"), QStringLiteral("setredact"),
+        QVariantMap{{QStringLiteral("enabled"), m_settings.logRedact()}});
 }
 
 void AppController::onResult(int token, const QVariant &data) {
