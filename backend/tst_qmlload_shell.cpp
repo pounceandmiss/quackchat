@@ -1,6 +1,7 @@
 // The app's own windows: the shell at either width, the account drawer and the
 // rail it carries, the backend notice, and the call windows a row brings up.
 #include <QtTest>
+#include <QStyleHints>
 #include <QJsonDocument>
 #include <QQmlComponent>
 
@@ -1023,6 +1024,27 @@ private slots:
             words << item->property("text").toString();
         std::sort(words.begin(), words.end());
         QCOMPARE(words, QStringList({"connected", "disabled"}));
+
+        // A tap on a row switches to that account; a held one only brings up
+        // its menu.
+        QSignalSpy selected(rail, SIGNAL(selectAccount(QString)));
+        QQuickItem *row = states.at(0)->parentItem();
+        while (row && !row->inherits("QQuickItemDelegate"))
+            row = row->parentItem();
+        QVERIFY(row);
+        static QPointingDevice *finger = QTest::createTouchDevice();
+        const QPoint at = row->mapToScene(QPointF(row->width() / 3, row->height() / 2))
+                              .toPoint();
+        QTest::touchEvent(&win, finger).press(0, at);
+        QTest::touchEvent(&win, finger).release(0, at);
+        QTRY_COMPARE(selected.count(), 1);
+        QCOMPARE(selected.first().at(0).toString(), QString("me@example.com"));
+
+        QTest::touchEvent(&win, finger).press(0, at);
+        QTest::qWait(qGuiApp->styleHints()->mousePressAndHoldInterval() + 200);
+        QTest::touchEvent(&win, finger).release(0, at);
+        QTest::qWait(100);
+        QCOMPARE(selected.count(), 1);
 
         e.assertNoErrors();
     }

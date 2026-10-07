@@ -74,7 +74,9 @@ Rectangle {
             topMargin: 10 + rail.topInset
             spacing: 2
 
-            delegate: Item {
+            // An ItemDelegate for the focus, Space/Enter and what a screen
+            // reader hears; its look is drawn below rather than the style's.
+            delegate: ItemDelegate {
                 id: cell
                 // Read via `model` rather than a `required property bool enabled`,
                 // which would shadow Item.enabled and disable the delegate's own
@@ -86,18 +88,25 @@ Rectangle {
                 readonly property bool statusKnown: cell.model.statusKnown
                 width: ListView.view.width
                 height: 64
+                padding: 0
+                text: cell.jid
+                Accessible.description: rail.stateText(cell.connState, cell.acctEnabled,
+                                                       cell.statusKnown)
+                onClicked: rail.selectAccount(cell.jid)
 
                 readonly property bool current: cell.jid === rail.currentAccount
 
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 8
-                    anchors.topMargin: 2
-                    anchors.bottomMargin: 2
+                // The pieces are laid out by hand below, over the whole cell.
+                contentItem: Item {}
+                background: Rectangle {
+                    x: 6
+                    y: 2
+                    width: cell.width - 14
+                    height: cell.height - 4
                     radius: 10
-                    color: Theme.menuHover
-                    visible: cell.current
+                    color: cell.current || cell.hovered ? Theme.menuHover : "transparent"
+                    border.width: cell.visualFocus ? 2 : 0
+                    border.color: Theme.accent
                 }
 
                 // Tall accent tab for the current account, a small nub otherwise.
@@ -163,10 +172,6 @@ Rectangle {
                     }
                 }
 
-                TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    onTapped: rail.selectAccount(cell.jid)
-                }
                 ContextMenuArea { menu: ctx }
 
                 AppMenu {

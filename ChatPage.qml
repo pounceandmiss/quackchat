@@ -1990,26 +1990,27 @@ Page {
                 height: 40
                 spacing: 10
                 // Beside the box you type in, because it says how what you are
-                // typing will go out. Not an IconButton: that is a ToolButton,
-                // and its own press handling would swallow the long press.
-                Item {
+                // typing will go out.
+                IconButton {
                     objectName: "omemoToggle"
                     visible: page.canEncrypt && page.hasChat && page.encryptKnown
                     width: 32
                     height: composerButtons.height
-                    Glyph {
-                        anchors.centerIn: parent
-                        // As on the bubbles. The shape carries the state, with
-                        // the colour to back it up: open is the setting that
-                        // gives something up, as on the row's resend button.
-                        path: page.encryptOn ? Icons.lock : Icons.lockOpen
-                        color: page.encryptOn ? Theme.textPrimary : Theme.warning
-                        size: 20
-                    }
-                    TapHandler {
-                        acceptedButtons: Qt.LeftButton
-                        onTapped: page.omemo.enabled = !page.omemo.enabled
-                    }
+                    // As on the bubbles. The shape carries the state, with the
+                    // colour to back it up: open is the setting that gives
+                    // something up, as on the row's resend button.
+                    iconPath: page.encryptOn ? Icons.lock : Icons.lockOpen
+                    glyphColor: page.encryptOn ? Theme.textPrimary : Theme.warning
+                    iconSize: 20
+                    // Not `checkable`: the state is the chat's, and the button
+                    // only shows it.
+                    Accessible.name: qsTr("Encrypt messages")
+                    Accessible.checkable: true
+                    Accessible.checked: page.encryptOn
+                    // Tab reaches it; a tap leaves the focus, and the keyboard
+                    // with it, in the field.
+                    focusPolicy: Qt.TabFocus
+                    onClicked: page.omemo.enabled = !page.omemo.enabled
                     ContextMenuArea { menu: lockMenu }
 
                     // The keys live behind the control that says whether they
@@ -2103,7 +2104,7 @@ Page {
                     }
                 }
             }
-            Rectangle {
+            AbstractButton {
                 id: sendBtn
                 objectName: "sendButton"
                 anchors.right: parent.right
@@ -2114,22 +2115,35 @@ Page {
                 anchors.bottomMargin: 8
                 width: 44
                 height: 44
-                radius: 22
-                gradient: Gradient {
-                    orientation: Gradient.Vertical
-                    GradientStop { position: 0.0; color: Theme.accent2 }
-                    GradientStop { position: 1.0; color: Theme.accent }
-                }
-                opacity: input.text.trim().length > 0 || page.pending.length > 0
-                         ? 1.0 : 0.5
+                Accessible.name: qsTr("Send")
+                // Nothing to send leaves it dimmed and out of reach.
+                enabled: input.text.trim().length > 0 || page.pending.length > 0
+                // Tab reaches it; a tap leaves the focus, and the keyboard
+                // with it, in the field.
+                focusPolicy: Qt.TabFocus
+                opacity: sendBtn.enabled ? 1.0 : 0.5
                 Behavior on opacity { NumberAnimation { duration: 120 } }
-                Glyph {
-                    anchors.centerIn: parent
-                    path: Icons.send
-                    color: Theme.textOnAccent
-                    size: 20
+                onClicked: page.sendCurrent()
+
+                background: Rectangle {
+                    radius: 22
+                    gradient: Gradient {
+                        orientation: Gradient.Vertical
+                        GradientStop { position: 0.0; color: Theme.accent2 }
+                        GradientStop { position: 1.0; color: Theme.accent }
+                    }
+                    border.width: sendBtn.visualFocus ? 2 : 0
+                    border.color: Theme.textPrimary
+                    opacity: sendBtn.down ? 0.8 : 1.0
                 }
-                MouseArea { anchors.fill: parent; onClicked: page.sendCurrent() }
+                contentItem: Item {
+                    Glyph {
+                        anchors.centerIn: parent
+                        path: Icons.send
+                        color: Theme.textOnAccent
+                        size: 20
+                    }
+                }
             }
         }
     }

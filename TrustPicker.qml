@@ -1,14 +1,16 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import Quack
 
 // OMEMO trust as one segmented control. Trust is three-way, so a switch would
 // have to lie about "undecided"; an empty `trust` leaves the thumb off the
 // control, which is what the set-all row shows when the devices disagree.
 //
-// The thumb can be tapped to or dragged between the three positions. Segments
-// are one width, so pickers in a column line up and picking never reflows one.
+// The thumb can be tapped to or dragged between the three positions, or moved
+// with the arrow keys once Tab has reached a segment. Segments are one width,
+// so pickers in a column line up and picking never reflows one.
 Rectangle {
     id: picker
 
@@ -134,10 +136,14 @@ Rectangle {
         spacing: 0
 
         Repeater {
+            id: segments
             model: picker.options
 
-            delegate: Item {
+            // Buttons for the focus, the keys and what a screen reader hears;
+            // drawn as just their label, since the thumb is the selection.
+            delegate: AbstractButton {
                 id: seg
+                objectName: "trustSegment"
                 required property int index
                 required property var modelData
                 readonly property bool current: picker.activeIndex === seg.index
@@ -146,24 +152,47 @@ Rectangle {
                 // Sized off the picker rather than the row: a delegate outlives
                 // its parent binding on teardown, and the row is just this inset.
                 height: picker.height - 2 * picker.inset
+                enabled: picker.interactive
+                focusPolicy: Qt.TabFocus
+                Accessible.role: Accessible.RadioButton
+                Accessible.name: seg.modelData.label
+                Accessible.checked: picker.currentIndex === seg.index
+                onClicked: picker.choose(seg.index)
 
-                Text {
-                    anchors.centerIn: parent
+                // A step along, the focus going with it so the next press
+                // steps on from there.
+                function step(delta) {
+                    const i = Math.max(0, Math.min(picker.options.length - 1,
+                                                   seg.index + delta))
+                    if (i === seg.index)
+                        return
+                    picker.choose(i)
+                    segments.itemAt(i).forceActiveFocus(Qt.TabFocusReason)
+                }
+                Keys.onLeftPressed: seg.step(-1)
+                Keys.onRightPressed: seg.step(1)
+
+                background: Rectangle {
+                    // Only for the keyboard: a tap or a drag needs no ring.
+                    visible: seg.visualFocus
+                    radius: height / 2
+                    color: "transparent"
+                    border.width: 2
+                    border.color: Theme.accent
+                }
+                contentItem: Text {
                     text: seg.modelData.label
                     color: seg.current ? picker.colorFor(seg.modelData.value) : Theme.textDim
                     font.pixelSize: picker.labelSize
                     font.bold: seg.current
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                     Behavior on color { ColorAnimation { duration: 140 } }
                 }
 
                 HoverHandler {
                     enabled: picker.interactive
                     cursorShape: Qt.PointingHandCursor
-                }
-
-                TapHandler {
-                    enabled: picker.interactive
-                    onTapped: picker.choose(seg.index)
                 }
             }
         }

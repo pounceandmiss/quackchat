@@ -363,6 +363,49 @@ private slots:
         e.assertNoErrors();
     }
 
+    // From the keyboard: the arrows step the pick along a segment at a time,
+    // the focus going with it, and stop at the ends.
+    void theTrustPickerStepsWithTheArrowKeys() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        QVERIFY(seedDevices(app));
+
+        QQuickItem *devicePicker = findItem(w->contentItem(), "devicePicker");
+        QVERIFY(devicePicker);
+        QList<QQuickItem *> segments;
+        const std::function<void(QQuickItem *)> walk = [&](QQuickItem *i) {
+            if (i->objectName() == "trustSegment")
+                segments << i;
+            for (QQuickItem *c : i->childItems())
+                walk(c);
+        };
+        walk(devicePicker);
+        std::sort(segments.begin(), segments.end(),
+                  [](QQuickItem *a, QQuickItem *b) { return a->x() < b->x(); });
+        QCOMPARE(segments.size(), 3);
+
+        QSignalSpy picked(devicePicker, SIGNAL(picked(QString)));
+        // Device 8 is undecided, the middle one.
+        segments.at(1)->forceActiveFocus(Qt::TabFocusReason);
+        QTest::keyClick(w, Qt::Key_Right);
+        QCOMPARE(picked.count(), 1);
+        QCOMPARE(picked.last().at(0).toString(), QString("untrusted"));
+        QVERIFY(segments.at(2)->hasActiveFocus());
+        // Already at the end: nothing further to pick.
+        QTest::keyClick(w, Qt::Key_Right);
+        QCOMPARE(picked.count(), 1);
+        QTest::keyClick(w, Qt::Key_Left);
+        QTest::keyClick(w, Qt::Key_Left);
+        QVERIFY(segments.at(0)->hasActiveFocus());
+        QCOMPARE(picked.last().at(0).toString(), QString("trusted"));
+
+        e.assertNoErrors();
+    }
+
     // A fingerprint spreads its groups over the width it is given rather than
     // running them out on one line.
     void aFingerprintWrapsOnItsColumns() {
