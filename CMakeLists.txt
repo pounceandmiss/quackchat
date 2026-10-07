@@ -268,6 +268,7 @@ qt_add_qml_module(quack
         ChatRowMenu.qml
         AppMenu.qml
         ContextMenuArea.qml
+        ChoiceBox.qml
         MenuEntry.qml
         NewChatSheet.qml
         Jid.qml

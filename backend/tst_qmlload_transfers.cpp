@@ -412,27 +412,28 @@ private slots:
         auto option = [&](const char *name) {
             return findItem(prefsWin->contentItem(), name);
         };
-        auto selected = [&](const char *name) {
+        auto shows = [&](const char *name) {
             QQuickItem *row = option(name);
-            return row && row->property("selected").toBool();
+            return row ? row->property("valueLabel").toString() : QString();
+        };
+        auto pick = [&](const char *name, const QVariant &value) {
+            return QMetaObject::invokeMethod(option(name), "picked",
+                                             Q_ARG(QVariant, value));
         };
 
-        // Nothing stored yet, so the dots show the defaults tacky is applying.
-        QVERIFY(option("autofetch_everyone"));
-        QVERIFY(selected("autofetch_contacts"));
-        QVERIFY(!selected("autofetch_everyone"));
-        QVERIFY(selected("autofetchMax_5242880"));
+        // Nothing stored yet, so the rows show the defaults tacky is applying.
+        QVERIFY(option("autofetchChoice"));
+        QCOMPARE(shows("autofetchChoice"), QString("From contacts only"));
+        QCOMPARE(shows("autofetchMaxChoice"), QString("5 MB"));
 
-        QVERIFY(QMetaObject::invokeMethod(option("autofetch_everyone"), "clicked"));
+        QVERIFY(pick("autofetchChoice", QString("everyone")));
         QCOMPARE(app->settings()->attachmentAutofetch(), QString("everyone"));
-        QVERIFY(selected("autofetch_everyone"));
-        QVERIFY(!selected("autofetch_contacts"));
+        QCOMPARE(shows("autofetchChoice"), QString("From everyone"));
 
         // No cap is a cap of 0, which is picked like any other value.
-        QVERIFY(QMetaObject::invokeMethod(option("autofetchMax_0"), "clicked"));
+        QVERIFY(pick("autofetchMaxChoice", 0));
         QCOMPARE(app->settings()->attachmentAutofetchMax(), 0LL);
-        QVERIFY(selected("autofetchMax_0"));
-        QVERIFY(!selected("autofetchMax_5242880"));
+        QCOMPARE(shows("autofetchMaxChoice"), QString("Unlimited"));
 
         // The chips mark the theme in force and a tap on one picks it. The
         // system chip is one of them, marked while nothing has been picked.

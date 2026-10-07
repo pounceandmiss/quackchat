@@ -135,7 +135,7 @@ private slots:
     // Instantiator rather than declared. Check it really populates, that the
     // tick tracks the current id rather than a position, and that picking
     // reports the id instead of the label.
-    void deviceMenuListsEveryDeviceAndReportsThePick() {
+    void devicePickerListsEveryDeviceAndReportsThePick() {
         Engine e;
         QQuickWindow win;
         win.resize(400, 120);
@@ -154,30 +154,25 @@ private slots:
         QVERIFY2(row, qPrintable(comp.errorString()));
         row->setParentItem(win.contentItem());
 
-        QObject *menu = row->findChild<QObject *>("deviceMenu");
-        QVERIFY(menu);
-        // The two real devices, behind the system-default entry.
-        QTRY_COMPARE(menu->property("count").toInt(), 3);
-
-        auto itemAt = [&](int i) {
-            QQuickItem *item = nullptr;
-            QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem *, item),
-                                      Q_ARG(int, i));
-            return item;
-        };
-        QVERIFY(itemAt(2));
-        QVERIFY(!itemAt(0)->property("current").toBool());
-        QVERIFY(!itemAt(1)->property("current").toBool());
-        QVERIFY(itemAt(2)->property("current").toBool());
+        auto *box = qobject_cast<QQuickItem *>(row->findChild<QObject *>("deviceChoice"));
+        QVERIFY(box);
+        // The two real devices, behind the system-default entry, on the one
+        // in use.
+        QTRY_COMPARE(box->property("count").toInt(), 3);
+        QCOMPARE(box->property("currentIndex").toInt(), 2);
+        QCOMPARE(box->property("displayText").toString(), QString("USB headset"));
 
         QSignalSpy picked(row, SIGNAL(devicePicked(QString)));
-        QVERIFY(QMetaObject::invokeMethod(itemAt(1), "triggered"));
+        QVERIFY(QMetaObject::invokeMethod(box, "activated", Q_ARG(int, 1)));
         QCOMPARE(picked.count(), 1);
         QCOMPARE(picked.first().at(0).toString(), QString("mic-1"));
+        // Picked is not applied: the box stays on the device in use until the
+        // model says otherwise.
+        QCOMPARE(box->property("currentIndex").toInt(), 2);
 
         // "" is a real choice, not an empty one: it hands the pick back to the
         // system rather than leaving the device alone.
-        QVERIFY(QMetaObject::invokeMethod(itemAt(0), "triggered"));
+        QVERIFY(QMetaObject::invokeMethod(box, "activated", Q_ARG(int, 0)));
         QCOMPARE(picked.count(), 2);
         QCOMPARE(picked.at(1).at(0).toString(), QString());
 

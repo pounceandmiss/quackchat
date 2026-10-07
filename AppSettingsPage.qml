@@ -24,41 +24,34 @@ Page {
         font.bold: true
     }
 
-    // One choice out of a group. The dot is bound to the setting rather than
-    // toggled by the click, so a write that never lands leaves the row where
-    // it was.
-    component OptionRow: ItemDelegate {
-        id: opt
-        property bool selected: false
+    // A setting with a few choices: its name, and a drop-down of them.
+    component ChoiceRow: RowLayout {
+        id: choice
+        property string label: ""
+        // [{ label, value }]
+        property alias entries: box.entries
+        property alias value: box.current
+        readonly property alias valueLabel: box.displayText
+
+        signal picked(var value)
 
         Layout.fillWidth: true
-        implicitHeight: 36
-        padding: 0
-        Accessible.role: Accessible.RadioButton
-        Accessible.checked: opt.selected
+        spacing: 8
 
-        contentItem: RowLayout {
-            spacing: 10
-            Rectangle {
-                Layout.leftMargin: 2
-                implicitWidth: 18
-                implicitHeight: 18
-                radius: width / 2
-                color: "transparent"
-                border.width: opt.selected ? 5 : 1
-                border.color: opt.selected ? Theme.accent : Theme.textDim
-            }
-            Text {
-                Layout.fillWidth: true
-                text: opt.text
-                color: Theme.textPrimary
-                font.pixelSize: 14
-                elide: Text.ElideRight
-            }
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: 2
+            text: choice.label
+            color: Theme.textPrimary
+            font.pixelSize: 14
+            elide: Text.ElideRight
         }
-        background: Rectangle {
-            color: opt.hovered ? Theme.menuHover : "transparent"
-            radius: 8
+        ChoiceBox {
+            id: box
+            objectName: choice.objectName + "Box"
+            Layout.preferredWidth: 190
+            Accessible.name: choice.label
+            onPicked: (value) => choice.picked(value)
         }
     }
 
@@ -159,43 +152,28 @@ Page {
                     wrapMode: Text.WordWrap
                 }
 
-                Caption { Layout.topMargin: 4; text: qsTr("Load images") }
-                Repeater {
-                    model: [
+                ChoiceRow {
+                    objectName: "autofetchChoice"
+                    label: qsTr("Load images")
+                    entries: [
                         { label: qsTr("From everyone"), value: "everyone" },
                         { label: qsTr("From contacts only"), value: "contacts" },
                         { label: qsTr("Never"), value: "never" }
                     ]
-                    delegate: OptionRow {
-                        required property var modelData
-                        objectName: "autofetch_" + modelData.value
-                        text: modelData.label
-                        selected: App.settings.attachmentAutofetch === modelData.value
-                        onClicked: App.settings.setAttachmentAutofetch(modelData.value)
-                    }
+                    value: App.settings.attachmentAutofetch
+                    onPicked: (value) => App.settings.setAttachmentAutofetch(value)
                 }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 1
-                    color: Theme.hairline
-                }
-
-                Caption { text: qsTr("Max image size") }
-                Repeater {
-                    model: [
+                ChoiceRow {
+                    objectName: "autofetchMaxChoice"
+                    label: qsTr("Max image size")
+                    entries: [
                         { label: qsTr("1 MB"), value: 1048576 },
                         { label: qsTr("5 MB"), value: 5242880 },
                         { label: qsTr("25 MB"), value: 26214400 },
                         { label: qsTr("Unlimited"), value: 0 }
                     ]
-                    delegate: OptionRow {
-                        required property var modelData
-                        objectName: "autofetchMax_" + modelData.value
-                        text: modelData.label
-                        selected: App.settings.attachmentAutofetchMax === modelData.value
-                        onClicked: App.settings.setAttachmentAutofetchMax(modelData.value)
-                    }
+                    value: App.settings.attachmentAutofetchMax
+                    onPicked: (value) => App.settings.setAttachmentAutofetchMax(value)
                 }
 
                 Caption {
@@ -268,20 +246,16 @@ Page {
                     color: Theme.hairline
                 }
 
-                Caption { text: qsTr("Chat list") }
-                Repeater {
-                    model: [
+                ChoiceRow {
+                    objectName: "chatListStyleChoice"
+                    label: qsTr("Chat list")
+                    entries: [
                         { label: qsTr("Full rows"), value: "full" },
                         { label: qsTr("Compact"), value: "compact" },
                         { label: qsTr("Compact, two columns"), value: "columns" }
                     ]
-                    delegate: OptionRow {
-                        required property var modelData
-                        objectName: "chatListStyle_" + modelData.value
-                        text: modelData.label
-                        selected: App.settings.chatListStyle === modelData.value
-                        onClicked: App.settings.setChatListStyle(modelData.value)
-                    }
+                    value: App.settings.chatListStyle
+                    onPicked: (value) => App.settings.setChatListStyle(value)
                 }
             }
 
@@ -403,20 +377,16 @@ Page {
 
                 SectionTitle { text: qsTr("Calls") }
 
-                Caption { text: qsTr("Media backend") }
-                Repeater {
-                    model: [
+                ChoiceRow {
+                    objectName: "mediaBackendChoice"
+                    label: qsTr("Media backend")
+                    entries: [
                         { label: qsTr("Automatic"), value: "" },
                         { label: qsTr("Built in"), value: "rtc" },
                         { label: qsTr("libwebrtc"), value: "webrtc" }
                     ]
-                    delegate: OptionRow {
-                        required property var modelData
-                        objectName: "mediaBackend_" + (modelData.value || "auto")
-                        text: modelData.label
-                        selected: App.settings.mediaBackend === modelData.value
-                        onClicked: App.settings.setMediaBackend(modelData.value)
-                    }
+                    value: App.settings.mediaBackend
+                    onPicked: (value) => App.settings.setMediaBackend(value)
                 }
                 Caption {
                     Layout.fillWidth: true
@@ -499,12 +469,13 @@ Page {
                     color: Theme.hairline
                 }
 
-                Caption { text: qsTr("Log level") }
-                Repeater {
+                ChoiceRow {
+                    objectName: "logLevelChoice"
+                    label: qsTr("Log level")
                     // tacky's levels, less `fatal`: a log holding only what
                     // killed the process has nothing to say about how it got
                     // there. The Tk client offers the same six.
-                    model: [
+                    entries: [
                         { label: qsTr("Verbose"), value: "verbose" },
                         { label: qsTr("Debug"), value: "debug" },
                         { label: qsTr("Info"), value: "info" },
@@ -512,13 +483,8 @@ Page {
                         { label: qsTr("Error"), value: "error" },
                         { label: qsTr("Off"), value: "none" }
                     ]
-                    delegate: OptionRow {
-                        required property var modelData
-                        objectName: "logLevel_" + modelData.value
-                        text: modelData.label
-                        selected: App.settings.logLevel === modelData.value
-                        onClicked: App.settings.setLogLevel(modelData.value)
-                    }
+                    value: App.settings.logLevel
+                    onPicked: (value) => App.settings.setLogLevel(value)
                 }
                 Caption {
                     Layout.fillWidth: true

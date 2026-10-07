@@ -9,8 +9,8 @@ import Quack
 // reports what was picked and re-reads the values it is given, so the model
 // stays the only thing that knows the current setting.
 //
-// Mute and volume are what get touched mid-call, so they sit in the row; the
-// device list is a once-in-a-while thing and lives behind the ▾ button.
+// Mute and volume are what get touched mid-call, so they take the room; the
+// device is a once-in-a-while thing, a narrow drop-down at the end.
 //
 // The backend has no mute; muting is gain 0.0, and the level to come back to is
 // remembered on the model side.
@@ -31,8 +31,8 @@ RowLayout {
     signal muteToggled(bool muted)
 
     // "" is a real, selectable value: it means whatever the system picks.
-    readonly property var entries: [{ name: qsTr("System default"), id: "" }]
-                                       .concat(row.devices)
+    readonly property var entries: [{ label: qsTr("System default"), value: "" }]
+        .concat(row.devices.map(d => ({ label: d.name, value: d.id })))
 
     spacing: 8
 
@@ -96,65 +96,14 @@ RowLayout {
         }
     }
 
-    IconButton {
-        id: pickButton
-        iconPath: Icons.arrowDropDown
+    ChoiceBox {
+        objectName: "deviceChoice"
+        Layout.preferredWidth: 150
         Accessible.name: qsTr("Choose %1").arg(row.label)
-        onClicked: deviceMenu.popupUnder(pickButton)
-    }
-
-    // The stock Menu follows the system palette, which is how the drop-down
-    // this replaced ended up painting its text against a background from the
-    // other scheme.
-    AppMenu {
-        id: deviceMenu
-        objectName: "deviceMenu"
-        // implicitWidth, not width: a Popup is not an Item, but it is parented
-        // into a layout here and a plain `width` reads as a layout override.
-        implicitWidth: 280
-
-        // The device array is replaced wholesale on every re-enumeration, so
-        // the entries are instantiated rather than declared.
-        Instantiator {
-            model: row.entries
-            onObjectAdded: (index, object) => deviceMenu.insertItem(index, object)
-            onObjectRemoved: (index, object) => deviceMenu.removeItem(object)
-
-            delegate: MenuItem {
-                id: entry
-                required property var modelData
-                readonly property bool current: entry.modelData.id === row.deviceId
-
-                height: 40
-                onTriggered: row.devicePicked(entry.modelData.id)
-
-                contentItem: RowLayout {
-                    spacing: 6
-                    Glyph {
-                        // A fixed column so the names line up whether or not
-                        // the tick is there: an empty path draws nothing but
-                        // stays laid out, where an invisible item would let
-                        // the row close up.
-                        Layout.preferredWidth: 14
-                        path: entry.current ? Icons.check : ""
-                        color: Theme.accentDeep
-                        size: 14
-                    }
-                    Text {
-                        Layout.fillWidth: true
-                        text: entry.modelData.name
-                        color: Theme.textPrimary
-                        font.pixelSize: 14
-                        font.bold: entry.current
-                        elide: Text.ElideMiddle
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
-                background: Rectangle {
-                    color: entry.highlighted ? Theme.menuHover : "transparent"
-                    radius: 6
-                }
-            }
-        }
+        entries: row.entries
+        current: row.deviceId
+        // Device names run long and differ at the end.
+        elide: Text.ElideMiddle
+        onPicked: (value) => row.devicePicked(value)
     }
 }

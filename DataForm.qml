@@ -118,22 +118,13 @@ ColumnLayout {
                                                         block.text.split("\n"))
             }
 
-            ComboBox {
-                id: choice
+            ChoiceBox {
                 Layout.fillWidth: true
                 objectName: "formChoice" + field.index
                 visible: field.control === "choice"
-                model: field.options
-                textRole: "label"
-                valueRole: "value"
-                currentIndex: {
-                    for (let i = 0; i < field.options.length; ++i) {
-                        if (field.options[i].value === field.value)
-                            return i
-                    }
-                    return -1
-                }
-                onActivated: form.fields.setValue(field.index, choice.currentValue)
+                entries: field.options
+                current: field.value
+                onPicked: (value) => form.fields.setValue(field.index, value)
             }
 
             // No multi-select combo in Controls, and a column of ticks is what
