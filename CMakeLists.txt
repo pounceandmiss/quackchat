@@ -275,6 +275,8 @@ qt_add_qml_module(quack
         Stamp.qml
         JoinRoomSheet.qml
         TextPromptDialog.qml
+        ChangePasswordDialog.qml
+        RevealBox.qml
         ConfirmDialog.qml
         StorageGate.qml
         MessageHits.qml

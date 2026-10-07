@@ -53,7 +53,7 @@ void AccountSettings::save(const QString &password, const QString &nick) {
 
     bool wrote = false;
     if (password != m_password) {
-        m_backend->notify(QStringLiteral("account"), QStringLiteral("add"),
+        m_backend->notify(QStringLiteral("account"), QStringLiteral("set"),
                           QVariantMap{{QStringLiteral("acc"), m_account},
                                       {QStringLiteral("password"), password}});
         m_password = password;
@@ -75,6 +75,22 @@ void AccountSettings::save(const QString &password, const QString &nick) {
 
     setStatus(wrote ? tr("Saved") : QString(), false);
     emit saved();
+}
+
+void AccountSettings::changeServerPassword(const QString &password) {
+    if (!m_backend || m_account.isEmpty() || password.isEmpty() ||
+        m_changePasswordToken >= 0)
+        return;
+    setChangePasswordError(QString());
+    m_changePasswordToken = m_backend->request(
+        QStringLiteral("account"), QStringLiteral("changePassword"),
+        QVariantMap{{QStringLiteral("acc"), m_account},
+                    {QStringLiteral("password"), password}});
+    emit changingPasswordChanged();
+}
+
+void AccountSettings::resetChangePassword() {
+    setChangePasswordError(QString());
 }
 
 void AccountSettings::setAvatar(const QUrl &source) {
@@ -173,6 +189,15 @@ void AccountSettings::handleResult(int token, const QVariant &data) {
         emit saved();
     } else if (token == m_avatarToken) {
         finishAvatar(QString()); // publish/disable answer empty on success
+    } else if (token == m_changePasswordToken) {
+        m_changePasswordToken = -1;
+        emit changingPasswordChanged();
+        // tacky stored the new password as well; read it back rather than
+        // keep a copy of what was typed.
+        m_getToken = m_backend->request(QStringLiteral("account"), QStringLiteral("get"),
+                                        QVariantMap{{QStringLiteral("acc"), m_account}});
+        setStatus(tr("Password changed on the server"), false);
+        emit serverPasswordChanged();
     }
 }
 
@@ -184,6 +209,13 @@ void AccountSettings::handleError(int token, const QString &message) {
         // threw before sending, or the request timing out unanswered.
         finishAvatar(message.isEmpty() ? tr("Could not publish the picture")
                                        : message);
+        return;
+    }
+    if (token == m_changePasswordToken) {
+        m_changePasswordToken = -1;
+        emit changingPasswordChanged();
+        setChangePasswordError(message.isEmpty() ? tr("The server did not say why")
+                                                 : message);
         return;
     }
     if (token != m_nickToken)
@@ -214,6 +246,13 @@ void AccountSettings::setStatus(const QString &text, bool error) {
     m_status = text;
     m_statusError = error;
     emit statusChanged();
+}
+
+void AccountSettings::setChangePasswordError(const QString &error) {
+    if (m_changePasswordError == error)
+        return;
+    m_changePasswordError = error;
+    emit changePasswordErrorChanged();
 }
 
 void AccountSettings::setAvatarStatus(const QString &text, bool error) {

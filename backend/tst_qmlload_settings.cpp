@@ -159,6 +159,72 @@ private slots:
         e.assertNoErrors();
     }
 
+    // The field edits only the password this device signs in with; changing
+    // the server's is a dialog of its own, which stays open over a refusal and
+    // closes once the server says yes.
+    void thePasswordOnTheServerIsChangedInItsOwnDialog() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        AccountSettings *settings = app->accountSettingsFor("me@example.com");
+        QVERIFY(settings);
+        settings->applyAccount(QVariantMap{{"password", "old"}});
+        QCoreApplication::processEvents();
+
+        QObject *password = w->findChild<QObject *>("passwordField");
+        QObject *reveal = w->findChild<QObject *>("passwordReveal");
+        QVERIFY(password);
+        QVERIFY(reveal);
+        // TextInput.Password and TextInput.Normal; the enum is private API.
+        QCOMPARE(password->property("echoMode").toInt(), 2);
+        reveal->setProperty("checked", true);
+        QCOMPARE(password->property("echoMode").toInt(), 0);
+
+        QObject *dialog = w->findChild<QObject *>("changePasswordDialog");
+        QObject *open = w->findChild<QObject *>("changePasswordOnServer");
+        QVERIFY(dialog);
+        QVERIFY(open);
+        QVERIFY(QMetaObject::invokeMethod(open, "clicked"));
+        QTRY_VERIFY(dialog->property("opened").toBool());
+
+        auto *content = dialog->property("contentItem").value<QQuickItem *>();
+        QQuickItem *field = findItem(content, "newPasswordField");
+        QQuickItem *status = findItem(content, "changePasswordStatus");
+        QObject *change = dialog->findChild<QObject *>("changePasswordButton");
+        QVERIFY(field);
+        QVERIFY(status);
+        QVERIFY(change);
+        QVERIFY(!change->property("enabled").toBool()); // nothing typed yet
+
+        field->setProperty("text", "new");
+        QVERIFY(change->property("enabled").toBool());
+        QVERIFY(QMetaObject::invokeMethod(change, "clicked"));
+        QVERIFY(settings->changingPassword());
+        QCOMPARE(status->property("text").toString(), QString("Changing…"));
+
+        // No interpreter behind this window, so the request is refused; the
+        // reason stays in the dialog, which stays up to try again.
+        QTRY_VERIFY(!settings->changingPassword());
+        QVERIFY(status->property("text").toString().startsWith("Password not changed: "));
+        QVERIFY(dialog->property("opened").toBool());
+        QCOMPARE(settings->password(), QString("old"));
+
+        // Typing again clears the refusal.
+        field->setProperty("text", "newer");
+        QCOMPARE(status->property("text").toString(), QString());
+
+        const int token = app->backend()->request("probe", "probe") + 1;
+        QVERIFY(QMetaObject::invokeMethod(change, "clicked"));
+        QVERIFY(settings->changingPassword());
+        settings->handleResult(token, QString());
+        QTRY_VERIFY(!dialog->property("visible").toBool());
+
+        e.assertNoErrors();
+    }
+
     // The picture itself is the control, and removing is a second action on the
     // same chip - offered only once there is something to remove.
     void theAvatarOffersRemovalOnlyWithSomethingToRemove() {

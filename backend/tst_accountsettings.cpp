@@ -43,7 +43,61 @@ private slots:
     void integrationSaveWithoutChangesIsNoWrite();
     void integrationAvatarPublishFailureIsReported();
     void refetchesNickOnReady();
+    void serverPasswordChangeReadsBackTheStoredOne();
+    void serverPasswordRefusalIsKeptForTheDialog();
 };
+
+// The server has the new password and tacky stored it too, so the field is
+// re-read from the account row rather than filled with what was typed.
+void TestAccountSettings::serverPasswordChangeReadsBackTheStoredOne() {
+    TackyBackend backend; // not started: nothing here waits on a reply
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@h");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    QSignalSpy changed(&s, &AccountSettings::serverPasswordChanged);
+    const int token = backend.request("probe", "probe") + 1;
+    sent.clear();
+
+    s.changeServerPassword("");
+    QCOMPARE(sent.count(), 0); // nothing to change to
+    s.changeServerPassword("new");
+    QVERIFY(s.changingPassword());
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("account"));
+    QCOMPARE(sent.first().at(1).toString(), QString("changePassword"));
+    QCOMPARE(sent.first().at(2).toMap().value("password").toString(), QString("new"));
+
+    s.changeServerPassword("again"); // one at a time
+    QCOMPARE(sent.count(), 1);
+
+    s.handleResult(token, QString());
+    QVERIFY(!s.changingPassword());
+    QCOMPARE(changed.count(), 1);
+    QVERIFY(s.changePasswordError().isEmpty());
+    QCOMPARE(sent.count(), 2);
+    QCOMPARE(sent.last().at(1).toString(), QString("get"));
+}
+
+void TestAccountSettings::serverPasswordRefusalIsKeptForTheDialog() {
+    TackyBackend backend;
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@h");
+
+    QSignalSpy changed(&s, &AccountSettings::serverPasswordChanged);
+    s.changeServerPassword("new");
+    QVERIFY(s.changingPassword());
+    // No interpreter, so the backend answers the token with an error.
+    QTRY_VERIFY(!s.changingPassword());
+    QCOMPARE(changed.count(), 0);
+    QVERIFY(!s.changePasswordError().isEmpty());
+    QCOMPARE(s.password(), QString()); // the stored one is left alone
+
+    s.resetChangePassword();
+    QVERIFY(s.changePasswordError().isEmpty());
+}
 
 // The nick is server state, so a fresh session can carry a different one than
 // the reply we got against the old session.
@@ -152,7 +206,7 @@ void TestAccountSettings::ignoresProgressWhenNothingIsInFlight() {
 }
 
 // Real backend: the stored credential round-trips through `account get` and
-// `account add`, which is how tacky's own sign-in form writes it.
+// `account set`, which hands a running client the new one.
 void TestAccountSettings::integrationLoadsAndSavesPassword() {
     TackyBackend backend;
     QVERIFY(backend.start());
@@ -168,8 +222,11 @@ void TestAccountSettings::integrationLoadsAndSavesPassword() {
     QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("old"), 5000);
 
     QSignalSpy saved(&s, &AccountSettings::saved);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
     s.save("new", s.nick());
     QCOMPARE(saved.count(), 1); // nothing to wait on but the local write
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(1).toString(), QString("set"));
     QCOMPARE(s.password(), QString("new"));
     QCOMPARE(s.status(), QString("Saved"));
 

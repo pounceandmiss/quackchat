@@ -6,10 +6,11 @@ import QtQuick.Dialogs
 import QtQuick.Layouts
 import Quack
 
-// One account's details: the stored credential, the published name, this
-// device's OMEMO key, and the trust state of every other device the account
-// has. Hosted by AccountSettingsWindow on desktop and as a full-screen sheet
-// on mobile, so it carries its own header and footer.
+// One account's details: the stored login password (and a way to change the
+// one on the server), the published name, this device's OMEMO key, and the
+// trust state of every other device the account has. Hosted by
+// AccountSettingsWindow on desktop and as a full-screen sheet on mobile, so it
+// carries its own header and footer.
 //
 // The credential and the name are edited and then saved. The OMEMO controls
 // are not: a trust change is written the moment it is picked, so Cancel has
@@ -32,11 +33,15 @@ Page {
 
     // Also re-arms the two fields: typing into one replaces its binding, and
     // the mobile sheet is reused for whichever account is opened next.
+    // Back to showing the stored password, after an edit broke the binding.
+    function bindPassword() {
+        passwordField.text = Qt.binding(() => page.settings ? page.settings.password : "")
+    }
     function bindAccount() {
         page.settings = page.account !== "" ? App.accountSettingsFor(page.account) : null
         page.devices = page.settings ? page.settings.devices : null
         page.editingNick = false
-        passwordField.text = Qt.binding(() => page.settings ? page.settings.password : "")
+        page.bindPassword()
         nickField.text = Qt.binding(() => page.settings ? page.settings.nick : "")
     }
     onAccountChanged: page.bindAccount()
@@ -71,6 +76,13 @@ Page {
     Connections {
         target: page.settings
         function onSaved() { page.done() }
+        // tacky stored the new password too, so the field shows that one now.
+        function onServerPasswordChanged() { page.bindPassword() }
+    }
+
+    ChangePasswordDialog {
+        id: changePasswordDialog
+        settings: page.settings
     }
 
     component SectionTitle: Text {
@@ -276,25 +288,48 @@ Page {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
-                    Caption { text: qsTr("Password") }
+                    Caption { text: qsTr("Login password") }
                     TextField {
                         id: passwordField
                         objectName: "passwordField"
                         Layout.fillWidth: true
                         // Armed by bindAccount, which owns both fields.
-                        echoMode: TextInput.Password
+                        echoMode: revealBox.checked ? TextInput.Normal : TextInput.Password
                         inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
                         onAccepted: if (page.dirty) page.save()
                     }
                 }
 
-                // Saving the credential does not re-authenticate.
+                RevealBox {
+                    id: revealBox
+                    objectName: "passwordReveal"
+                    Layout.fillWidth: true
+                }
+
+                // Only the copy on this device: tacky retries a failed sign-in
+                // with it, and leaves a session that is already up alone.
                 Caption {
                     Layout.fillWidth: true
                     visible: page.settings !== null
                              && passwordField.text !== page.settings.password
-                    text: qsTr("Takes effect the next time this account connects.")
+                    text: qsTr("Changes only the password Quack signs in with, not the one on the server.")
                     wrapMode: Text.WordWrap
+                }
+
+                Button {
+                    id: changeOnServer
+                    objectName: "changePasswordOnServer"
+                    text: qsTr("Change password on server…")
+                    flat: true
+                    padding: 0
+                    enabled: page.settings !== null
+                    onClicked: changePasswordDialog.open()
+                    contentItem: Text {
+                        text: changeOnServer.text
+                        color: changeOnServer.enabled ? Theme.accent : Theme.textDim
+                        font.pixelSize: 14
+                    }
+                    background: null
                 }
             }
 
