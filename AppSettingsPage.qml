@@ -24,6 +24,22 @@ Page {
         font.bold: true
     }
 
+    // A setting that is on or off.
+    component SettingBox: CheckBox {
+        id: setting
+        Layout.fillWidth: true
+        padding: 0
+        // The style centres its indicator when the control has no text of its
+        // own, so set it even though contentItem draws it.
+        contentItem: Text {
+            text: setting.text
+            color: Theme.textPrimary
+            font.pixelSize: 14
+            leftPadding: setting.indicator.width + 8
+            verticalAlignment: Text.AlignVCenter
+        }
+    }
+
     // A setting with a few choices: its name, and a drop-down of them.
     component ChoiceRow: RowLayout {
         id: choice
@@ -216,21 +232,12 @@ Page {
                     color: Theme.hairline
                 }
 
-                CheckBox {
+                SettingBox {
                     id: avatarBox
                     objectName: "chatAvatarsBox"
-                    Layout.fillWidth: true
-                    padding: 0
                     text: qsTr("Show avatars in chats")
                     checked: App.settings.chatAvatars
                     onToggled: App.settings.setChatAvatars(checked)
-                    contentItem: Text {
-                        text: avatarBox.text
-                        color: Theme.textPrimary
-                        font.pixelSize: 14
-                        leftPadding: avatarBox.indicator.width + 8
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
                 Caption {
                     Layout.fillWidth: true
@@ -256,6 +263,48 @@ Page {
                     ]
                     value: App.settings.chatListStyle
                     onPicked: (value) => App.settings.setChatListStyle(value)
+                }
+            }
+
+            Card {
+                SectionTitle { text: qsTr("Connection and privacy") }
+
+                SettingBox {
+                    objectName: "connProbeBox"
+                    text: qsTr("Check the connection on waking up")
+                    checked: App.settings.connProbe
+                    onToggled: App.settings.setConnProbe(checked)
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("After the device sleeps or Quack comes back into use, a connection that quietly died is noticed and remade straight away.")
+                    wrapMode: Text.WordWrap
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 4
+                    implicitHeight: 1
+                    color: Theme.hairline
+                }
+
+                SettingBox {
+                    objectName: "answerTimeBox"
+                    text: qsTr("Let contacts see my local time")
+                    checked: App.settings.answerTime
+                    onToggled: App.settings.setAnswerTime(checked)
+                }
+                SettingBox {
+                    objectName: "answerLastActivityBox"
+                    text: qsTr("Let contacts see how long I've been away")
+                    checked: App.settings.answerLastActivity
+                    onToggled: App.settings.setAnswerLastActivity(checked)
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("Only contacts who see your online status can ask.")
+                    wrapMode: Text.WordWrap
                 }
             }
 
@@ -408,23 +457,12 @@ Page {
             Card {
                 SectionTitle { text: qsTr("Diagnostics") }
 
-                CheckBox {
+                SettingBox {
                     id: logBox
                     objectName: "logToFileBox"
-                    Layout.fillWidth: true
-                    padding: 0
-                    // The style centres its indicator when the control has no
-                    // text of its own, so set it even though contentItem draws it.
                     text: qsTr("Write a log file")
                     checked: App.settings.logToFile
                     onToggled: App.settings.setLogToFile(checked)
-                    contentItem: Text {
-                        text: logBox.text
-                        color: Theme.textPrimary
-                        font.pixelSize: 14
-                        leftPadding: logBox.indicator.width + 8
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
                 Caption {
                     Layout.fillWidth: true
@@ -439,22 +477,13 @@ Page {
                     wrapMode: Text.WordWrap
                 }
 
-                CheckBox {
+                SettingBox {
                     id: redactBox
                     objectName: "logRedactBox"
-                    Layout.fillWidth: true
                     Layout.topMargin: 4
-                    padding: 0
                     text: qsTr("Hide message text")
                     checked: App.settings.logRedact
                     onToggled: App.settings.setLogRedact(checked)
-                    contentItem: Text {
-                        text: redactBox.text
-                        color: Theme.textPrimary
-                        font.pixelSize: 14
-                        leftPadding: redactBox.indicator.width + 8
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
                 Caption {
                     Layout.fillWidth: true
@@ -492,22 +521,13 @@ Page {
                     wrapMode: Text.WordWrap
                 }
 
-                CheckBox {
+                SettingBox {
                     id: nativeBox
                     objectName: "logNativeBox"
-                    Layout.fillWidth: true
                     Layout.topMargin: 4
-                    padding: 0
                     text: qsTr("Log WebRTC internals")
                     checked: App.settings.logNative
                     onToggled: App.settings.setLogNative(checked)
-                    contentItem: Text {
-                        text: nativeBox.text
-                        color: Theme.textPrimary
-                        font.pixelSize: 14
-                        leftPadding: nativeBox.indicator.width + 8
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
                 Caption {
                     Layout.fillWidth: true

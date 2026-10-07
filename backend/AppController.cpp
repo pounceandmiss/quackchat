@@ -5,6 +5,7 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <utility>
 
 #ifdef Q_OS_ANDROID
@@ -48,6 +49,26 @@ AppController::AppController(QObject *parent) : QObject(parent) {
             &AppController::applyStoredPreferences);
     connect(&m_backend, &TackyBackend::result, this, &AppController::onResult);
     connect(&m_backend, &TackyBackend::event, this, &AppController::onEvent);
+
+    m_activeSettle.setSingleShot(true);
+    m_activeSettle.setInterval(200);
+    connect(&m_activeSettle, &QTimer::timeout, this, [this] { reportActive(); });
+    // Only a GUI application has a state; the headless tests run without one.
+    if (auto *gui = qobject_cast<QGuiApplication *>(QCoreApplication::instance()))
+        connect(gui, &QGuiApplication::applicationStateChanged, &m_activeSettle,
+                qOverload<>(&QTimer::start));
+}
+
+void AppController::reportActive(bool force) {
+    auto *gui = qobject_cast<QGuiApplication *>(QCoreApplication::instance());
+    if (!gui || !m_storage.ready())
+        return;
+    const int active = gui->applicationState() == Qt::ApplicationActive ? 1 : 0;
+    if (!force && active == m_reportedActive)
+        return;
+    m_reportedActive = active;
+    m_backend.notify(QStringLiteral("app"), QStringLiteral("setActive"),
+                     QVariantMap{{QStringLiteral("active"), active == 1}});
 }
 
 // The error module carries failures no reply can carry - a timer, a socket
@@ -81,6 +102,7 @@ void AppController::applyStoredPreferences() {
     applyLogLevel();
     applyLogNative();
     applyLogRedact();
+    reportActive(true);
     m_accounts.refresh();
     m_audio.refresh();
     m_settings.refresh();

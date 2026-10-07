@@ -46,6 +46,16 @@ class AppSettings : public QObject {
     // line per chat, and columns puts two of those side by side. A key of our
     // own.
     Q_PROPERTY(QString chatListStyle READ chatListStyle NOTIFY chatListStyleChanged)
+    // Whether a connection is checked after the machine wakes or the app comes
+    // back, dropping one that has quietly died. On unless turned off: tacky's
+    // conn_probe.
+    Q_PROPERTY(bool connProbe READ connProbe NOTIFY connProbeChanged)
+    // Whether contacts may ask the local time (XEP-0202) and how long the app
+    // has been idle (XEP-0012). Off unless turned on, and answered only to
+    // contacts with a subscription to us.
+    Q_PROPERTY(bool answerTime READ answerTime NOTIFY answerTimeChanged)
+    Q_PROPERTY(bool answerLastActivity READ answerLastActivity
+                   NOTIFY answerLastActivityChanged)
     // "" (tacky picks) | rtc | webrtc, stored by tacky, which reads it when it
     // picks a backend. Takes effect at the next start.
     Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
@@ -66,6 +76,9 @@ public:
     bool logRedact() const { return m_logRedact; }
     bool chatAvatars() const { return m_chatAvatars; }
     QString chatListStyle() const { return m_chatListStyle; }
+    bool connProbe() const { return m_connProbe; }
+    bool answerTime() const { return m_answerTime; }
+    bool answerLastActivity() const { return m_answerLastActivity; }
     QString mediaBackend() const { return m_mediaBackend; }
     QString activeMediaBackend() const { return m_activeMediaBackend; }
 
@@ -83,6 +96,9 @@ public:
     Q_INVOKABLE void setChatAvatars(bool on);
     // Unknown styles are ignored.
     Q_INVOKABLE void setChatListStyle(const QString &style);
+    Q_INVOKABLE void setConnProbe(bool on);
+    Q_INVOKABLE void setAnswerTime(bool on);
+    Q_INVOKABLE void setAnswerLastActivity(bool on);
     // Unknown names are ignored.
     Q_INVOKABLE void setMediaBackend(const QString &name);
 
@@ -101,6 +117,9 @@ signals:
     void logRedactChanged();
     void chatAvatarsChanged();
     void chatListStyleChanged();
+    void connProbeChanged();
+    void answerTimeChanged();
+    void answerLastActivityChanged();
     void mediaBackendChanged();
     void activeMediaBackendChanged();
 
@@ -118,6 +137,9 @@ private:
     bool m_logRedact = true;
     bool m_chatAvatars = true;
     QString m_chatListStyle = QStringLiteral("full");
+    bool m_connProbe = true;
+    bool m_answerTime = false;
+    bool m_answerLastActivity = false;
     QString m_mediaBackend;   // "" until stored: the automatic choice
     QString m_activeMediaBackend;
 
@@ -129,6 +151,9 @@ private:
     int m_logRedactToken = -1;
     int m_chatAvatarsToken = -1;
     int m_chatListStyleToken = -1;
+    int m_connProbeToken = -1;
+    int m_answerTimeToken = -1;
+    int m_answerLastActivityToken = -1;
     int m_mediaBackendToken = -1;
     int m_activeBackendToken = -1;
 };

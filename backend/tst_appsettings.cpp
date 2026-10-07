@@ -58,9 +58,10 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
         keys << call.at(2).toMap().value("key").toString();
     }
     keys.sort();
-    QCOMPARE(keys, QStringList({"attachment_autofetch",
+    QCOMPARE(keys, QStringList({"answer_last_activity", "answer_time",
+                                "attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
-                                "chat_list_style",
+                                "chat_list_style", "conn_probe",
                                 "log_level", "log_native",
                                 "log_redact_content", "log_to_file",
                                 "media_backend"}));
@@ -171,6 +172,9 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setChatAvatars(false);
     s.setChatListStyle(QStringLiteral("columns"));
     s.setMediaBackend(QStringLiteral("webrtc"));
+    s.setConnProbe(false);
+    s.setAnswerTime(true);
+    s.setAnswerLastActivity(true);
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
 
@@ -191,6 +195,10 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
         readback.chatListStyle() == QLatin1String("columns"), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.mediaBackend() == QLatin1String("webrtc"), 5000);
+    // Each the opposite of its default, so only a stored value passes.
+    QTRY_VERIFY_WITH_TIMEOUT(!readback.connProbe(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(readback.answerTime(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(readback.answerLastActivity(), 5000);
     // Stored is not running: the backend answers with what it could open,
     // which is webrtc only where the build staged its library beside us.
     const QString dir = QCoreApplication::applicationDirPath();

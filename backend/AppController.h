@@ -11,6 +11,7 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 #include <QUrl>
 #include <QtQml/qqmlregistration.h>
 
@@ -156,11 +157,20 @@ private:
     void applyLogLevel();
     void applyLogNative();
     void applyLogRedact();
+    // Tell tacky whether the app is in use - focused on the desktop, in the
+    // foreground on mobile - which it probes the link on and passes to the
+    // server (XEP-0352). `force` resends it unchanged, for a backend that has
+    // only just come up or been reattached to.
+    void reportActive(bool force = false);
     QStringList tacoArgs(const QString &mediaBackend) const;
     void onResult(int token, const QVariant &data);
     void onEvent(const QString &module, const QString &name, const QVariant &args);
 
     TackyBackend m_backend;
+    // Settles a change of focus before it is reported, so moving between two
+    // of our own windows, which passes through no window at all, says nothing.
+    QTimer m_activeSettle;
+    int m_reportedActive = -1; // nothing yet
     AccountsModel m_accounts;
     AvatarController m_avatars;
     CallsModel m_calls;
