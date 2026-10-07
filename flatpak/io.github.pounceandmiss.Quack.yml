@@ -62,7 +62,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: 36df96e288199155fe8f42e093d8f2783cecf5e1
+        commit: 481df333bce022dc566bdaa981495f9b5fbaf78c
 
       # The webrtc media backend, built outside this manifest: it wants
       # Chromium's clang and a prebuilt libwebrtc, neither of which belongs in
@@ -117,8 +117,8 @@ modules:
         dest-filename: libvpx-1.15.2.tar.gz
       - type: git
         url: https://github.com/chpock/tclmtls.git
-        commit: a31a5c08ca0630101d1235e561045f7f7c57e6ce
-        dest: build/deps/git/tclmtls-a31a5c08ca0630101d1235e561045f7f7c57e6ce
+        commit: e3e91e8bba5d535d43c7353eacee092fefce7f0b
+        dest: build/deps/git/tclmtls-e3e91e8bba5d535d43c7353eacee092fefce7f0b
       - type: git
         url: https://github.com/Mbed-TLS/mbedtls.git
         commit: 5b64a9fdb979c8971561ec78221b528e3cc4e00a
