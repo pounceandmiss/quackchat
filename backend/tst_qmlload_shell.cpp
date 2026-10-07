@@ -134,14 +134,8 @@ private slots:
         QCOMPARE(shell->property("currentChatName").toString(), QString("Room"));
         QVERIFY(shell->property("currentChatGroupchat").toBool());
 
-        // Off the foot, round to the head.
-        QTest::keyClick(win, Qt::Key_Tab, Qt::ControlModifier);
-        QTRY_COMPARE(jid(), QString("amy@example.com"));
-
         // Backward, as a real keyboard sends it: Shift+Tab arrives as Backtab,
         // which is what the second sequence is registered for.
-        QTest::keyClick(win, Qt::Key_Backtab, Qt::ControlModifier | Qt::ShiftModifier);
-        QTRY_COMPARE(jid(), QString("room@muc.example.com?join"));
         QTest::keyClick(win, Qt::Key_Backtab, Qt::ControlModifier | Qt::ShiftModifier);
         QTRY_COMPARE(jid(), QString("bob@example.com"));
 

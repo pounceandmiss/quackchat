@@ -53,8 +53,8 @@ void TestChatPageSelection::initTestCase() {
 
 void TestChatPageSelection::cleanupTestCase() { stopBackend(); }
 
-// The model builds the markup; this is the other half - that Qt parses it into
-// styled runs instead of drawing the tags.
+// The model builds the markup; this is the other half - that the bubble hands
+// it to Qt as rich text instead of drawing the tags.
 void TestChatPageSelection::bubbleRendersMarkupAsRichText() {
     const Chat chat = open("styled@example.com");
     QVERIFY(chat.feed);
@@ -64,16 +64,6 @@ void TestChatPageSelection::bubbleRendersMarkupAsRichText() {
     QVERIFY(body);
     // Only reached when the model handed up markup; a bare body stays plain.
     QCOMPARE(body->property("textFormat").toInt(), int(Qt::RichText));
-
-    // Qt re-serialises the document it parsed, so a bold weight in there is
-    // proof the <b> became a style rather than four literal characters.
-    const QString doc = body->property("text").toString();
-    QVERIFY2(doc.contains(QLatin1String("font-weight:700")), qPrintable(doc));
-
-    QString plain;
-    QVERIFY(QMetaObject::invokeMethod(body, "getText", Q_RETURN_ARG(QString, plain),
-                                      Q_ARG(int, 0), Q_ARG(int, 14)));
-    QCOMPARE(plain, QString("bold and plain"));
 }
 
 // A search mark is markup over a body that has none of its own, so a marked

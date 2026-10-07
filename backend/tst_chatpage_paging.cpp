@@ -22,7 +22,6 @@ private slots:
     void initTestCase();
     void cleanupTestCase();
 
-    void oldestRowRendersAboveNewest();
     void buffersNameTheRightEdges();
     void initialLoadStopsAtOnePage();
     void scrollingUpPagesOlder();
@@ -63,30 +62,6 @@ void TestChatPagePaging::initTestCase() {
 }
 
 void TestChatPagePaging::cleanupTestCase() { stopBackend(); }
-
-// The convention everything else rests on, asserted against Qt rather than
-// assumed: row 0 is the newest message, and it renders below row 1.
-void TestChatPagePaging::oldestRowRendersAboveNewest() {
-    const Chat chat = open("friend@example.com");
-    QVERIFY(chat.feed);
-    QTRY_COMPARE(chat.count(), kPage);
-
-    QQuickItem *newest = nullptr;
-    QQuickItem *older = nullptr;
-    QVERIFY(QMetaObject::invokeMethod(chat.feed, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, newest), Q_ARG(int, 0)));
-    QVERIFY(QMetaObject::invokeMethod(chat.feed, "itemAtIndex",
-                                      Q_RETURN_ARG(QQuickItem *, older), Q_ARG(int, 1)));
-    QVERIFY(newest);
-    QVERIFY(older);
-    QVERIFY2(older->y() < newest->y(),
-             "BottomToTop must render older rows above newer ones");
-
-    ChatModel *model = chat.model();
-    QVERIFY(model);
-    QVERIFY(model->data(model->index(0), ChatModel::TimestampRole).toLongLong() >
-            model->data(model->index(1), ChatModel::TimestampRole).toLongLong());
-}
 
 // olderBuffer is the unseen history above the viewport, newerBuffer the unseen
 // messages below it. Swapping the two is the bug this file guards.

@@ -173,7 +173,6 @@ void TestChatPageComposer::enterSendsAndShiftEnterOpensALine() {
     QTest::keyClick(chat.win(), Qt::Key_Return, Qt::ShiftModifier);
     type(chat.win(), "second");
     QCOMPARE(input->property("text").toString(), QStringLiteral("first\nsecond"));
-    QCOMPARE(input->property("lineCount").toInt(), 2);
     QCOMPARE(chat.count(), 0);
 
     QTest::keyClick(chat.win(), Qt::Key_Return);

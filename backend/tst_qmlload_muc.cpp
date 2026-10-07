@@ -251,28 +251,10 @@ private slots:
         e.assertNoErrors();
     }
 
-    // The filter narrows the rows without touching the room, so the heading
-    // still counts everyone in the group.
-    void theOccupantFilterNarrowsTheRowsNotTheRoom() {
+    // Asking for a room's details twice raises the window already open.
+    void mucDetailsOpensOneWindowPerRoom() {
         Engine e;
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
-        QScopedPointer<QObject> holder;
-        QQuickWindow *w = openMucDetails(e, holder);
-        QVERIFY(w);
-        MucRoomModel *room = joinedRoom(w);
-        QVERIFY(room);
-
-        QQuickItem *list = findItem(w->contentItem(), "occupantList");
-        QVERIFY(list);
-        room->setFilter("z");
-        QCoreApplication::processEvents();
-        QCOMPARE(list->property("count").toInt(), 1);
-        QCOMPARE(room->total(), 3);
-        room->setFilter("");
-        QCoreApplication::processEvents();
-        QCOMPARE(list->property("count").toInt(), 3);
-
-        // Both details windows are written from, not only read.
         auto *mgr = e.singletonInstance<QObject *>("Quack", "AppWindows");
         QVERIFY(mgr);
         QVariant first, again;

@@ -222,20 +222,8 @@ void TestIntegration::sendsAreStampedOmemoByDefault() {
     QCOMPARE(chat.data(chat.index(0), ChatModel::ServerStatusRole).toString(),
              QString("pending"));
     QVERIFY(chat.data(chat.index(0), ChatModel::FailReasonRole).toString().isEmpty());
-
-    backend.notify("omemo", "setEnabled",
-                   QVariantMap{{"acc", "me@example.com"},
-                               {"jid", "friend@example.com"},
-                               {"value", 0}});
-    backend.notify("message", "send",
-                   QVariantMap{{"acc", "me@example.com"},
-                               {"chat", "friend@example.com"},
-                               {"body", "in the open"}});
-    QTRY_VERIFY_WITH_TIMEOUT(chat.rowCount() == 2, 5000);
-    QVERIFY(chat.data(chat.index(0), ChatModel::EncryptionRole).toString().isEmpty());
-    // The switch decides the next message, not the ones already sent.
-    QCOMPARE(chat.data(chat.index(1), ChatModel::EncryptionRole).toString(),
-             QString("omemo"));
+    // Switching it off is the composer's lock; tst_chatpage_composer drives
+    // that through the padlock against the same backend.
 
     backend.stop();
 }

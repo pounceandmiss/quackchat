@@ -363,12 +363,8 @@ private slots:
         QCOMPARE(opened.last().at(1).toString(), QString("Chat 0"));
         QCOMPARE(opened.last().at(2).toBool(), false);
 
-        cycle(1);
-        QCOMPARE(opened.last().at(0).toString(), QString("c1@example.com"));
-        cycle(-1);
-        QCOMPARE(opened.last().at(0).toString(), QString("c0@example.com"));
-        // Back off the head is the foot, which a viewport this short was not
-        // showing.
+        // Back off the head is the foot (the wrap itself is ChatListFilter's,
+        // tested there), which a viewport this short was not showing.
         cycle(-1);
         QCOMPARE(opened.last().at(0).toString(), QString("c11@example.com"));
 
@@ -383,21 +379,11 @@ private slots:
                                 .arg(seen.bottom())
                                 .arg(list->height())));
 
-        // And forward off the foot is the head again.
-        cycle(1);
-        QCOMPARE(opened.last().at(0).toString(), QString("c0@example.com"));
-
-        // What the search box hides is not on the walk.
+        // The walk is over what the search box leaves on show.
         QQuickItem *field = findItem(win.contentItem(), "searchField");
         QVERIFY(field);
         field->setProperty("text", "Chat 1");
         QTRY_COMPARE(list->property("count").toInt(), 3); // 1, 10, 11
-        cycle(1);
-        QCOMPARE(opened.last().at(0).toString(), QString("c1@example.com"));
-        cycle(1);
-        QCOMPARE(opened.last().at(0).toString(), QString("c10@example.com"));
-        cycle(1);
-        QCOMPARE(opened.last().at(0).toString(), QString("c11@example.com"));
         cycle(1);
         QCOMPARE(opened.last().at(0).toString(), QString("c1@example.com"));
 
