@@ -271,7 +271,7 @@ Page {
 
                 SettingBox {
                     objectName: "connProbeBox"
-                    text: qsTr("Check the connection on waking up")
+                    text: qsTr("Check the connection after sleep or on returning to Quack")
                     checked: App.settings.connProbe
                     onToggled: App.settings.setConnProbe(checked)
                 }
