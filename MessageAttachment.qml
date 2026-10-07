@@ -4,8 +4,8 @@ import QtQuick
 import QtQuick.Layouts
 import Quack
 
-// One attachment under a message body. An image shows the thumbnail tacky
-// derived for it; everything else - a plain file, an image still coming, one
+// One attachment under a message body. An image shows the downloaded file,
+// scaled down; everything else - a plain file, an image still coming, one
 // the autofetch policy held back - shows a chip naming it.
 //
 // Which of those a tap means is decided here. The menu and every request that
@@ -103,12 +103,19 @@ ColumnLayout {
     Image {
         id: thumb
         objectName: "attachmentThumb"
-        visible: att.isImage && att.hasThumb
-        // The thumbnail path is derived from the URL alone, so a re-fetched
+        // A file that will not decode falls back to the chip.
+        visible: att.isImage && att.hasThumb && thumb.status !== Image.Error
+        // The download's path is derived from the URL alone, so a re-fetched
         // image reuses it - a cached pixmap would keep showing the old one.
         cache: false
         source: att.modelData.thumburl
         fillMode: Image.PreserveAspectFit
+        // A phone's photo is tens of megapixels; decode it at the long side
+        // it is drawn at, scaled the way Avatar scales its sourceSize. Never
+        // upscaled, so a smaller image keeps its own size.
+        sourceSize.width: Math.round(Theme.thumbSize * Screen.devicePixelRatio)
+        sourceSize.height: Math.round(Theme.thumbSize * Screen.devicePixelRatio)
+        asynchronous: true
         // implicitWidth is source pixels, several per drawn one above ratio 1,
         // so cap at the size asked for.
         readonly property real drawWidth:

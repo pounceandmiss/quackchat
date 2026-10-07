@@ -10,8 +10,8 @@
 // This owns the wire's fan-out and nothing else. groupcall events go to the
 // GroupCall of the chat they name, or else of the call room they name (a
 // call's room is the chat's own for an in-room call); the `calls` events of a
-// leg go to whichever GroupCall holds that sid, which is how a leg stays out
-// of CallsModel.
+// leg go to whichever GroupCall holds that sid; a room's `muc` events go to
+// whichever GroupCall reads its occupants.
 #ifndef GROUPCALLSMODEL_H
 #define GROUPCALLSMODEL_H
 
@@ -55,7 +55,7 @@ public:
     // The row whose call is held in `room`, if any.
     GroupCall *findByCall(const QString &acc, const QString &room) const;
 
-    // Ask what `acc` is in, and re-ask every known room its status. Driven by
+    // Ask what `acc` is in, and re-read every known room's occupants. Driven by
     // the account's conn events; exposed so a view can force one.
     Q_INVOKABLE void refreshFor(const QString &acc);
 

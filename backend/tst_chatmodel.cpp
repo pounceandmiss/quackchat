@@ -97,7 +97,6 @@ private slots:
     void fileEventsFilterByAcc();
     void anAttachmentWithNoUrlYetKeysOnItsPath();
     void imageRowsAskForTheirThumbnails();
-    void thumbnailSizeFollowsTheView();
     void openAttachmentResolvesThroughTheBackend();
     void uploadProgressReachesTheRowItBelongsTo();
     void sendFileHandsTackyThePath();
@@ -1106,14 +1105,13 @@ void TestChatModel::fileUpdateMergesIntoTheRow() {
     QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":7,
         "direction":"download","state":"done","loaded":1234,"total":1234,
-        "url":"https://h/a.png","localpath":"/data/a.png",
-        "thumbpath":"/cache/a_320.png","error":""}])");
+        "url":"https://h/a.png","localpath":"/data/a.png","error":""}])");
 
     const QVariantMap a = att0(m);
     QCOMPARE(a.value("state").toString(), QString("done"));
     // The thumbnail reaches the view as a url, which the path it arrived as
     // cannot safely be turned into up there.
-    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a_320.png"));
+    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///data/a.png"));
     QCOMPARE(a.value("localpath").toString(), QString("/data/a.png"));
     QCOMPARE(a.value("total").toInt(), 1234);
     // What the message said is still there underneath.
@@ -1130,7 +1128,7 @@ void TestChatModel::fileUpdateMergesIntoTheRow() {
     // row's url but another row's id is not this row's.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":7,
         "direction":"upload","state":"active","loaded":10,"total":99,
-        "url":"https://h/a.png","localpath":"","thumbpath":"","error":""}])");
+        "url":"https://h/a.png","localpath":"","error":""}])");
     QCOMPARE(att0(m).value("state").toString(), QString("done"));
 }
 
@@ -1149,11 +1147,11 @@ void TestChatModel::fileUpdateFansOutToEveryRowSharingTheUrl() {
 
     QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"done","url":"https://h/a.png","thumbpath":"/cache/a.png"}])");
+        "state":"done","url":"https://h/a.png","localpath":"/data/a.png"}])");
 
     QCOMPARE(chg.count(), 2);
-    QCOMPARE(att0(m, 0).value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
-    QCOMPARE(att0(m, 1).value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
+    QCOMPARE(att0(m, 0).value("thumburl").toUrl(), QUrl("file:///data/a.png"));
+    QCOMPARE(att0(m, 1).value("thumburl").toUrl(), QUrl("file:///data/a.png"));
     QVERIFY(att0(m, 2).value("thumburl").toUrl().isEmpty());
 }
 
@@ -1185,7 +1183,7 @@ void TestChatModel::fileEventsFilterByAcc() {
     m.applyBatch(msgs(kMediaRow));
 
     feedEvent(m, R"(["event","file","Update",{"acc":"other@h","direction":"download",
-        "state":"done","url":"https://h/a.png","thumbpath":"/cache/a.png"}])");
+        "state":"done","url":"https://h/a.png","localpath":"/data/a.png"}])");
     QVERIFY(att0(m).value("thumburl").toUrl().isEmpty());
 }
 
@@ -1200,10 +1198,9 @@ void TestChatModel::anAttachmentWithNoUrlYetKeysOnItsPath() {
             {"url":"","path":"/home/me/c.png","type":"image","name":"c.png"}]}}])"));
 
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"done","url":"/home/me/c.png","localpath":"/home/me/c.png",
-        "thumbpath":"/cache/c_320.png"}])");
+        "state":"done","url":"/home/me/c.png","localpath":"/home/me/c.png"}])");
 
-    QCOMPARE(att0(m).value("thumburl").toUrl(), QUrl("file:///cache/c_320.png"));
+    QCOMPARE(att0(m).value("thumburl").toUrl(), QUrl("file:///home/me/c.png"));
     QCOMPARE(att0(m).value("localpath").toString(), QString("/home/me/c.png"));
 }
 
@@ -1247,8 +1244,6 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
     QCOMPARE(first.value("acc").toString(), QString("me@h"));
     QCOMPARE(first.value("from").toString(), QString("her@h"));
     QCOMPARE(first.value("auto").toInt(), 1);
-    // Unbound by any view, so tacky is asked for its own default size.
-    QCOMPARE(first.value("thumbmax").toInt(), 320);
     QCOMPARE(downloads.at(1).toMap().value("url").toString(), QString("https://h/a.png"));
     // Our own send is exempt from the policy, and has only a local file to
     // name until its upload lands.
@@ -1264,39 +1259,6 @@ void TestChatModel::imageRowsAskForTheirThumbnails() {
     m.loadAttachment(300, 0);
     QCOMPARE(sent.count(), 1);
     QVERIFY(!sent.first().at(2).toMap().contains("auto"));
-}
-
-// Every request that can end in a rendered thumbnail carries the size, not only
-// the one the row fetches with.
-void TestChatModel::thumbnailSizeFollowsTheView() {
-    TackyBackend backend;
-    ChatModel m;
-    m.setBackend(&backend);
-    m.setAccount("me@h");
-    m.setChat("a@h");
-
-    QSignalSpy changed(&m, &ChatModel::thumbMaxChanged);
-    m.setThumbMax(960);
-    QCOMPARE(changed.count(), 1);
-    // A screen not realised yet must not overwrite a good size.
-    m.setThumbMax(0);
-    m.setThumbMax(-1);
-    QCOMPARE(m.thumbMax(), 960);
-    QCOMPARE(changed.count(), 1);
-
-    QSignalSpy sent(&backend, &TackyBackend::sent);
-    m.applyBatch(msgs(kMediaRow));
-    m.loadAttachment(100, 0);
-    m.openAttachment(100, 0);
-
-    int asked = 0;
-    for (const QList<QVariant> &call : sent) {
-        if (call.at(0).toString() != "file" || call.at(1).toString() != "download")
-            continue;
-        QCOMPARE(call.at(2).toMap().value("thumbmax").toInt(), 960);
-        ++asked;
-    }
-    QCOMPARE(asked, 3);
 }
 
 void TestChatModel::openAttachmentResolvesThroughTheBackend() {
@@ -1352,13 +1314,12 @@ void TestChatModel::uploadProgressReachesTheRowItBelongsTo() {
 
     // That read.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"done","url":"/home/me/a.png","localpath":"/home/me/a.png",
-        "thumbpath":"/cache/a.png"}])");
+        "state":"done","url":"/home/me/a.png","localpath":"/home/me/a.png"}])");
 
     QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
         "direction":"upload","state":"active","loaded":10,"total":99,
-        "url":"","localpath":"","thumbpath":"","error":""}])");
+        "url":"","localpath":"","error":""}])");
 
     const QVariantMap a = att0(m);
     QCOMPARE(a.value("state").toString(), QString("active"));
@@ -1366,7 +1327,7 @@ void TestChatModel::uploadProgressReachesTheRowItBelongsTo() {
     QCOMPARE(a.value("loaded").toInt(), 10);
     QCOMPARE(a.value("total").toInt(), 99);
     // Still showing while its bytes go out.
-    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
+    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///home/me/a.png"));
     QCOMPARE(chg.count(), 1);
     QCOMPARE(chg.first().at(2).value<QList<int>>(),
              QList<int>{ChatModel::AttachmentsRole});
@@ -1453,15 +1414,15 @@ void TestChatModel::anUploadedShareEndsUpSent() {
     // The file module reads the local source in place to derive the thumbnail.
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
         "state":"done","loaded":1234,"total":1234,"url":"/home/me/a.png",
-        "localpath":"/home/me/a.png","thumbpath":"/cache/a.png","error":""}])");
+        "localpath":"/home/me/a.png","error":""}])");
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
         "direction":"upload","state":"active","loaded":600,"total":1234,
-        "url":"","localpath":"/home/me/a.png","thumbpath":"","error":""}])");
+        "url":"","localpath":"/home/me/a.png","error":""}])");
     QCOMPARE(att0(m).value("state").toString(), QString("active"));
 
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":100,
         "direction":"upload","state":"done","loaded":1234,"total":1234,
-        "url":"https://h/a.png","localpath":"/home/me/a.png","thumbpath":"",
+        "url":"https://h/a.png","localpath":"/home/me/a.png",
         "error":""}])");
     // The send the finished PUT sets off, then the server's ack for it.
     feedEvent(m, R"(["event","message","Status",{"acc":"me@h","jid":"a@h",
@@ -1476,7 +1437,7 @@ void TestChatModel::anUploadedShareEndsUpSent() {
     // Nothing still transferring, and the picture still on screen.
     const QVariantMap a = att0(m);
     QCOMPARE(a.value("state").toString(), QString("done"));
-    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///cache/a.png"));
+    QCOMPARE(a.value("thumburl").toUrl(), QUrl("file:///home/me/a.png"));
 }
 
 void TestChatModel::retryUploadNamesTheRow() {
@@ -1543,8 +1504,7 @@ void TestChatModel::uncacheForgetsTheFileAndItsThumbnail() {
     m.setChat("a@h");
     m.applyBatch(msgs(kMediaRow));
     feedEvent(m, R"(["event","file","Update",{"acc":"me@h","direction":"download",
-        "state":"done","url":"https://h/a.png","localpath":"/data/a.png",
-        "thumbpath":"/cache/a.png"}])");
+        "state":"done","url":"https://h/a.png","localpath":"/data/a.png"}])");
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     m.uncacheAttachment(100, 0);

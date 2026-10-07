@@ -1,6 +1,6 @@
 // One chat's group call, from this account's side: whether the chat has one,
-// whether we are in it, and everyone announcing it with the state of the leg we
-// hold to them. Obtained from App.groupCalls.callFor() and kept for the life of
+// whether we are in it, and everyone in it with the state of the media session
+// we hold to them. Obtained from App.groupCalls.callFor() and kept for the life of
 // the app, since a call outlives any one window on it.
 //
 // `jid` is the chat's; `callJid` the room the call is held in. For a call
@@ -8,9 +8,12 @@
 // the group chat itself (Movim's) it is the chat's own room. Requests go to
 // the call's room, and events find their way here by either.
 //
-// The room's state (active, count, joined) is the backend's and comes straight
-// off `groupcall status` and <Changed>. `phase` is this side's: it says whether
-// a window belongs on screen, which the backend has no opinion on.
+// The room's state (active, count, joined) is read off its occupants: one is in
+// the call while its `call` is non-empty, and counts once `announced`. Out of a
+// call that room is the chat's own, so the banner shows an in-room call; a
+// hosted one shows as its invite in the chat. In a call it is the call's room.
+// `phase` is this side's: it says whether a window belongs on screen, which
+// the backend has no opinion on.
 //
 //   idle     nothing to show; the banner in the chat says what the room has
 //   joining  join() sent, waiting on <Joined> - the backend holds the room's
@@ -19,9 +22,10 @@
 //   ended    <Left>, leave(), or a join that failed - stays until dismiss(),
 //            so the reason can be read and "Rejoin" is there to press
 //
-// Every participant becomes a leg: an ordinary `calls` session whose events
-// carry the sid <PeerJoined> announced. GroupCallsModel routes those here by
-// sid, so CallsModel never sees a leg as a call of its own.
+// The participants are the call room's occupants in the call, bar us. Each gets
+// a leg: an ordinary `calls` session whose events carry the sid <Session>
+// named for them. GroupCallsModel routes those here by sid, and the room's muc
+// events here by room; CallsModel leaves legs alone.
 #ifndef GROUPCALL_H
 #define GROUPCALL_H
 
@@ -54,6 +58,9 @@ public:
     Q_ENUM(Role)
 
     struct Peer {
+        // The occupant's real JID as the room gives it, or "/nick" for one
+        // whose JID the room hides. Sessions name their peer by the former.
+        QString key;
         QString nick;
         QString jid;
         QString sid;
@@ -71,9 +78,10 @@ public:
     QVariant data(const QModelIndex &index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
-    int indexOfNick(const QString &nick) const;
+    int indexOfKey(const QString &key) const;
     int indexOfSid(const QString &sid) const;
-    // Insert or update by nick. Fields left empty keep what the row has.
+    QString keyAt(int row) const;
+    // Insert or update by key. Fields left empty keep what the row has.
     void upsert(const Peer &peer);
     void remove(int row);
     void clear();
@@ -163,21 +171,28 @@ public:
     Q_INVOKABLE void invite(const QString &to);
     // The window is done showing how it ended.
     Q_INVOKABLE void dismiss();
-    // Ask the backend for the room's state again, and for the participants
-    // when we are in the call.
+    // Read the room's occupants again: the banner's state, and the
+    // participants when we are in the call.
     Q_INVOKABLE void refresh();
+    // The room that state is read from: the call's while in it, else the
+    // chat's own.
+    QString statusRoom() const;
 
     // Driven by GroupCallsModel, which owns the wire. Public so tests can feed
     // canned events without a backend.
     void handleEvent(const QString &name, const QVariantMap &args);
     // A `calls` event for a sid one of the legs owns. Answers whether it did.
     bool handleLegEvent(const QString &name, const QVariantMap &args);
-    void applyStatus(const QVariantMap &status);
-    void applyParticipants(const QVariantList &rows);
+    // A muc event for statusRoom(): its occupants may have changed.
+    void handleRoomEvent(const QString &name, const QVariantMap &args);
+    // `muc occupants` of statusRoom(), and our own nick there.
+    void applyOccupants(const QVariantList &occupants, const QString &myNick);
     // `groupcall list` named this room: we are in its call, whatever the phase
     // thought - a reattach finds the call already up.
-    // `preview` is the self-view's channel, empty when the backend has none.
-    void applyListed(bool video, const QVariantMap &preview = {});
+    // `preview` is the self-view's channel, empty when the backend has none;
+    // `sessions` maps each peer's JID to our session's sid.
+    void applyListed(bool video, const QVariantMap &preview = {},
+                     const QVariantMap &sessions = {});
     void handleResult(int token, const QVariant &data);
     void handleError(int token, const QString &message);
 
@@ -205,6 +220,12 @@ private:
     // The shared start of join() and answerInvite(): the state reset, the
     // permission prompts, then `method` with `args`.
     void beginJoin(bool video, const QString &method, QVariantMap args);
+    void setRoomState(bool active, int count, bool joined);
+    // Ask again once the event loop comes round, so a burst of presences
+    // costs one read.
+    void scheduleRefresh();
+    // A session with `peer`, replacing any earlier one.
+    void bindSession(const QString &peer, const QString &sid);
     int request(const QString &method, QVariantMap args = {});
     void notify(const QString &method, QVariantMap args = {});
 
@@ -227,8 +248,17 @@ private:
     QHash<QString, QVariantMap> m_legPreviews;
     qint64 m_startedAt = 0;
     GroupCallParticipants m_participants;
-    // The tokens of this room's own requests: status, participants, join.
-    enum class Pending { Status, Participants, Join };
+    // Peer key -> our session's sid, kept apart from the rows so a session
+    // that arrives before its occupant's presence still finds its row.
+    QHash<QString, QString> m_sessions;
+    // The last read of statusRoom(), applied once both halves are in.
+    QString m_myNick;
+    QVariantList m_occupants;
+    bool m_haveNick = false;
+    bool m_haveOccupants = false;
+    bool m_refreshQueued = false;
+    // The tokens of this room's own requests.
+    enum class Pending { MyNick, Occupants, Join, CallsList };
     QHash<int, Pending> m_pending;
 };
 

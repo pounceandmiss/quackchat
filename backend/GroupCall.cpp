@@ -5,6 +5,8 @@
 
 #include <QDateTime>
 #include <QLoggingCategory>
+#include <QSet>
+#include <QTimer>
 
 Q_LOGGING_CATEGORY(lcGroupCall, "quack.groupcall", QtWarningMsg)
 
@@ -64,11 +66,15 @@ QHash<int, QByteArray> GroupCallParticipants::roleNames() const {
             {RemoteVideoRole, "remoteVideo"}};
 }
 
-int GroupCallParticipants::indexOfNick(const QString &nick) const {
+int GroupCallParticipants::indexOfKey(const QString &key) const {
     for (int i = 0; i < m_peers.size(); ++i)
-        if (m_peers.at(i).nick == nick)
+        if (m_peers.at(i).key == key)
             return i;
     return -1;
+}
+
+QString GroupCallParticipants::keyAt(int row) const {
+    return row < 0 || row >= m_peers.size() ? QString() : m_peers.at(row).key;
 }
 
 int GroupCallParticipants::indexOfSid(const QString &sid) const {
@@ -86,7 +92,7 @@ void GroupCallParticipants::changed(int row, const QList<int> &roles) {
 }
 
 void GroupCallParticipants::upsert(const Peer &peer) {
-    const int i = indexOfNick(peer.nick);
+    const int i = indexOfKey(peer.key);
     if (i < 0) {
         beginInsertRows({}, m_peers.size(), m_peers.size());
         m_peers.append(peer);
@@ -95,22 +101,24 @@ void GroupCallParticipants::upsert(const Peer &peer) {
         return;
     }
     Peer &p = m_peers[i];
+    if (!peer.nick.isEmpty())
+        p.nick = peer.nick;
     if (!peer.jid.isEmpty())
         p.jid = peer.jid;
-    // A new leg to a participant we already show: the old stream is gone
-    // with the old sid.
+    // A new leg to a participant we already show: the old stream, and what
+    // the old leg had to say, are gone with the old sid.
     if (!peer.sid.isEmpty() && peer.sid != p.sid) {
         p.sid = peer.sid;
+        p.reason.clear();
+        p.warning.clear();
         p.hasVideo = false;
         p.remoteVideo.clear();
     }
     if (!peer.state.isEmpty())
         p.state = peer.state;
-    p.reason = peer.reason;
-    p.warning.clear();
     p.video = peer.video;
-    changed(i, {JidRole, SidRole, StateRole, ReasonRole, WarningRole, VideoRole,
-                HasVideoRole, RemoteVideoRole});
+    changed(i, {NickRole, JidRole, SidRole, StateRole, ReasonRole, WarningRole,
+                VideoRole, HasVideoRole, RemoteVideoRole});
 }
 
 void GroupCallParticipants::remove(int row) {
@@ -195,13 +203,20 @@ bool GroupCall::inCall() const {
     return m_phase == kJoining || m_phase == kLive;
 }
 
+QString GroupCall::statusRoom() const {
+    return inCall() && !m_callJid.isEmpty() ? m_callJid : m_jid;
+}
+
 void GroupCall::setPhase(const QString &phase) {
     if (m_phase == phase)
         return;
     qCDebug(lcGroupCall).noquote() << "phase" << m_account << m_jid << m_phase
                                    << "->" << phase;
+    const QString room = statusRoom();
     m_phase = phase;
     emit phaseChanged();
+    if (statusRoom() != room)
+        scheduleRefresh();
 }
 
 void GroupCall::setReason(const QString &reason) {
@@ -216,6 +231,15 @@ void GroupCall::setWarning(const QString &warning) {
         return;
     m_warning = warning;
     emit warningChanged();
+}
+
+void GroupCall::setRoomState(bool active, int count, bool joined) {
+    if (active == m_active && count == m_count && joined == m_joined)
+        return;
+    m_active = active;
+    m_count = count;
+    m_joined = joined;
+    emit roomChanged();
 }
 
 void GroupCall::clearVideo() {
@@ -243,6 +267,7 @@ void GroupCall::pickLegPreview() {
 
 void GroupCall::tearDown() {
     clearVideo();
+    m_sessions.clear();
     m_participants.endAll();
     setPhase(kEnded);
 }
@@ -250,8 +275,11 @@ void GroupCall::tearDown() {
 void GroupCall::setCallJid(const QString &room) {
     if (room.isEmpty() || m_callJid == room)
         return;
+    const QString before = statusRoom();
     m_callJid = room;
     emit callJidChanged();
+    if (statusRoom() != before)
+        scheduleRefresh();
 }
 
 // Requests name the call's room, or the chat's own while no call is known -
@@ -275,11 +303,12 @@ void GroupCall::notify(const QString &method, QVariantMap args) {
     m_backend->notify(QStringLiteral("groupcall"), method, args);
 }
 
-// A call in progress is joined; with none, one is started in a room of its
-// own, which <Started> names.
+// A call held in the chat itself is joined there; otherwise `start` makes one
+// in a room of its own, which <Started> names - or joins the chat's last
+// hosted call, if that is still going.
 void GroupCall::join(bool video) {
-    if (m_active && !m_callJid.isEmpty())
-        beginJoin(video, QStringLiteral("join"), {});
+    if (m_active)
+        beginJoin(video, QStringLiteral("join"), {{QStringLiteral("jid"), m_jid}});
     else
         beginJoin(video, QStringLiteral("start"), {{QStringLiteral("chat"), m_jid}});
 }
@@ -302,6 +331,7 @@ void GroupCall::beginJoin(bool video, const QString &method, QVariantMap args) {
     if (inCall())
         return;
     m_participants.clear();
+    m_sessions.clear();
     setReason({});
     setWarning({});
     clearVideo();
@@ -374,34 +404,115 @@ void GroupCall::dismiss() {
     setPhase(kIdle);
 }
 
+void GroupCall::scheduleRefresh() {
+    if (m_refreshQueued || !m_backend)
+        return;
+    m_refreshQueued = true;
+    QTimer::singleShot(0, this, [this] {
+        if (m_refreshQueued)
+            refresh();
+    });
+}
+
+// Both halves are asked for together and applied once both are in; a later
+// read replaces the tokens, so an answer about a room we have moved off is
+// dropped.
 void GroupCall::refresh() {
-    const int token = request(QStringLiteral("status"));
-    if (token >= 0)
-        m_pending.insert(token, Pending::Status);
-    if (inCall()) {
-        const int t = request(QStringLiteral("participants"));
-        if (t >= 0)
-            m_pending.insert(t, Pending::Participants);
+    m_refreshQueued = false;
+    if (!m_backend)
+        return;
+    for (auto it = m_pending.begin(); it != m_pending.end();)
+        it = it.value() == Pending::MyNick || it.value() == Pending::Occupants
+                 ? m_pending.erase(it)
+                 : std::next(it);
+    m_myNick.clear();
+    m_occupants.clear();
+    m_haveNick = false;
+    m_haveOccupants = false;
+    const QVariantMap args{{QStringLiteral("acc"), m_account},
+                           {QStringLiteral("jid"), statusRoom()}};
+    m_pending.insert(m_backend->request(QStringLiteral("muc"),
+                                        QStringLiteral("myNick"), args),
+                     Pending::MyNick);
+    m_pending.insert(m_backend->request(QStringLiteral("muc"),
+                                        QStringLiteral("occupants"), args),
+                     Pending::Occupants);
+}
+
+void GroupCall::handleRoomEvent(const QString &name, const QVariantMap &a) {
+    Q_UNUSED(a)
+    if (name == QLatin1String("Presence") || name == QLatin1String("Unavailable") ||
+        name == QLatin1String("NickChanged") || name == QLatin1String("Joined") ||
+        name == QLatin1String("Left") || name == QLatin1String("Destroyed"))
+        scheduleRefresh();
+}
+
+void GroupCall::applyOccupants(const QVariantList &occupants, const QString &myNick) {
+    int count = 0;
+    bool joined = false;
+    for (const QVariant &v : occupants) {
+        const QVariantMap occ = v.toMap();
+        const QVariantMap call = occ.value(QStringLiteral("call")).toMap();
+        if (call.value(QStringLiteral("state")).toString() != QLatin1String("announced"))
+            continue;
+        ++count;
+        if (!myNick.isEmpty() && occ.value(QStringLiteral("nick")).toString() == myNick)
+            joined = true;
     }
+    setRoomState(count > 0, count, joined);
+
+    // The participants are the call room's; the chat's own, read out of a
+    // call, only feeds the banner.
+    if (!inCall() || m_callJid.isEmpty() || statusRoom() != m_callJid)
+        return;
+    QSet<QString> here;
+    for (const QVariant &v : occupants) {
+        const QVariantMap occ = v.toMap();
+        const QVariantMap call = occ.value(QStringLiteral("call")).toMap();
+        const QString nick = occ.value(QStringLiteral("nick")).toString();
+        if (call.isEmpty() || nick == myNick)
+            continue;
+        const QString jid = occ.value(QStringLiteral("jid")).toString();
+        GroupCallParticipants::Peer p;
+        p.key = jid.isEmpty() ? QLatin1Char('/') + nick : jid;
+        p.nick = nick;
+        p.jid = bareJid(jid);
+        p.sid = m_sessions.value(p.key);
+        p.video = flag(call.value(QStringLiteral("video")));
+        // Until a session names them, they are only expected; once one does,
+        // its `calls` events say how it goes.
+        if (m_participants.indexOfKey(p.key) < 0)
+            p.state = p.sid.isEmpty() ? QStringLiteral("expected")
+                                      : QStringLiteral("connecting");
+        m_participants.upsert(p);
+        here.insert(p.key);
+    }
+    for (int i = m_participants.rowCount() - 1; i >= 0; --i)
+        if (!here.contains(m_participants.keyAt(i)))
+            m_participants.remove(i);
+}
+
+void GroupCall::bindSession(const QString &peer, const QString &sid) {
+    if (peer.isEmpty() || sid.isEmpty())
+        return;
+    m_sessions.insert(peer, sid);
+    GroupCallParticipants::Peer p;
+    p.key = peer;
+    p.jid = bareJid(peer);
+    p.sid = sid;
+    p.state = QStringLiteral("connecting");
+    const int i = m_participants.indexOfKey(peer);
+    if (i < 0)
+        p.nick = p.jid; // until the occupants name them
+    else
+        p.video = m_participants.data(m_participants.index(i),
+                                      GroupCallParticipants::VideoRole).toBool();
+    m_participants.upsert(p);
 }
 
 void GroupCall::handleEvent(const QString &name, const QVariantMap &a) {
     qCDebug(lcGroupCall).noquote() << "event" << name << m_account << m_jid << a;
-    if (name == QLatin1String("Changed")) {
-        // A chat hears of more than one room: its own, where an in-room call
-        // would be, and the room of a call started from it. In a call, only
-        // that call's news counts; out of one, a room with a call on becomes
-        // the chat's call.
-        const QString room = a.value(QStringLiteral("jid")).toString();
-        if (!room.isEmpty() && room != m_callJid) {
-            if (inCall() && !m_callJid.isEmpty())
-                return;
-            if (!flag(a.value(QStringLiteral("active"))) && !m_callJid.isEmpty())
-                return;
-            setCallJid(room);
-        }
-        applyStatus(a);
-    } else if (name == QLatin1String("Started")) {
+    if (name == QLatin1String("Started")) {
         setCallJid(a.value(QStringLiteral("jid")).toString());
     } else if (name == QLatin1String("StartFailed")) {
         if (m_phase == kJoining) {
@@ -412,24 +523,9 @@ void GroupCall::handleEvent(const QString &name, const QVariantMap &a) {
         setCallJid(a.value(QStringLiteral("jid")).toString());
         m_startedAt = QDateTime::currentMSecsSinceEpoch();
         setPhase(kLive);
-    } else if (name == QLatin1String("PeerJoined")) {
-        GroupCallParticipants::Peer p;
-        p.nick = a.value(QStringLiteral("nick")).toString();
-        p.jid = bareJid(a.value(QStringLiteral("peer")).toString());
-        p.sid = a.value(QStringLiteral("sid")).toString();
-        p.state = QStringLiteral("connecting");
-        p.video = flag(a.value(QStringLiteral("video")));
-        m_participants.upsert(p);
-    } else if (name == QLatin1String("PeerLeft")) {
-        const int i = m_participants.indexOfNick(
-            a.value(QStringLiteral("nick")).toString());
-        const QString reason = a.value(QStringLiteral("reason")).toString();
-        if (reason == QLatin1String("left the call"))
-            m_participants.remove(i);
-        else if (i >= 0 && m_participants.data(m_participants.index(i),
-                                               GroupCallParticipants::StateRole)
-                                   .toString() != QLatin1String("failed"))
-            m_participants.setState(i, QStringLiteral("ended"), reason);
+    } else if (name == QLatin1String("Session")) {
+        bindSession(a.value(QStringLiteral("peer")).toString(),
+                    a.value(QStringLiteral("sid")).toString());
     } else if (name == QLatin1String("Left")) {
         if (inCall())
             setReason(a.value(QStringLiteral("reason")).toString());
@@ -478,41 +574,8 @@ bool GroupCall::handleLegEvent(const QString &name, const QVariantMap &a) {
     return true;
 }
 
-void GroupCall::applyStatus(const QVariantMap &s) {
-    const bool active = flag(s.value(QStringLiteral("active")));
-    const int count = s.value(QStringLiteral("count")).toInt();
-    const bool joined = flag(s.value(QStringLiteral("joined")));
-    if (active == m_active && count == m_count && joined == m_joined)
-        return;
-    m_active = active;
-    m_count = count;
-    m_joined = joined;
-    emit roomChanged();
-}
-
-void GroupCall::applyParticipants(const QVariantList &rows) {
-    for (const QVariant &v : rows) {
-        const QVariantMap r = v.toMap();
-        const QString state = r.value(QStringLiteral("state")).toString();
-        // `none` is the answer for everyone while we are not in the call, and
-        // for our own entry when we are.
-        if (state == QLatin1String("none"))
-            continue;
-        GroupCallParticipants::Peer p;
-        p.nick = r.value(QStringLiteral("nick")).toString();
-        p.jid = bareJid(r.value(QStringLiteral("jid")).toString());
-        p.sid = r.value(QStringLiteral("sid")).toString();
-        p.video = flag(r.value(QStringLiteral("video")));
-        if (state == QLatin1String("expected") || state == QLatin1String("active") ||
-            state == QLatin1String("ended") || state == QLatin1String("failed"))
-            p.state = state;
-        else
-            p.state = QStringLiteral("connecting"); // proceeded, new, connecting
-        m_participants.upsert(p);
-    }
-}
-
-void GroupCall::applyListed(bool video, const QVariantMap &preview) {
+void GroupCall::applyListed(bool video, const QVariantMap &preview,
+                            const QVariantMap &sessions) {
     if (!preview.isEmpty()) {
         m_callPreview = true;
         setPreview(preview);
@@ -532,9 +595,14 @@ void GroupCall::applyListed(bool video, const QVariantMap &preview) {
     m_startedAt = QDateTime::currentMSecsSinceEpoch();
     setReason({});
     setPhase(kLive);
-    const int t = request(QStringLiteral("participants"));
-    if (t >= 0)
-        m_pending.insert(t, Pending::Participants);
+    for (auto it = sessions.cbegin(); it != sessions.cend(); ++it)
+        bindSession(it.key(), it.value().toString());
+    // How far each session got is the calls module's to say.
+    if (!sessions.isEmpty() && m_backend) {
+        const int t = m_backend->request(QStringLiteral("calls"), QStringLiteral("list"),
+                                         QVariantMap{{QStringLiteral("acc"), m_account}});
+        m_pending.insert(t, Pending::CallsList);
+    }
 }
 
 void GroupCall::handleResult(int token, const QVariant &data) {
@@ -544,17 +612,31 @@ void GroupCall::handleResult(int token, const QVariant &data) {
     const Pending what = it.value();
     m_pending.erase(it);
     switch (what) {
-    case Pending::Status:
-        applyStatus(data.toMap());
+    case Pending::MyNick:
+        m_myNick = data.toString();
+        m_haveNick = true;
         break;
-    case Pending::Participants:
-        applyParticipants(data.toList());
+    case Pending::Occupants:
+        m_occupants = data.toList();
+        m_haveOccupants = true;
         break;
+    case Pending::CallsList: {
+        const QVariantList rows = data.toList();
+        for (const QVariant &v : rows) {
+            const QVariantMap r = v.toMap();
+            const int i = m_participants.indexOfSid(r.value(QStringLiteral("sid")).toString());
+            if (i >= 0 && r.value(QStringLiteral("state")).toString() == QLatin1String("active"))
+                m_participants.setState(i, QStringLiteral("active"));
+        }
+        return;
+    }
     case Pending::Join:
         // <Joined> is what moves the phase; the reply only says the request
         // was taken.
-        break;
+        return;
     }
+    if (m_haveNick && m_haveOccupants)
+        applyOccupants(m_occupants, m_myNick);
 }
 
 void GroupCall::handleError(int token, const QString &message) {

@@ -345,14 +345,6 @@ void ChatModel::setMatchColor(const QString &css) {
         emit dataChanged(index(row), index(row), {MarkupRole});
 }
 
-// Later fetches only; one already rendered stays the size it was.
-void ChatModel::setThumbMax(int px) {
-    if (px <= 0 || m_thumbMax == px)
-        return;
-    m_thumbMax = px;
-    emit thumbMaxChanged();
-}
-
 // Only one message wears the mark, so moving it repaints where it was as well
 // as where it goes - and a row off the window simply has nothing to repaint.
 void ChatModel::highlightMatches(qlonglong ts, const QVariantList &ranges) {
@@ -850,12 +842,13 @@ void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
     const QString url = a.value(QStringLiteral("url")).toString();
     if (url.isEmpty())
         return;
-    const QString thumb = a.value(QStringLiteral("thumbpath")).toString();
-    x.insert(QStringLiteral("localpath"), a.value(QStringLiteral("localpath")));
-    // Kept as a url, not the path it arrived as: the view needs one, and
-    // building it by hand loses to a '#' in a path.
+    const QString local = a.value(QStringLiteral("localpath")).toString();
+    x.insert(QStringLiteral("localpath"), local);
+    // tacky makes no thumbnails: the view scales the file itself. Kept as a
+    // url, not the path it arrived as: the view needs one, and building it by
+    // hand loses to a '#' in a path.
     x.insert(QStringLiteral("thumburl"),
-             thumb.isEmpty() ? QUrl() : QUrl::fromLocalFile(thumb));
+             local.isEmpty() ? QUrl() : QUrl::fromLocalFile(local));
     m_xfer.insert(url, x);
     redrawRowsUsing(url);
 }
@@ -881,8 +874,8 @@ void ChatModel::redrawRowsUsing(const QString &key) {
     }
 }
 
-// tacky downloads the image (or reads a local source in place), derives the
-// thumbnail and reports back through file <Update>. `auto` submits the fetch to
+// tacky downloads the image (or reads a local source in place) and reports
+// back through file <Update>. `auto` submits the fetch to
 // the autofetch policy and its size cap; our own sends are exempt, since from
 // history they refetch the public URL that replaced the local path on upload.
 void ChatModel::fetchThumbs(const QVariantMap &msg) {
@@ -897,14 +890,13 @@ void ChatModel::fetchThumbs(const QVariantMap &msg) {
         const QVariantMap src = downloadSource(a);
         if (src.isEmpty())
             continue;
-        // Fire-and-forget: progress and the thumbnail arrive as file <Update>.
+        // Fire-and-forget: progress and the file arrive as file <Update>.
         // Asked for unconditionally: the file module joins an in-flight
         // download of the same source and serves a finished one from disk, so
         // keeping our own record of what we have asked for would only be a
         // second, staler copy of that.
         QVariantMap args{{QStringLiteral("acc"), m_account},
                          {QStringLiteral("auto"), incoming ? 1 : 0},
-                         {QStringLiteral("thumbmax"), m_thumbMax},
                          {QStringLiteral("from"),
                           msg.value(QStringLiteral("from_jid"))}};
         args.insert(src);
@@ -934,8 +926,7 @@ void ChatModel::loadAttachment(qlonglong ts, int idx) {
     const QVariantMap src = downloadSource(a);
     if (src.isEmpty() || !m_backend || m_account.isEmpty())
         return;
-    QVariantMap args{{QStringLiteral("acc"), m_account},
-                     {QStringLiteral("thumbmax"), m_thumbMax}};
+    QVariantMap args{{QStringLiteral("acc"), m_account}};
     args.insert(src);
     m_backend->notify(QStringLiteral("file"), QStringLiteral("download"), args);
 }
@@ -974,8 +965,7 @@ void ChatModel::resolveAttachment(qlonglong ts, int idx,
     }
     // The file module answers with the local path, or "" if it could not get
     // one - a failure, not an error reply, so there is no error leg to handle.
-    QVariantMap args{{QStringLiteral("acc"), m_account},
-                     {QStringLiteral("thumbmax"), m_thumbMax}};
+    QVariantMap args{{QStringLiteral("acc"), m_account}};
     args.insert(src);
     const int tok = m_backend->request(QStringLiteral("file"),
                                        QStringLiteral("download"), args);

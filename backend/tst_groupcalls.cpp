@@ -1,6 +1,6 @@
 // A room's call from this side: the phase a window follows, the participants
-// and their legs, the re-seed after a reattach, and the wire shape of the
-// groupcall methods against a real libtacky.
+// read off the call room's occupants and their legs, the re-seed after a
+// reattach, and the wire shape of the reads against a real libtacky.
 #include <QtTest>
 #include <QSignalSpy>
 #include <QJsonArray>
@@ -24,6 +24,11 @@ static QString peerNick(GroupCallParticipants *p, int row) {
     return p->data(p->index(row), GroupCallParticipants::NickRole).toString();
 }
 
+// Occupants as `muc occupants` gives them: {nick, jid, call}.
+static QVariantList occupants(const QByteArray &json) {
+    return QJsonDocument::fromJson(json).array().toVariantList();
+}
+
 // The last request that went out for `module`/`method`, or an empty map.
 static QVariantMap lastSent(const QSignalSpy &sent, const QString &module,
                             const QString &method) {
@@ -37,15 +42,17 @@ static QVariantMap lastSent(const QSignalSpy &sent, const QString &module,
 class TestGroupCalls : public QObject {
     Q_OBJECT
 private slots:
-    void callForNormalisesTheRoomAndAsksItsStatus();
-    void changedDrivesTheRoomState();
+    void callForNormalisesTheRoomAndReadsItsOccupants();
+    void occupantsDriveTheRoomState();
+    void aRoomsMucEventsRereadItOnce();
     void joinThenJoinedThenLeft();
     void joinAnInRoomCallInProgress();
     void answerAndDeclineAStoredInvite();
-    void aChatsOwnRoomDoesNotTakeOverItsCall();
+    void inACallItsOwnRoomIsRead();
     void leaveEndsLocallyAndKeepsOurReason();
     void aRefusedJoinEndsWithTheMessage();
-    void peersJoinConnectAndLeave();
+    void occupantsAndSessionsMakeTheWall();
+    void aHiddenJidStillShows();
     void aLegEndingOnItsOwnKeepsTheTile();
     void legVideoLandsOnTheTileAndPreviewOnTheCall();
     void theCallsOwnPreviewOutlivesItsLegs();
@@ -53,16 +60,16 @@ private slots:
     void theListRestoresTheCallsPreview();
     void legEventsRouteBySidAndAccount();
     void callsModelLeavesLegsAlone();
-    void participantsSeedTheWall();
+    void theListSeedsTheSessions();
     void listOnConnectFindsUsInTheCall();
     void anInviteRingsWithItsStoredMessage();
     void dismissMakesRoomForANewJoin();
     // Against a real backend:
-    void statusRoundTripsThroughRealTacky();
+    void occupantsRoundTripThroughRealTacky();
     void startWithNoServiceEnds();
 };
 
-void TestGroupCalls::callForNormalisesTheRoomAndAsksItsStatus() {
+void TestGroupCalls::callForNormalisesTheRoomAndReadsItsOccupants() {
     TackyBackend backend;
     GroupCallsModel m;
     m.setBackend(&backend);
@@ -77,9 +84,11 @@ void TestGroupCalls::callForNormalisesTheRoomAndAsksItsStatus() {
     QCOMPARE(m.rowCount(), 1);
     QCOMPARE(m.data(m.index(0), GroupCallsModel::CallRole).value<QObject *>(), c);
 
-    const QVariantMap status = lastSent(sent, "groupcall", "status");
-    QCOMPARE(status.value("acc").toString(), QString("me@host"));
-    QCOMPARE(status.value("jid").toString(), QString("room@muc.host"));
+    const QVariantMap occ = lastSent(sent, "muc", "occupants");
+    QCOMPARE(occ.value("acc").toString(), QString("me@host"));
+    QCOMPARE(occ.value("jid").toString(), QString("room@muc.host"));
+    QCOMPARE(lastSent(sent, "muc", "myNick").value("jid").toString(),
+             QString("room@muc.host"));
 
     // One row per room however it is spelled.
     QCOMPARE(m.callFor("me@host", "room@muc.host"), c);
@@ -92,29 +101,73 @@ void TestGroupCalls::callForNormalisesTheRoomAndAsksItsStatus() {
     QVERIFY(!m.callFor("me@host", ""));
 }
 
-// <Changed> is room-level and needs no row to exist first: the banner of a
-// chat opened later finds the state waiting.
-void TestGroupCalls::changedDrivesTheRoomState() {
+// An occupant is in the call while its `call` is set, and counts once it has
+// announced. Out of a call none of them is a participant: they only make the
+// banner.
+void TestGroupCalls::occupantsDriveTheRoomState() {
     GroupCallsModel m;
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"room@muc.host","active":true,"count":2,"joined":false}])");
-    QCOMPARE(m.rowCount(), 1);
-    GroupCall *c = m.find("me@host", "room@muc.host");
-    QVERIFY(c);
+    GroupCall *c = m.callFor("me@host", "room@muc.host");
     QSignalSpy room(c, &GroupCall::roomChanged);
+    c->applyOccupants(occupants(R"([
+        {"nick":"me","jid":"me@host/a","call":{}},
+        {"nick":"bob","jid":"bob@host/x","call":{"state":"announced","audio":true,"video":false}},
+        {"nick":"cat","jid":"cat@host/x","call":{"state":"preparing","audio":true,"video":false}},
+        {"nick":"dan","jid":"dan@host/x","call":""}
+    ])"), "me");
     QVERIFY(c->active());
-    QCOMPARE(c->count(), 2);
+    QCOMPARE(c->count(), 1);
     QVERIFY(!c->joined());
     QCOMPARE(c->phase(), QString("idle"));
+    QCOMPARE(c->participants()->rowCount(), 0);
+    QCOMPARE(room.count(), 1);
 
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"room@muc.host","active":false,"count":0,"joined":false}])");
+    c->applyOccupants(occupants(R"([
+        {"nick":"me","jid":"me@host/a","call":{"state":"announced","audio":true,"video":false}},
+        {"nick":"bob","jid":"bob@host/x","call":{"state":"announced","audio":true,"video":false}}
+    ])"), "me");
+    QVERIFY(c->joined());
+    QCOMPARE(c->count(), 2);
+    QCOMPARE(room.count(), 2);
+
+    c->applyOccupants({}, "me");
     QVERIFY(!c->active());
-    QCOMPARE(room.count(), 1);
+    QCOMPARE(room.count(), 3);
     // The same again is not a change.
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"room@muc.host","active":false,"count":0,"joined":false}])");
-    QCOMPARE(room.count(), 1);
+    c->applyOccupants({}, "me");
+    QCOMPARE(room.count(), 3);
+}
+
+// Joining a room replays everyone's presence; that is one read, not one each.
+// Another room's news is not this one's.
+void TestGroupCalls::aRoomsMucEventsRereadItOnce() {
+    TackyBackend backend;
+    GroupCallsModel m;
+    m.setBackend(&backend);
+    m.callFor("me@host", "room@muc.host?join");
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+
+    for (const char *nick : {"bob", "cat", "dan"})
+        feed(m, QByteArray(R"(["event","muc","Presence",{"acc":"me@host","jid":"room@muc.host","nick":")") +
+                    nick + R"("}])");
+    feed(m, R"(["event","muc","Presence",{"acc":"me@host","jid":"other@muc.host","nick":"x"}])");
+    feed(m, R"(["event","muc","Presence",{"acc":"alt@host","jid":"room@muc.host","nick":"x"}])");
+    QCOMPARE(sent.count(), 0);
+    QCoreApplication::processEvents();
+    QCOMPARE(sent.count(), 2);
+    QCOMPARE(lastSent(sent, "muc", "occupants").value("jid").toString(),
+             QString("room@muc.host"));
+
+    // Tokens from 1: the first read was 1 and 2. The two answers land
+    // together, in either order.
+    backend.result(4, occupants(R"([
+        {"nick":"me","jid":"me@host/a","call":{"state":"announced"}},
+        {"nick":"bob","jid":"bob@host/x","call":{"state":"announced"}}
+    ])"));
+    GroupCall *c = m.find("me@host", "room@muc.host");
+    QVERIFY(!c->active());
+    backend.result(3, QString("me"));
+    QVERIFY(c->active());
+    QVERIFY(c->joined());
 }
 
 void TestGroupCalls::joinThenJoinedThenLeft() {
@@ -137,7 +190,7 @@ void TestGroupCalls::joinThenJoinedThenLeft() {
     QCOMPARE(start.value("video").toInt(), 1);
     // A second join while one is out changes nothing.
     c->join(false);
-    QCOMPARE(sent.count(), 2); // status + start
+    QCOMPARE(sent.count(), 3); // myNick + occupants + start
     QVERIFY(c->video());
 
     feed(m, R"(["event","groupcall","Started",
@@ -147,6 +200,11 @@ void TestGroupCalls::joinThenJoinedThenLeft() {
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"k3j9@muc.host"}])");
     QCOMPARE(c->phase(), QString("live"));
     QVERIFY(c->startedAt() > 0);
+    // From now on the call's room is the one read.
+    QCOMPARE(c->statusRoom(), QString("k3j9@muc.host"));
+    QCoreApplication::processEvents();
+    QCOMPARE(lastSent(sent, "muc", "occupants").value("jid").toString(),
+             QString("k3j9@muc.host"));
     c->setVideo(false);
     QCOMPARE(lastSent(sent, "groupcall", "setVideo").value("jid").toString(),
              QString("k3j9@muc.host"));
@@ -157,23 +215,30 @@ void TestGroupCalls::joinThenJoinedThenLeft() {
     QVERIFY(!c->inCall());
     QCOMPARE(c->reason(), QString("left the room"));
     QCOMPARE(phase.count(), 3);
+    // And back to the chat's own for the banner.
+    QCoreApplication::processEvents();
+    QCOMPARE(lastSent(sent, "muc", "occupants").value("jid").toString(),
+             QString("room@muc.host"));
 }
 
-// A call held in the group chat itself (Movim's): the chat's own room is the
-// call's, and join joins it rather than starting another.
+// A call held in the group chat itself (Movim's): its occupants say so, and
+// join joins it there rather than starting another.
 void TestGroupCalls::joinAnInRoomCallInProgress() {
     TackyBackend backend;
     GroupCallsModel m;
     m.setBackend(&backend);
     QSignalSpy sent(&backend, &TackyBackend::sent);
     GroupCall *c = m.callFor("me@host", "room@muc.host?join");
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"room@muc.host","chat":"room@muc.host",
-         "active":true,"count":2,"joined":false}])");
-    QCOMPARE(c->callJid(), QString("room@muc.host"));
+    c->applyOccupants(occupants(R"([
+        {"nick":"bob","jid":"bob@host/x","call":{"state":"announced"}}
+    ])"), "me");
     c->join(false);
     QCOMPARE(lastSent(sent, "groupcall", "join").value("jid").toString(),
              QString("room@muc.host"));
+    QVERIFY(lastSent(sent, "groupcall", "start").isEmpty());
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host","chat":"room@muc.host"}])");
+    QCOMPARE(c->callJid(), QString("room@muc.host"));
+    QCOMPARE(c->phase(), QString("live"));
 }
 
 // The card and the ring answer by the stored message: its chat and timestamp.
@@ -203,9 +268,9 @@ void TestGroupCalls::answerAndDeclineAStoredInvite() {
     QCOMPARE(no.value("timestamp").toLongLong(), 43);
 }
 
-// In a call started from a chat, news of the chat's own room - no in-room
-// call there - is not news of our call.
-void TestGroupCalls::aChatsOwnRoomDoesNotTakeOverItsCall() {
+// In a call started from a chat, news of the chat's own room is not news of
+// our call; the call room's is.
+void TestGroupCalls::inACallItsOwnRoomIsRead() {
     TackyBackend backend;
     GroupCallsModel m;
     m.setBackend(&backend);
@@ -213,15 +278,19 @@ void TestGroupCalls::aChatsOwnRoomDoesNotTakeOverItsCall() {
     c->join(false);
     feed(m, R"(["event","groupcall","Started",
         {"acc":"me@host","jid":"k3j9@muc.host","chat":"room@muc.host"}])");
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"k3j9@muc.host","chat":"room@muc.host",
-         "active":true,"count":2,"joined":true}])");
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"room@muc.host","chat":"room@muc.host",
-         "active":false,"count":0,"joined":false}])");
-    QCOMPARE(c->callJid(), QString("k3j9@muc.host"));
-    QVERIFY(c->active());
-    QCOMPARE(c->count(), 2);
+    // Live before the loop turns: a backend that is not running fails every
+    // request there, the start's included, and that would end a join.
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"k3j9@muc.host"}])");
+    QCoreApplication::processEvents();
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    feed(m, R"(["event","muc","Presence",{"acc":"me@host","jid":"room@muc.host","nick":"bob"}])");
+    QCoreApplication::processEvents();
+    QCOMPARE(sent.count(), 0);
+    feed(m, R"(["event","muc","Presence",{"acc":"me@host","jid":"k3j9@muc.host","nick":"x1"}])");
+    QCoreApplication::processEvents();
+    QCOMPARE(sent.count(), 2);
+    QCOMPARE(lastSent(sent, "muc", "occupants").value("jid").toString(),
+             QString("k3j9@muc.host"));
 }
 
 void TestGroupCalls::leaveEndsLocallyAndKeepsOurReason() {
@@ -231,9 +300,10 @@ void TestGroupCalls::leaveEndsLocallyAndKeepsOurReason() {
     GroupCall *c = m.callFor("me@host", "room@muc.host");
     c->join(false);
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","video":false}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"bob@host/x","sid":"tk-b","video":false}])");
     feed(m, R"(["event","calls","Active",{"acc":"me@host","sid":"tk-b"}])");
+    QCoreApplication::processEvents();
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     c->leave();
@@ -264,18 +334,20 @@ void TestGroupCalls::aRefusedJoinEndsWithTheMessage() {
     m.setBackend(&backend);
     GroupCall *c = m.callFor("me@host", "room@muc.host");
     c->join(false);
-    // Tokens from 1: status was 1, join is 2.
-    backend.error(2, "join: not in room room@muc.host");
+    // Tokens from 1: myNick and occupants were 1 and 2, the start is 3.
+    backend.error(3, "join: not in room room@muc.host");
     QCOMPARE(c->phase(), QString("ended"));
     QCOMPARE(c->reason(), QString("join: not in room room@muc.host"));
-    // The status reply failing says nothing about the join.
+    // A read failing says nothing about the join.
     c->dismiss();
     c->join(false);
-    backend.error(1, "whatever");
+    backend.error(2, "whatever");
     QCOMPARE(c->phase(), QString("joining"));
 }
 
-void TestGroupCalls::peersJoinConnectAndLeave() {
+// The tiles are the call room's occupants in the call, bar us; <Session> puts
+// a leg on one, and that leg's calls events drive it.
+void TestGroupCalls::occupantsAndSessionsMakeTheWall() {
     GroupCallsModel m;
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
     GroupCall *c = m.find("me@host", "room@muc.host");
@@ -283,35 +355,51 @@ void TestGroupCalls::peersJoinConnectAndLeave() {
     GroupCallParticipants *p = c->participants();
     QSignalSpy count(p, &GroupCallParticipants::countChanged);
 
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/laptop","sid":"tk-b","video":true}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"cat","peer":"cat@host/phone","sid":"tk-c","video":false}])");
+    const QByteArray both = R"([
+        {"nick":"me","jid":"me@host/a","call":{"state":"announced"}},
+        {"nick":"bob","jid":"bob@host/laptop","call":{"state":"announced","video":true}},
+        {"nick":"cat","jid":"cat@host/phone","call":{"state":"preparing","video":false}},
+        {"nick":"dan","jid":"dan@host/x","call":{}}
+    ])";
+    c->applyOccupants(occupants(both), "me");
     QCOMPARE(p->rowCount(), 2);
     QCOMPARE(count.count(), 2);
+    QCOMPARE(c->count(), 2);
     QCOMPARE(peerNick(p, 0), QString("bob"));
     QCOMPARE(p->data(p->index(0), GroupCallParticipants::JidRole).toString(),
              QString("bob@host"));
-    QCOMPARE(p->data(p->index(0), GroupCallParticipants::SidRole).toString(),
-             QString("tk-b"));
     QVERIFY(p->data(p->index(0), GroupCallParticipants::VideoRole).toBool());
     QVERIFY(!p->data(p->index(1), GroupCallParticipants::VideoRole).toBool());
+    QCOMPARE(peerState(p, 0), QString("expected"));
+
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"bob@host/laptop","sid":"tk-b","video":true}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"cat@host/phone","sid":"tk-c","video":false}])");
+    QCOMPARE(p->rowCount(), 2);
+    QCOMPARE(p->data(p->index(0), GroupCallParticipants::SidRole).toString(),
+             QString("tk-b"));
     QCOMPARE(peerState(p, 0), QString("connecting"));
 
     feed(m, R"(["event","calls","Active",{"acc":"me@host","sid":"tk-b"}])");
     QCOMPARE(peerState(p, 0), QString("active"));
     QCOMPARE(peerState(p, 1), QString("connecting"));
     QCOMPARE(p->activeCount(), 1);
+    // A re-read keeps what the legs said.
+    c->applyOccupants(occupants(both), "me");
+    QCOMPARE(peerState(p, 0), QString("active"));
 
     // Gone from the call: the tile goes with them.
-    feed(m, R"(["event","groupcall","PeerLeft",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/laptop","sid":"tk-b","reason":"left the call"}])");
+    c->applyOccupants(occupants(R"([
+        {"nick":"me","jid":"me@host/a","call":{"state":"announced"}},
+        {"nick":"cat","jid":"cat@host/phone","call":{"state":"announced"}}
+    ])"), "me");
     QCOMPARE(p->rowCount(), 1);
     QCOMPARE(peerNick(p, 0), QString("cat"));
 
-    // The same nick again is the same tile, with a new leg.
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"cat","peer":"cat@host/phone","sid":"tk-c2","video":false}])");
+    // A later session to the same peer is the same tile, with a new leg.
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"cat@host/phone","sid":"tk-c2","video":false}])");
     QCOMPARE(p->rowCount(), 1);
     QCOMPARE(p->data(p->index(0), GroupCallParticipants::SidRole).toString(),
              QString("tk-c2"));
@@ -321,16 +409,35 @@ void TestGroupCalls::peersJoinConnectAndLeave() {
     QCOMPARE(peerState(p, 0), QString("active"));
 }
 
-// A leg that fails or ends while its owner still announces the call leaves
-// the tile in place saying why: nothing redials, and the room still shows
-// them as in.
+// An in-room call in a room that hides JIDs: no leg can reach them, but they
+// are in the call and show as waiting.
+void TestGroupCalls::aHiddenJidStillShows() {
+    GroupCallsModel m;
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
+    GroupCall *c = m.find("me@host", "room@muc.host");
+    c->applyOccupants(occupants(R"([
+        {"nick":"dan","jid":"","call":{"state":"announced"}}
+    ])"), "me");
+    GroupCallParticipants *p = c->participants();
+    QCOMPARE(p->rowCount(), 1);
+    QCOMPARE(peerNick(p, 0), QString("dan"));
+    QCOMPARE(p->data(p->index(0), GroupCallParticipants::JidRole).toString(), QString());
+    QCOMPARE(peerState(p, 0), QString("expected"));
+}
+
+// A leg that fails or ends while its owner is still in the call leaves the
+// tile in place saying why: nothing redials, and the room still shows them.
 void TestGroupCalls::aLegEndingOnItsOwnKeepsTheTile() {
     GroupCallsModel m;
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
     GroupCall *c = m.find("me@host", "room@muc.host");
     GroupCallParticipants *p = c->participants();
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","video":false}])");
+    const QVariantList bob = occupants(R"([
+        {"nick":"bob","jid":"bob@host/x","call":{"state":"announced"}}
+    ])");
+    c->applyOccupants(bob, "me");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"bob@host/x","sid":"tk-b","video":false}])");
     feed(m, R"(["event","calls","Warning",
         {"acc":"me@host","sid":"tk-b","reason":"ice restarting"}])");
     QCOMPARE(p->data(p->index(0), GroupCallParticipants::WarningRole).toString(),
@@ -344,12 +451,12 @@ void TestGroupCalls::aLegEndingOnItsOwnKeepsTheTile() {
     QCOMPARE(peerState(p, 0), QString("failed"));
     QCOMPARE(p->data(p->index(0), GroupCallParticipants::ReasonRole).toString(),
              QString("ice failed"));
-    // The backend's <PeerLeft> for it carries the same reason and does not
-    // downgrade "failed" to "ended", nor drop the tile.
-    feed(m, R"(["event","groupcall","PeerLeft",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","reason":"ice failed"}])");
+    // A re-read of the room, where they still are, keeps the tile as it was.
+    c->applyOccupants(bob, "me");
     QCOMPARE(p->rowCount(), 1);
     QCOMPARE(peerState(p, 0), QString("failed"));
+    QCOMPARE(p->data(p->index(0), GroupCallParticipants::ReasonRole).toString(),
+             QString("ice failed"));
 
     // Room-level warnings are the call's, not a tile's.
     feed(m, R"(["event","groupcall","Warning",
@@ -363,10 +470,10 @@ void TestGroupCalls::legVideoLandsOnTheTileAndPreviewOnTheCall() {
     GroupCall *c = m.find("me@host", "room@muc.host");
     GroupCallParticipants *p = c->participants();
     QSignalSpy preview(c, &GroupCall::previewChanged);
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","video":true}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"cat","peer":"cat@host/x","sid":"tk-c","video":true}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"bob@host/x","sid":"tk-b","video":true}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"cat@host/x","sid":"tk-c","video":true}])");
 
     feed(m, R"(["event","calls","VideoTrack",
         {"acc":"me@host","sid":"tk-b","mid":"video","direction":"incoming","name":"in-b"}])");
@@ -408,16 +515,14 @@ void TestGroupCalls::theCallsOwnPreviewOutlivesItsLegs() {
     QVERIFY(c);
     QCOMPARE(c->preview().value("name").toString(), QString("pv-call"));
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"k3j9@muc.host","chat":"room@muc.host"}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"k3j9@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","video":true}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"k3j9@muc.host","nick":"cat","peer":"cat@host/x","sid":"tk-c","video":true}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"k3j9@muc.host","peer":"bob@host/x","sid":"tk-b","video":true}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"k3j9@muc.host","peer":"cat@host/x","sid":"tk-c","video":true}])");
     QSignalSpy preview(c, &GroupCall::previewChanged);
     feed(m, R"(["event","calls","VideoPreview",
         {"acc":"me@host","sid":"tk-b","direction":"preview","name":"pv-b"}])");
     feed(m, R"(["event","calls","Ended",{"acc":"me@host","sid":"tk-b"}])");
-    feed(m, R"(["event","groupcall","PeerLeft",
-        {"acc":"me@host","jid":"k3j9@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","reason":"left the call"}])");
     feed(m, R"(["event","calls","Failed",{"acc":"me@host","sid":"tk-c","reason":"ice failed"}])");
     QCOMPARE(c->preview().value("name").toString(), QString("pv-call"));
     QVERIFY(c->sendingVideo());
@@ -437,9 +542,8 @@ void TestGroupCalls::aLegPreviewGivesWayWhenItsLegEnds() {
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
     GroupCall *c = m.find("me@host", "room@muc.host");
     for (const char *nick : {"bob", "cat", "dan"})
-        feed(m, QByteArray(R"(["event","groupcall","PeerJoined",{"acc":"me@host","jid":"room@muc.host","nick":")") +
-                    nick + R"(","peer":")" + nick + R"(@host/x","sid":"tk-)" + nick +
-                    R"(","video":true}])");
+        feed(m, QByteArray(R"(["event","groupcall","Session",{"acc":"me@host","jid":"room@muc.host","peer":")") +
+                    nick + R"(@host/x","sid":"tk-)" + nick + R"(","video":true}])");
     for (const char *nick : {"bob", "cat", "dan"})
         feed(m, QByteArray(R"(["event","calls","VideoPreview",{"acc":"me@host","sid":"tk-)") +
                     nick + R"(","direction":"preview","name":"pv-)" + nick + R"("}])");
@@ -466,14 +570,14 @@ void TestGroupCalls::theListRestoresTheCallsPreview() {
     feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
     backend.result(1, QJsonDocument::fromJson(R"([
         {"jid":"k3j9@muc.host","chat":"room@muc.host","hosted":true,"count":1,
-         "video":true,"mode":"mesh","preview":{"name":"pv-call"}}
+         "video":true,"mode":"mesh","preview":{"name":"pv-call"},"sessions":{}}
     ])").array().toVariantList());
     GroupCall *c = m.find("me@host", "room@muc.host");
     QVERIFY(c);
     QCOMPARE(c->preview().value("name").toString(), QString("pv-call"));
     // A leg's own preview arriving later does not replace it.
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"k3j9@muc.host","chat":"room@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","video":true}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"k3j9@muc.host","chat":"room@muc.host","peer":"bob@host/x","sid":"tk-b","video":true}])");
     feed(m, R"(["event","calls","VideoPreview",
         {"acc":"me@host","sid":"tk-b","direction":"preview","name":"pv-b"}])");
     QCOMPARE(c->preview().value("name").toString(), QString("pv-call"));
@@ -485,10 +589,10 @@ void TestGroupCalls::legEventsRouteBySidAndAccount() {
     GroupCallsModel m;
     feed(m, R"(["event","groupcall","Joined",{"acc":"a@host","jid":"room@muc.host"}])");
     feed(m, R"(["event","groupcall","Joined",{"acc":"b@host","jid":"room@muc.host"}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"a@host","jid":"room@muc.host","nick":"bee","peer":"b@host/x","sid":"tk-s","video":false}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"b@host","jid":"room@muc.host","nick":"ay","peer":"a@host/x","sid":"tk-s","video":false}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"a@host","jid":"room@muc.host","peer":"b@host/x","sid":"tk-s","video":false}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"b@host","jid":"room@muc.host","peer":"a@host/x","sid":"tk-s","video":false}])");
     GroupCall *a = m.find("a@host", "room@muc.host");
     GroupCall *b = m.find("b@host", "room@muc.host");
     feed(m, R"(["event","calls","Active",{"acc":"a@host","sid":"tk-s"}])");
@@ -520,41 +624,54 @@ void TestGroupCalls::callsModelLeavesLegsAlone() {
              QString("tk-one"));
 }
 
-// `groupcall participants` answers with the legs' calls states, and with
-// `none` for everyone while we are out (and for ourselves while we are in).
-void TestGroupCalls::participantsSeedTheWall() {
+// A reattach: `groupcall list` names each session, and `calls list` how far
+// each got; the occupants then put names to them.
+void TestGroupCalls::theListSeedsTheSessions() {
+    TackyBackend backend;
     GroupCallsModel m;
-    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
+    m.setBackend(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
+    backend.result(1, QJsonDocument::fromJson(R"([
+        {"jid":"k3j9@muc.host","chat":"room@muc.host","hosted":true,"count":3,
+         "video":false,"mode":"mesh","preview":{},
+         "sessions":{"bob@host/x":"tk-b","cat@host/x":"tk-c"}}
+    ])").array().toVariantList());
     GroupCall *c = m.find("me@host", "room@muc.host");
-    c->applyParticipants(
-        QJsonDocument::fromJson(R"([
-            {"nick":"me","jid":"me@host/here","sid":"","state":"none","audio":true,"video":false,"preparing":false},
-            {"nick":"bob","jid":"bob@host/x","sid":"tk-b","state":"active","audio":true,"video":true,"preparing":false},
-            {"nick":"cat","jid":"cat@host/x","sid":"tk-c","state":"proceeded","audio":true,"video":false,"preparing":false},
-            {"nick":"dan","jid":"","sid":"","state":"expected","audio":true,"video":false,"preparing":false},
-            {"nick":"eve","jid":"eve@host/x","sid":"tk-e","state":"ended","audio":true,"video":false,"preparing":false}
-        ])").array().toVariantList());
+    QVERIFY(c);
     GroupCallParticipants *p = c->participants();
-    QCOMPARE(p->rowCount(), 4);
-    QCOMPARE(peerNick(p, 0), QString("bob"));
-    QCOMPARE(peerState(p, 0), QString("active"));
-    QCOMPARE(p->data(p->index(0), GroupCallParticipants::JidRole).toString(),
-             QString("bob@host"));
-    QVERIFY(p->data(p->index(0), GroupCallParticipants::VideoRole).toBool());
-    QCOMPARE(peerState(p, 1), QString("connecting"));
-    QCOMPARE(peerState(p, 2), QString("expected"));
-    QCOMPARE(p->data(p->index(2), GroupCallParticipants::JidRole).toString(),
-             QString());
-    QCOMPARE(peerState(p, 3), QString("ended"));
+    QCOMPARE(p->rowCount(), 2);
+    QCOMPARE(peerState(p, 0), QString("connecting"));
+
+    // Tokens from 1: list, the new row's read (2 and 3), then calls list.
+    QCOMPARE(sent.last().at(0).toString(), QString("calls"));
+    QCOMPARE(sent.last().at(1).toString(), QString("list"));
+    backend.result(4, QJsonDocument::fromJson(R"([
+        {"sid":"tk-b","peer":"bob@host","state":"active","group":"k3j9@muc.host"},
+        {"sid":"tk-c","peer":"cat@host","state":"connecting","group":"k3j9@muc.host"},
+        {"sid":"tk-one","peer":"eve@host","state":"active","group":""}
+    ])").array().toVariantList());
+    const int bob = p->indexOfKey("bob@host/x");
+    const int cat = p->indexOfKey("cat@host/x");
+    QCOMPARE(peerState(p, bob), QString("active"));
+    QCOMPARE(peerState(p, cat), QString("connecting"));
+
+    c->applyOccupants(occupants(R"([
+        {"nick":"me","jid":"me@host/a","call":{"state":"announced"}},
+        {"nick":"Bob","jid":"bob@host/x","call":{"state":"announced"}},
+        {"nick":"Cat","jid":"cat@host/x","call":{"state":"announced"}}
+    ])"), "me");
+    QCOMPARE(p->rowCount(), 2);
+    QCOMPARE(peerNick(p, bob), QString("Bob"));
+    QCOMPARE(peerState(p, bob), QString("active"));
 
     // Then the leg's events pick up where the snapshot left off.
     feed(m, R"(["event","calls","Active",{"acc":"me@host","sid":"tk-c"}])");
-    QCOMPARE(peerState(p, 1), QString("active"));
+    QCOMPARE(peerState(p, cat), QString("active"));
 }
 
 // A UI that reattached to a backend still in a call: `groupcall list` on the
-// account's connected edge names the room, which puts the phase at live and
-// asks for the wall.
+// account's connected edge names the room, which puts the phase at live.
 void TestGroupCalls::listOnConnectFindsUsInTheCall() {
     TackyBackend backend;
     GroupCallsModel m;
@@ -567,16 +684,17 @@ void TestGroupCalls::listOnConnectFindsUsInTheCall() {
     QCOMPARE(sent.count(), 1);
 
     backend.result(1, QJsonDocument::fromJson(R"([
-        {"jid":"room@muc.host","count":3,"video":true,"mode":"mesh"}
+        {"jid":"room@muc.host","count":3,"video":true,"mode":"mesh","sessions":{}}
     ])").array().toVariantList());
     GroupCall *c = m.find("me@host", "room@muc.host");
     QVERIFY(c);
     QCOMPARE(c->phase(), QString("live"));
     QVERIFY(c->video());
     QVERIFY(c->startedAt() > 0);
-    QVERIFY(lastSent(sent, "groupcall", "participants").value("jid").toString() ==
-            "room@muc.host");
-    // list, then the new row's status, then its participants.
+    QCoreApplication::processEvents();
+    QCOMPARE(lastSent(sent, "muc", "occupants").value("jid").toString(),
+             QString("room@muc.host"));
+    // list, then the new row's read of the room.
     QCOMPARE(sent.count(), 3);
 
     // Every other state of the connection asks nothing.
@@ -586,13 +704,14 @@ void TestGroupCalls::listOnConnectFindsUsInTheCall() {
     QCOMPARE(sent.count(), 3);
 
     // Already live: a later list is not a second join, and the reconnect
-    // re-asks the room's status and wall as well.
+    // re-reads the room as well.
     QSignalSpy phase(c, &GroupCall::phaseChanged);
     feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
     QCOMPARE(sent.count(), 6);
     backend.result(4, QJsonDocument::fromJson(R"([
-        {"jid":"room@muc.host","count":3,"video":true,"mode":"mesh"}
+        {"jid":"room@muc.host","count":3,"video":true,"mode":"mesh","sessions":{}}
     ])").array().toVariantList());
+    QCoreApplication::processEvents();
     QCOMPARE(phase.count(), 0);
     QCOMPARE(sent.count(), 6);
 }
@@ -633,8 +752,8 @@ void TestGroupCalls::dismissMakesRoomForANewJoin() {
     GroupCall *c = m.callFor("me@host", "room@muc.host");
     c->join(false);
     feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
-    feed(m, R"(["event","groupcall","PeerJoined",
-        {"acc":"me@host","jid":"room@muc.host","nick":"bob","peer":"bob@host/x","sid":"tk-b","video":false}])");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"bob@host/x","sid":"tk-b","video":false}])");
     feed(m, R"(["event","groupcall","Left",
         {"acc":"me@host","jid":"room@muc.host","reason":"disconnected"}])");
     QCOMPARE(c->phase(), QString("ended"));
@@ -644,8 +763,9 @@ void TestGroupCalls::dismissMakesRoomForANewJoin() {
     QCOMPARE(c->reason(), QString());
     QCOMPARE(c->participants()->rowCount(), 0);
     // The room's own state is untouched by ours.
-    feed(m, R"(["event","groupcall","Changed",
-        {"acc":"me@host","jid":"room@muc.host","active":true,"count":1,"joined":false}])");
+    c->applyOccupants(occupants(R"([
+        {"nick":"bob","jid":"bob@host/x","call":{"state":"announced"}}
+    ])"), "me");
     QVERIFY(c->active());
     QCOMPARE(c->phase(), QString("idle"));
 
@@ -655,9 +775,8 @@ void TestGroupCalls::dismissMakesRoomForANewJoin() {
     QCOMPARE(c->phase(), QString("joining"));
 }
 
-// `groupcall status` answers for any room, joined or not, and the wire shape
-// of the jsonified reply is the thing to check: `active`/`joined` as bools.
-void TestGroupCalls::statusRoundTripsThroughRealTacky() {
+// The reads the banner is made of answer for any room, joined or not.
+void TestGroupCalls::occupantsRoundTripThroughRealTacky() {
     TackyBackend backend;
     QVERIFY(backend.start());
     backend.notify("account", "add",
@@ -672,11 +791,9 @@ void TestGroupCalls::statusRoundTripsThroughRealTacky() {
     QSignalSpy errors(&backend, &TackyBackend::error);
     GroupCall *c = m.callFor("me@example.com", "room@muc.example.com?join");
     QVERIFY(c);
-    QTRY_VERIFY_WITH_TIMEOUT(results.count() + errors.count() >= 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(results.count() + errors.count() >= 2, 5000);
     QVERIFY2(errors.isEmpty(),
              qPrintable(errors.isEmpty() ? "" : errors.first().at(1).toString()));
-    const QVariantMap status = results.first().at(1).toMap();
-    QCOMPARE(status.value("active").typeId(), QMetaType::Bool);
     QVERIFY(!c->active());
     QCOMPARE(c->count(), 0);
     QVERIFY(!c->joined());
@@ -685,6 +802,7 @@ void TestGroupCalls::statusRoundTripsThroughRealTacky() {
     results.clear();
     m.refreshFor("me@example.com");
     QTRY_VERIFY_WITH_TIMEOUT(results.count() >= 1, 5000);
+    QVERIFY(errors.isEmpty());
 
     backend.stop();
 }

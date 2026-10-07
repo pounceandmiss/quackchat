@@ -110,6 +110,15 @@ void GroupCallsModel::handleEvent(const QString &module, const QString &name,
                 return;
         return;
     }
+    if (module == QLatin1String("muc")) {
+        // A call's participants and a chat's banner are both read off a
+        // room's occupants, so whichever call reads this room reads it again.
+        const QString room = roomJid(a.value(QStringLiteral("jid")).toString());
+        for (GroupCall *c : std::as_const(m_calls))
+            if (c->account() == acc && c->statusRoom() == room)
+                c->handleRoomEvent(name, a);
+        return;
+    }
     if (module != QLatin1String("groupcall"))
         return;
 
@@ -146,7 +155,8 @@ void GroupCallsModel::handleResult(int token, const QVariant &data) {
             if (GroupCall *c = callFor(acc, chat.isEmpty() ? room : chat)) {
                 c->setCallJid(room);
                 c->applyListed(r.value(QStringLiteral("video")).toBool(),
-                               r.value(QStringLiteral("preview")).toMap());
+                               r.value(QStringLiteral("preview")).toMap(),
+                               r.value(QStringLiteral("sessions")).toMap());
             }
         }
         return;

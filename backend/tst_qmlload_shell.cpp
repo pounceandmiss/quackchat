@@ -482,15 +482,15 @@ private slots:
         gc->handleEvent("groupcall", "Joined",
                         QVariantMap{{"acc", "me@example.com"},
                                     {"jid", "room@muc.example.com"}});
-        gc->handleEvent("groupcall", "PeerJoined",
+        gc->handleEvent("groupcall", "Session",
                         QVariantMap{{"acc", "me@example.com"},
                                     {"jid", "room@muc.example.com"},
-                                    {"nick", "bob"}, {"peer", "bob@example.com/x"},
+                                    {"peer", "bob@example.com/x"},
                                     {"sid", "tk-b"}, {"video", false}});
-        gc->handleEvent("groupcall", "PeerJoined",
+        gc->handleEvent("groupcall", "Session",
                         QVariantMap{{"acc", "me@example.com"},
                                     {"jid", "room@muc.example.com"},
-                                    {"nick", "cat"}, {"peer", "cat@example.com/x"},
+                                    {"peer", "cat@example.com/x"},
                                     {"sid", "tk-c"}, {"video", false}});
         gc->handleEvent("calls", "Active",
                         QVariantMap{{"acc", "me@example.com"}, {"sid", "tk-b"}});
