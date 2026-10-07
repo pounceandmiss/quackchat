@@ -22,7 +22,8 @@ ColumnLayout {
 
     signal openRequested()
     signal loadRequested()
-    signal menuRequested()
+    // At `x`,`y` in this item, where the press was.
+    signal menuRequested(real x, real y)
 
     // What is on disk is what these read, so the neutral ends - never fetched,
     // and the `idle` tacky reports for one it held back, capped or cancelled -
@@ -85,19 +86,14 @@ ColumnLayout {
     Layout.bottomMargin: 3
 
     // The attachment's own menu, not the message's: a press on a picture is
-    // asking about the picture.
-    TapHandler {
-        acceptedButtons: Qt.RightButton
-        onTapped: att.menuRequested()
-    }
-    // ReleaseWithinBounds to grab ahead of the row's own press, which would
-    // otherwise select the message and open its menu over this one. Off while
-    // selecting, where the row owns the press for the text.
-    TapHandler {
+    // asking about the picture. ReleaseWithinBounds to grab ahead of the row's
+    // own press, which would otherwise select the message and open its menu
+    // over this one. Off while selecting, where the row owns the press for the
+    // text.
+    ContextMenuArea {
         enabled: !att.selectionMode
-        acceptedButtons: Qt.LeftButton
         gesturePolicy: TapHandler.ReleaseWithinBounds
-        onLongPressed: att.menuRequested()
+        onRequested: (x, y) => att.menuRequested(x, y)
     }
 
     Image {

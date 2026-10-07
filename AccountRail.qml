@@ -133,7 +133,7 @@ Rectangle {
                     iconPath: Icons.moreHoriz
                     Accessible.name: qsTr("Account actions")
                     glyphColor: Theme.textDim
-                    onClicked: ctx.popup(moreBtn, 0, moreBtn.height)
+                    onClicked: ctx.popupUnder(moreBtn)
                 }
 
                 ColumnLayout {
@@ -167,17 +167,7 @@ Rectangle {
                     acceptedButtons: Qt.LeftButton
                     onTapped: rail.selectAccount(cell.jid)
                 }
-                // A touch point carries no button for acceptedButtons to
-                // filter; touch has the long press below.
-                TapHandler {
-                    acceptedDevices: PointerDevice.Mouse
-                    acceptedButtons: Qt.RightButton
-                    onTapped: ctx.popup()
-                }
-                TapHandler {
-                    acceptedButtons: Qt.LeftButton
-                    onLongPressed: ctx.popup()
-                }
+                ContextMenuArea { menu: ctx }
 
                 AppMenu {
                     id: ctx

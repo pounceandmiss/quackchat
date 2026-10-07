@@ -9,7 +9,7 @@ import Quack
 //
 // One instance per list rather than one per delegate: the menu is a windowful
 // of scenery for a row that is nearly always just clicked, and the list can run
-// long. openFor() loads it from the row's entry before it pops up.
+// long. load() fills it from the row's entry before it pops up.
 AppMenu {
     id: menu
     objectName: "chatRowMenu"
@@ -44,7 +44,7 @@ AppMenu {
 
     // `entry` is the row's chatlist entry, verbatim. Every field is optional: a
     // free chat carries no bookmark fields and a 1:1 chat no room state.
-    function openFor(entry) {
+    function load(entry) {
         menu.jid = entry.jid ?? ""
         // The row's own title rule: an unnamed chat goes by its JID.
         menu.chatTitle = entry.name ? entry.name : menu.jid
@@ -53,7 +53,6 @@ AppMenu {
         menu.autojoin = entry.autojoin === true
         menu.roomState = entry.room_state ?? ""
         menu.roomReason = entry.room_reason ?? ""
-        menu.popup()
     }
 
     // What the Tk bookmark menu says under the JID. States the user can do

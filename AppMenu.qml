@@ -28,4 +28,11 @@ Menu {
         radius: 10
         border.color: Theme.hairline
     }
+
+    // Dropped from the button that opens it, lined up with its left edge, or
+    // with its right one for a button at the right of the screen. A menu
+    // opened by a press rather than a button is ContextMenuArea's.
+    function popupUnder(item, alignRight) {
+        popup(item, alignRight ? item.width - width : 0, item.height + 2)
+    }
 }

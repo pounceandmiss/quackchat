@@ -2010,17 +2010,7 @@ Page {
                         acceptedButtons: Qt.LeftButton
                         onTapped: page.omemo.enabled = !page.omemo.enabled
                     }
-                    // A touch point carries no button for acceptedButtons to
-                    // filter; touch has the long press below.
-                    TapHandler {
-                        acceptedDevices: PointerDevice.Mouse
-                        acceptedButtons: Qt.RightButton
-                        onTapped: lockMenu.popup()
-                    }
-                    TapHandler {
-                        acceptedButtons: Qt.LeftButton
-                        onLongPressed: lockMenu.popup()
-                    }
+                    ContextMenuArea { menu: lockMenu }
 
                     // The keys live behind the control that says whether they
                     // are being used - the same pairing the chat menu has. They

@@ -468,6 +468,22 @@ private slots:
         QVERIFY2(!menu->property("opened").toBool(),
                  "a tap on a row brought up its menu");
 
+        // Held, it is the menu, under the finger, and the chat stays shut.
+        const QPoint held =
+            row->mapToScene(QPointF(row->width() / 4, row->height() / 2)).toPoint();
+        QTest::touchEvent(&win, finger).press(0, held);
+        QTRY_VERIFY(menu->property("opened").toBool());
+        QTest::touchEvent(&win, finger).release(0, held);
+        QTest::qWait(100);
+        QCOMPARE(opened.count(), 1);
+        auto *popupItem = menu->property("contentItem").value<QQuickItem *>();
+        QVERIFY(popupItem);
+        const QPointF corner = popupItem->mapToScene(QPointF(0, 0));
+        QVERIFY2(QLineF(corner, held).length() < 40,
+                 qPrintable(QString("menu at %1,%2 for a press at %3,%4")
+                                .arg(corner.x()).arg(corner.y())
+                                .arg(held.x()).arg(held.y())));
+
         e.assertNoErrors();
     }
 
@@ -522,7 +538,8 @@ private slots:
         };
         auto openFor = [&](const QString &jid) {
             QVERIFY(QMetaObject::invokeMethod(
-                menu, "openFor", Q_ARG(QVariant, QVariant(chats->entryFor(jid)))));
+                menu, "load", Q_ARG(QVariant, QVariant(chats->entryFor(jid)))));
+            QVERIFY(QMetaObject::invokeMethod(menu, "popup"));
         };
 
         openFor("amy@example.com");
@@ -672,7 +689,7 @@ private slots:
         };
 
         QVERIFY(QMetaObject::invokeMethod(
-            menu, "openFor",
+            menu, "load",
             Q_ARG(QVariant, QVariant(chats->entryFor("room@muc.example.com?join")))));
         QVERIFY(QMetaObject::invokeMethod(menu->findChild<QObject *>("joinEntry"),
                                           "triggered"));
@@ -682,7 +699,7 @@ private slots:
         // question; nothing goes out until it is answered.
         const int before = sent.count();
         QVERIFY(QMetaObject::invokeMethod(
-            menu, "openFor",
+            menu, "load",
             Q_ARG(QVariant, QVariant(chats->entryFor("amy@example.com")))));
         QVERIFY(QMetaObject::invokeMethod(menu->findChild<QObject *>("removeEntry"),
                                           "triggered"));

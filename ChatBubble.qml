@@ -413,7 +413,7 @@ Item {
     }
 
     // The Tk client's attachment menu. One per bubble rather than one per
-    // attachment: openFor() loads it from whichever was clicked.
+    // attachment: load() fills it from whichever was clicked.
     AppMenu {
         id: attMenu
         objectName: "attachmentMenu"
@@ -423,10 +423,9 @@ Item {
         // Everything but Cancel acts on a finished file.
         property bool busy: false
 
-        function openFor(index, att) {
+        function load(index, att) {
             attMenu.idx = index
             attMenu.busy = att.state === "active"
-            attMenu.popup()
         }
 
         MenuEntry {
@@ -730,7 +729,10 @@ Item {
                         selectionMode: root.selectionMode
                         onOpenRequested: root.attachmentOpenRequested(att.index)
                         onLoadRequested: root.attachmentLoadRequested(att.index)
-                        onMenuRequested: attMenu.openFor(att.index, att.modelData)
+                        onMenuRequested: (x, y) => {
+                            attMenu.load(att.index, att.modelData)
+                            attMenu.popup(att, x, y)
+                        }
                     }
                 }
 

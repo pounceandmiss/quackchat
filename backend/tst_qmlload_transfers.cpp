@@ -270,14 +270,14 @@ private slots:
         };
 
         QVariantMap busy = attachment("file", "doc.pdf", "", "active");
-        QVERIFY(QMetaObject::invokeMethod(menu, "openFor", Q_ARG(QVariant, 0),
+        QVERIFY(QMetaObject::invokeMethod(menu, "load", Q_ARG(QVariant, 0),
                                           Q_ARG(QVariant, QVariant(busy))));
         QVERIFY(offered("attachmentCancelEntry"));
         QVERIFY(!offered("attachmentSaveEntry"));
         QVERIFY(!offered("attachmentUncacheEntry"));
 
         QVERIFY(QMetaObject::invokeMethod(
-            menu, "openFor", Q_ARG(QVariant, 0),
+            menu, "load", Q_ARG(QVariant, 0),
             Q_ARG(QVariant, QVariant(attachment("file", "doc.pdf", "", "done")))));
         QVERIFY(!offered("attachmentCancelEntry"));
         QVERIFY(offered("attachmentSaveEntry"));
@@ -558,7 +558,7 @@ private slots:
                  QString("2.0 KB"));
 
         QSignalSpy opened(item.data(), SIGNAL(openRequested()));
-        QSignalSpy menued(item.data(), SIGNAL(menuRequested()));
+        QSignalSpy menued(item.data(), SIGNAL(menuRequested(double, double)));
         const QPoint p = win.contentItem()
                              ->mapFromItem(chip, QPointF(chip->width() / 2,
                                                          chip->height() / 2))

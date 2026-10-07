@@ -100,7 +100,7 @@ RowLayout {
         id: pickButton
         iconPath: Icons.arrowDropDown
         Accessible.name: qsTr("Choose %1").arg(row.label)
-        onClicked: deviceMenu.popup(pickButton, 0, pickButton.height)
+        onClicked: deviceMenu.popupUnder(pickButton)
     }
 
     // The stock Menu follows the system palette, which is how the drop-down

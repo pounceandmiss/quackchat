@@ -267,6 +267,7 @@ qt_add_qml_module(quack
         ConversationsPage.qml
         ChatRowMenu.qml
         AppMenu.qml
+        ContextMenuArea.qml
         MenuEntry.qml
         NewChatSheet.qml
         Jid.qml

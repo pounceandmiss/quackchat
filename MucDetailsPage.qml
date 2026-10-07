@@ -237,12 +237,13 @@ Page {
                 onClicked: page.openFilter()
             }
             IconButton {
+                id: roomMenuButton
                 objectName: "roomMenuButton"
                 iconPath: Icons.moreHoriz
                 iconSize: 20
                 Accessible.name: qsTr("Room actions")
                 glyphColor: Theme.textDim
-                onClicked: roomMenu.popup()
+                onClicked: roomMenu.popupUnder(roomMenuButton)
             }
         }
 
@@ -404,11 +405,10 @@ Page {
         property string realJid: ""
         property var caps: ({})
 
-        function openFor(row) {
+        function load(row) {
             occupantMenu.nick = row.nick
             occupantMenu.realJid = row.realJid
             occupantMenu.caps = row.caps
-            occupantMenu.popup()
         }
         function can(what) { return occupantMenu.caps[what] === true }
 
@@ -704,7 +704,10 @@ Page {
 
             width: ListView.view.width
             height: 58
-            onClicked: if (occupantRow.canModerate) occupantMenu.openFor(occupantRow)
+            onClicked: if (occupantRow.canModerate) {
+                occupantMenu.load(occupantRow)
+                occupantMenu.popup(occupantRow, occupantRow.pressX, occupantRow.pressY)
+            }
 
             // Nothing to offer means nothing to press. The row is still a row -
             // it just does not pretend to be a button.
@@ -801,6 +804,7 @@ Page {
                 }
 
                 IconButton {
+                    id: occupantMenuButton
                     objectName: "occupantMenuButton"
                     Layout.rightMargin: 8
                     iconPath: Icons.moreHoriz
@@ -808,7 +812,10 @@ Page {
                     Accessible.name: qsTr("Actions for this person")
                     glyphColor: Theme.textDim
                     visible: occupantRow.canModerate
-                    onClicked: occupantMenu.openFor(occupantRow)
+                    onClicked: {
+                        occupantMenu.load(occupantRow)
+                        occupantMenu.popupUnder(occupantMenuButton)
+                    }
                 }
             }
         }

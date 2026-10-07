@@ -146,9 +146,7 @@ Page {
                     iconPath: Icons.moreHoriz
                     Accessible.name: qsTr("More")
                     glyphColor: Theme.textDim
-                    onClicked: overflow.popup(overflowBtn,
-                                              overflowBtn.width - overflow.width,
-                                              overflowBtn.height + 2)
+                    onClicked: overflow.popupUnder(overflowBtn, true)
                 }
             }
 
@@ -308,17 +306,12 @@ Page {
             readonly property bool current: row.jid === page.currentJid
 
             // Right-click used to pop the chat out; that is one entry in this
-            // menu now, where the rest of the row's verbs are. A touch point
-            // carries no button for acceptedButtons to filter; touch has the
-            // long press below.
-            TapHandler {
-                acceptedDevices: PointerDevice.Mouse
-                acceptedButtons: Qt.RightButton
-                onTapped: rowMenu.openFor(row.raw)
-            }
-            TapHandler {
-                acceptedButtons: Qt.LeftButton
-                onLongPressed: rowMenu.openFor(row.raw)
+            // menu now, where the rest of the row's verbs are.
+            ContextMenuArea {
+                onRequested: (x, y) => {
+                    rowMenu.load(row.raw)
+                    rowMenu.popup(row, x, y)
+                }
             }
 
             readonly property string title: name !== "" ? name : jid
