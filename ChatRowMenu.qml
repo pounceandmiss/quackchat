@@ -127,13 +127,12 @@ AppMenu {
         onTriggered: menu.startCall()
     }
 
-    // The Tk list's "Join" tick: membership, not attendance. Ticking joins the
-    // room and remembers it; unticking leaves and forgets it.
+    // Membership, not attendance: joining remembers the room (autojoin), and
+    // leaving forgets it. Named for what it does rather than the Tk list's
+    // tick, which is too faint to read on a phone.
     MenuEntry {
         objectName: "joinEntry"
-        //: Bookmark membership, ticked when the room is joined automatically
-        text: qsTr("Join")
-        trailing: menu.autojoin ? "✓" : ""
+        text: menu.autojoin ? qsTr("Leave room") : qsTr("Join room")
         offered: menu.groupchat
         onTriggered: menu.autojoin ? menu.leaveRoom() : menu.joinRoom()
     }

@@ -558,9 +558,15 @@ private slots:
         QVERIFY(!shown("startCallEntry"));
         QVERIFY(shown("joinEntry"));
         QVERIFY(shown("forceJoinEntry"));
-        // A room we are not a member of: the tick is the membership, and the
-        // reason a join failed is the only actionable thing about the state.
-        QCOMPARE(entry("joinEntry")->property("trailing").toString(), QString());
+        // A room we are not a member of offers the join, and the reason a
+        // join failed is the only actionable thing about the state.
+        QCOMPARE(entry("joinEntry")->property("text").toString(), QString("Join room"));
+        // One we are in offers to leave it.
+        QVariantMap joined = chats->entryFor("room@muc.example.com?join");
+        joined.insert("autojoin", true);
+        QVERIFY(QMetaObject::invokeMethod(menu, "load", Q_ARG(QVariant, QVariant(joined))));
+        QCOMPARE(entry("joinEntry")->property("text").toString(), QString("Leave room"));
+        openFor("room@muc.example.com?join");
         QVERIFY(shown("roomStatusLine"));
         QCOMPARE(entry("roomStatusLine")->property("text").toString(),
                  QString("Join failed: forbidden"));
