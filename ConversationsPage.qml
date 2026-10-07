@@ -264,6 +264,9 @@ Page {
     // Compact rows are one line each, with no preview under the name;
     // "columns" puts two of them side by side.
     readonly property bool compactRows: App.settings.chatListStyle !== "full"
+    // Compact rows on a phone: the desktop sizes read small there, and the
+    // two-column gutter large.
+    readonly property bool touchCompact: page.compactRows && Theme.mobile
 
     // A grid rather than a list so compact rows can go two to a line.
     GridView {
@@ -273,7 +276,7 @@ Page {
         model: visibleChats
         clip: true
         cellWidth: App.settings.chatListStyle === "columns" ? Math.floor(width / 2) : width
-        cellHeight: page.compactRows ? 36 : 64
+        cellHeight: page.touchCompact ? 44 : page.compactRows ? 36 : 64
 
         ScrollBar.vertical: ThinScrollBar {}
 
@@ -357,20 +360,23 @@ Page {
                 }
             }
 
-            // Tighter in compact rows, which can be half the window wide.
+            // Tighter in compact rows, which can be half the window wide. On a
+            // phone the delegate's own padding goes too, so the gutter is all
+            // `edge`.
             readonly property int edge: page.compactRows ? 8 : 14
+            horizontalPadding: page.touchCompact ? 0 : 6
 
             contentItem: RowLayout {
                 spacing: page.compactRows ? 8 : 12
 
                 Avatar {
                     Layout.leftMargin: row.edge
-                    Layout.preferredWidth: page.compactRows ? 20 : 44
-                    Layout.preferredHeight: page.compactRows ? 20 : 44
+                    Layout.preferredWidth: page.touchCompact ? 26 : page.compactRows ? 20 : 44
+                    Layout.preferredHeight: page.touchCompact ? 26 : page.compactRows ? 20 : 44
                     account: page.account
                     jid: row.jid
                     label: row.title
-                    initialsPixelSize: page.compactRows ? 10 : 16
+                    initialsPixelSize: page.touchCompact ? 12 : page.compactRows ? 10 : 16
                 }
 
                 ColumnLayout {
@@ -383,7 +389,7 @@ Page {
                         // Compact rows have no subtitle to say "Invitation",
                         // so the name takes its colour instead.
                         color: page.compactRows && row.invited ? Theme.accent : row.titleColor
-                        font.pixelSize: page.compactRows ? 14 : 16
+                        font.pixelSize: page.touchCompact ? 16 : page.compactRows ? 14 : 16
                         font.bold: !page.compactRows
                         // A room mid-join, so the row reads as transient rather
                         // than as one more dimmed idle room.
