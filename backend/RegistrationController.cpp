@@ -93,7 +93,7 @@ void RegistrationController::connectSession() {
         return;
     m_formToken = 0;
     m_mediaPending.clear();
-    QVariantMap args{{kToken, m_token}, {QStringLiteral("host"), m_host}};
+    QVariantMap args{{kToken, m_token}, {QStringLiteral("domain"), m_host}};
     if (m_port > 0)
         args.insert(QStringLiteral("port"), m_port);
     // Fire-and-forget: the outcome is a <Form> or an <Error>, never a reply.

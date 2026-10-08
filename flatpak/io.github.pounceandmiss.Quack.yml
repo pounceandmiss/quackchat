@@ -62,7 +62,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: b47c64853daa7dd3b3ac8f3d2176b466ee939233
+        commit: da5a6fd1b4c925f22ba07edc66e6e2b11cdf8fc5
 
       # The webrtc media backend, built outside this manifest: it wants
       # Chromium's clang and a prebuilt libwebrtc, neither of which belongs in
@@ -133,12 +133,12 @@ modules:
         dest: build/deps/git/libdatachannel-c47f5d77c124c35c31ac8378ad613295a124d354
       - type: git
         url: https://github.com/pounceandmiss/rtc-ma.git
-        commit: f3033710afcbbfb59723d854dd3ed34758c6e430
-        dest: build/deps/git/rtc-ma-f3033710afcbbfb59723d854dd3ed34758c6e430
+        commit: 460ba431bb1220344b0f2fdd42c2a6d962b60527
+        dest: build/deps/git/rtc-ma-460ba431bb1220344b0f2fdd42c2a6d962b60527
       - type: git
-        url: https://codeberg.org/another-im/rtc-mv.git
-        commit: c4f014a4345feb4a0e8c3508d81b39537dbd7f45
-        dest: build/deps/git/rtc-mv-c4f014a4345feb4a0e8c3508d81b39537dbd7f45
+        url: https://codeberg.org/pounceandmiss/rtc-mv.git
+        commit: 5a9edf83576d159120e8031b02bfe2dafef3021a
+        dest: build/deps/git/rtc-mv-5a9edf83576d159120e8031b02bfe2dafef3021a
       - type: git
         url: https://github.com/pounceandmiss/picomemo-tcl.git
         commit: 0b26ce3f64d042ff94b58ea1aea9baa145852403

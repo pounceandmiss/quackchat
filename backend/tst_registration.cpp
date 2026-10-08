@@ -180,7 +180,7 @@ void TestRegistration::theFormIsARoundTripBehindTheEvent() {
 
     f.reg.start(QStringLiteral("example.com"));
     QCOMPARE(f.reg.state(), RegistrationController::Connecting);
-    QCOMPARE(f.wire->argsOfLast("connect").value("host").toString(),
+    QCOMPARE(f.wire->argsOfLast("connect").value("domain").toString(),
              QString("example.com"));
     QCOMPARE(f.wire->argsOfLast("connect").value("token").toString(), f.reg.token());
     QVERIFY(f.wire->callsTo("form").isEmpty());
@@ -314,7 +314,7 @@ void TestRegistration::answersSurviveARefetchedForm() {
     f.reg.retry();
     QCOMPARE(f.reg.state(), RegistrationController::Connecting);
     QCOMPARE(f.wire->callsTo("connect").size(), 2);
-    QCOMPARE(f.wire->argsOfLast("connect").value("host").toString(),
+    QCOMPARE(f.wire->argsOfLast("connect").value("domain").toString(),
              QString("example.com"));
     f.deliverEvent("Form");
     f.answerForm(kForm);
