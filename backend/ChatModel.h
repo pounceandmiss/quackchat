@@ -118,10 +118,10 @@ public:
     // nothing to ask, where no answer is coming.
     Q_INVOKABLE int requestRawXml(qlonglong ts);
     Q_INVOKABLE void resetToBottom();
-    // Advance our read watermark to the newest row. tacky has no "the user is
-    // looking at this chat" call - this is the gate that stops notify <Notify>
-    // firing for a chat on screen, so the view calls it whenever it is.
-    Q_INVOKABLE void markRead();
+    // `ts` is the newest row on screen; tacky decides whether it reads.
+    Q_INVOKABLE void markReadUpTo(qlonglong ts);
+    // tacky drops views of chats it doesn't have open, so resend after open.
+    void forgetMarkedRead() { m_markedRead = 0; }
     // replyToTs names the message being answered, 0 for a plain send.
     Q_INVOKABLE void send(const QString &body, qlonglong replyToTs = 0);
     // The row shows at once with the local path standing in for the url; the
@@ -258,7 +258,7 @@ private:
     bool m_atTail = true;       // an empty window is vacuously at tail
     bool m_catchupBusy = false;
     qlonglong m_tailTs = 0;     // newest real-message ts, from message <Tail>
-    qlonglong m_markedRead = 0; // highest ts already sent to markOwnRead
+    qlonglong m_markedRead = 0; // highest ts sent as `chat view`
 
     QList<QVariantMap> m_msgs;  // row 0 = newest
 

@@ -510,21 +510,30 @@ Page {
         onTriggered: page.highlightTs = 0
     }
 
-    // Reading is "this chat is on screen, the app is in front, and the newest
-    // message is in view". Anything looser marks a backgrounded window's chat
-    // read and swallows its notification.
-    readonly property bool reading: page.session !== null && visible
-                                    && Qt.application.state === Qt.ApplicationActive // qmllint disable missing-property
-                                    && page.atTail
-    onReadingChanged: if (reading) page.chatModel.markRead()
+    // Holding the session marks the chat open in tacky, which decides what
+    // the reports from reportShown actually read.
+    readonly property bool viewing: page.session !== null && visible
+    property ChatSession heldSession: null
+    function syncHold() {
+        const want = page.viewing ? page.session : null
+        if (want === page.heldSession)
+            return
+        if (page.heldSession)
+            page.heldSession.release()
+        page.heldSession = want
+        if (want) {
+            want.hold()
+            Qt.callLater(feed.reportShown)
+        }
+    }
+    onViewingChanged: syncHold()
+    Component.onDestruction: if (page.heldSession) page.heldSession.release()
 
     Connections {
         target: page.chatModel
-        // Every new row while the chat is being read moves the watermark; tacky
-        // holds its alert briefly so this lands first and nothing fires.
+        // After layout, so the new row has a position.
         function onRowsInserted() {
-            if (page.reading)
-                page.chatModel.markRead()
+            Qt.callLater(feed.reportShown)
         }
 
         // A resolved jump either kept the window and scrolled, or replaced it;
@@ -934,7 +943,11 @@ Page {
     // live one would not survive the first keystroke. Re-seeding on every change
     // of session is what carries a half-written message from the shell into a
     // pop-out - and what keeps it from following you into the next chat.
-    onSessionChanged: input.text = page.session ? page.session.draft : ""
+    onSessionChanged: {
+        input.text = page.session ? page.session.draft : ""
+        // A switch between two chats leaves `viewing` true.
+        page.syncHold()
+    }
 
     header: PageHeader {
         // No chat, no header - the empty pane draws its own invitation.
@@ -1672,6 +1685,28 @@ Page {
                 // live <New> events land there on their own.
                 if (!page.atTail && newerBuffer() < fillThreshold)
                     page.chatModel.loadNewer()
+                reportShown()
+            }
+
+            // The newest row whose bottom edge is on screen. Probes step up
+            // past the spacing and the bottom margin.
+            function newestShownTs() {
+                const bottom = contentY + height
+                let row = -1
+                for (let y = bottom - 1; row < 0 && y > contentY; y -= spacing)
+                    row = indexAt(width / 2, y)
+                if (row < 0)
+                    return 0
+                let item = itemAtIndex(row)
+                if (item && item.y + item.height > bottom + 1)
+                    item = itemAtIndex(row + 1)
+                if (!item || item.y + item.height <= contentY)
+                    return 0
+                return item.timestamp
+            }
+            function reportShown() {
+                if (page.chatModel && page.viewing)
+                    page.chatModel.markReadUpTo(newestShownTs())
             }
 
             // Scrolling up and jumping to a reply's target both leave the
@@ -1686,7 +1721,14 @@ Page {
                 anchors.bottomMargin: 12
                 width: 38
                 height: 38
-                Accessible.name: qsTr("Jump to the newest message")
+                readonly property int unread: {
+                    void page.chatListRevision
+                    return page.chatList ? (page.chatList.entryFor(page.chatJid).unread ?? 0) : 0
+                }
+                Accessible.name: jumpToLatest.unread > 0
+                    //: The way-down button while messages below are unread
+                    ? qsTr("Jump to the newest message, %n unread", "", jumpToLatest.unread)
+                    : qsTr("Jump to the newest message")
                 // Tab reaches it; a tap leaves the focus, and the keyboard
                 // with it, in the field.
                 focusPolicy: Qt.TabFocus
@@ -1706,6 +1748,28 @@ Page {
                         path: Icons.keyboardArrowDown
                         color: Theme.textDim
                         size: 22
+                    }
+                    Rectangle {
+                        objectName: "jumpUnreadBadge"
+                        visible: jumpToLatest.unread > 0
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.verticalCenter: parent.top
+                        height: 20
+                        width: Math.max(height, jumpUnreadText.implicitWidth + 12)
+                        radius: height / 2
+                        color: Theme.accent
+
+                        Text {
+                            id: jumpUnreadText
+                            objectName: "jumpUnreadCount"
+                            anchors.centerIn: parent
+                            //: Unread badge when the true count is over 99
+                            text: jumpToLatest.unread > 99 ? qsTr("99+")
+                                                           : jumpToLatest.unread.toString()
+                            color: Theme.textOnAccent
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
                     }
                 }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }

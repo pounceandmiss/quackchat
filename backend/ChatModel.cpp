@@ -509,25 +509,17 @@ void ChatModel::gotoReplyTarget(qlonglong ts) {
                {QStringLiteral("reply_to"), m.value(QStringLiteral("reply_to"))}});
 }
 
-// markOwnRead is forward-only and safe to repeat, but the view calls this on
-// every insert and scroll, so an unchanged watermark is dropped here rather
-// than turned into a frame.
-void ChatModel::markRead() {
+// Called on every scroll, so repeats are dropped here.
+void ChatModel::markReadUpTo(qlonglong ts) {
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
         return;
-    const qlonglong ts = newestTs();
     if (ts <= 0 || ts <= m_markedRead)
         return;
     m_markedRead = ts;
     const QVariantMap args{{QStringLiteral("acc"), m_account},
                            {QStringLiteral("chat"), m_chat},
                            {QStringLiteral("timestamp"), ts}};
-    m_backend->notify(QStringLiteral("message"), QStringLiteral("markOwnRead"),
-                      args);
-    // The wire half of the same read, 1:1 only (XEP-0333 <displayed>).
-    if (!m_groupchat)
-        m_backend->notify(QStringLiteral("message"),
-                          QStringLiteral("markDisplayed"), args);
+    m_backend->notify(QStringLiteral("chat"), QStringLiteral("view"), args);
 }
 
 void ChatModel::resetToBottom() {

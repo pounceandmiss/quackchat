@@ -26,11 +26,20 @@
 <context>
     <name>ChatPage</name>
     <message numerus="yes">
-        <location filename="../ChatPage.qml" line="1082"/>
+        <location filename="../ChatPage.qml" line="1099"/>
         <source>%n selected</source>
         <translation>
             <numerusform>%n selected</numerusform>
             <numerusform>%n selected</numerusform>
+        </translation>
+    </message>
+    <message numerus="yes">
+        <location filename="../ChatPage.qml" line="1738"/>
+        <source>Jump to the newest message, %n unread</source>
+        <extracomment>The way-down button while messages below are unread</extracomment>
+        <translation>
+            <numerusform>Jump to the newest message, %n unread</numerusform>
+            <numerusform>Jump to the newest message, %n unread</numerusform>
         </translation>
     </message>
 </context>

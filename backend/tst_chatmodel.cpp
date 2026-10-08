@@ -24,11 +24,12 @@ static QVariantList spans(const QByteArray &json) {
     return QJsonDocument::fromJson(json).array().toVariantList();
 }
 
-// The timestamps handed to `message markOwnRead`, in order.
+// The timestamps handed to `chat view`, in order.
 static QList<qlonglong> marks(const QSignalSpy &spy) {
     QList<qlonglong> out;
     for (const QList<QVariant> &call : spy)
-        if (call.at(1).toString() == QLatin1String("markOwnRead"))
+        if (call.at(0).toString() == QLatin1String("chat") &&
+            call.at(1).toString() == QLatin1String("view"))
             out << call.at(2).toMap().value("timestamp").toLongLong();
     return out;
 }
@@ -70,7 +71,7 @@ private slots:
     void retryAsksAgainForWhatFailed();
     void comingBackOnlineRetriesOnlyWhatFailed();
     void connStateDrivesTheOnlineFlag();
-    void markReadAdvancesTheWatermarkOnlyForwards();
+    void markReadUpToSendsOnlyForwardMoves();
     void markupWrapsSpans();
     void markupNestsOverlappingSpans();
     void markupCountsCodePoints();
@@ -354,10 +355,7 @@ void TestChatModel::loadedSignalReportsAdded() {
     QCOMPARE(loaded.at(1).at(1).toInt(), 0);
 }
 
-// tacky's notify gate is the read watermark: without this the chat on screen
-// still alerts. markOwnRead is forward-only, and the view calls markRead on
-// every insert, so an unchanged watermark must not become a frame.
-void TestChatModel::markReadAdvancesTheWatermarkOnlyForwards() {
+void TestChatModel::markReadUpToSendsOnlyForwardMoves() {
     TackyBackend backend;
     ChatModel m;
     m.setBackend(&backend);
@@ -366,17 +364,23 @@ void TestChatModel::markReadAdvancesTheWatermarkOnlyForwards() {
     m.applyBatch(msgs(R"([{"timestamp":100},{"timestamp":300}])"));
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
-    m.markRead();
+    m.markReadUpTo(100);
+    QCOMPARE(marks(sent), QList<qlonglong>{100});
+
+    sent.clear();
+    m.markReadUpTo(100);
+    m.markReadUpTo(0);
+    QCOMPARE(marks(sent), QList<qlonglong>{});
+
+    sent.clear();
+    m.markReadUpTo(300);
+    m.markReadUpTo(100);
     QCOMPARE(marks(sent), QList<qlonglong>{300});
 
     sent.clear();
-    m.markRead(); // nothing newer arrived
-    QCOMPARE(marks(sent), QList<qlonglong>{});
-
-    m.applyBatch(msgs(R"([{"timestamp":400}])"));
-    sent.clear();
-    m.markRead();
-    QCOMPARE(marks(sent), QList<qlonglong>{400});
+    m.forgetMarkedRead();
+    m.markReadUpTo(300);
+    QCOMPARE(marks(sent), QList<qlonglong>{300});
 }
 
 // An error reply is as final as a lost one. Without clearing the direction the

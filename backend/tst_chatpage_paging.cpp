@@ -9,6 +9,7 @@
 // up short of `limit` reaches for the archive, and tacky buffers that query
 // until there is a stream to carry it - which never comes. Every assertion is
 // about pages the local store can satisfy alone.
+#include "ChatListModel.h"
 #include "ChatPageTest.h"
 
 constexpr int kCentre = 1; // ListView.Center, which QML names and C++ does not
@@ -33,6 +34,8 @@ private slots:
     void aShortJumpSlidesAndALongOneCuts();
     void plainMessageDrawsNoQuote();
     void oneSessionServesEveryWindowOnAChat();
+    void aChatOnScreenIsReadAsFarAsItShows();
+    void theWayDownCountsWhatIsUnread();
 };
 
 void TestChatPagePaging::initTestCase() {
@@ -352,6 +355,71 @@ void TestChatPagePaging::oneSessionServesEveryWindowOnAChat() {
     // Which is still there for the chat it was written in.
     first.window->setProperty("chatJid", jid);
     QTRY_COMPARE(input->property("text").toString(), QString("half a thought"));
+}
+
+void TestChatPagePaging::aChatOnScreenIsReadAsFarAsItShows() {
+    QSignalSpy sent(m_app->backend(), &TackyBackend::sent);
+    const QString jid = QStringLiteral("friend@example.com");
+    Chat chat = open(jid);
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+
+    QCOMPARE(askedWith(sent, "chat", "open").value("chat").toString(), jid);
+    const qlonglong newest = chat.row(0)->property("timestamp").toLongLong();
+    QTRY_COMPARE(askedWith(sent, "chat", "view").value("timestamp").toLongLong(),
+                 newest);
+
+    chat.scrollNearOldest();
+    settle();
+    QVariant shown;
+    QVERIFY(QMetaObject::invokeMethod(chat.feed, "newestShownTs",
+                                      Q_RETURN_ARG(QVariant, shown)));
+    QVERIFY(shown.toLongLong() > 0);
+    QVERIFY(shown.toLongLong() < newest);
+
+    sent.clear();
+    chat.window->setProperty("chatJid", "quiet@example.com");
+    QTRY_COMPARE(askedWith(sent, "chat", "close").value("chat").toString(), jid);
+    QCOMPARE(askedWith(sent, "chat", "open").value("chat").toString(),
+             QString("quiet@example.com"));
+
+    sent.clear();
+    chat.window.reset();
+    QCOMPARE(askedWith(sent, "chat", "close").value("chat").toString(),
+             QString("quiet@example.com"));
+}
+
+void TestChatPagePaging::theWayDownCountsWhatIsUnread() {
+    const QString jid = QStringLiteral("friend@example.com");
+    const Chat chat = open(jid);
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+    chat.scrollNearOldest();
+    auto *badge = chat.feed->findChild<QQuickItem *>("jumpUnreadBadge");
+    auto *count = chat.feed->findChild<QObject *>("jumpUnreadCount");
+    QVERIFY(badge);
+    QVERIFY(count);
+    QTRY_VERIFY(chat.feed->findChild<QQuickItem *>("jumpToLatest")->isVisible());
+    QVERIFY(!badge->isVisible());
+
+    ChatListModel *list = m_app->chatListFor(kAcc);
+    QVERIFY(list);
+    const auto unread = [&](int n) {
+        list->handleEvent("chatlist", "Item",
+                          QVariantMap{{"acc", kAcc},
+                                      {"jid", jid},
+                                      {"item", QVariantMap{{"jid", jid},
+                                                           {"unread", n}}}});
+    };
+    unread(3);
+    QTRY_VERIFY(badge->isVisible());
+    QCOMPARE(count->property("text").toString(), QString("3"));
+    unread(120);
+    QTRY_COMPARE(count->property("text").toString(), QString("99+"));
+    unread(0);
+    QTRY_VERIFY(!badge->isVisible());
 }
 
 QTEST_MAIN(TestChatPagePaging)

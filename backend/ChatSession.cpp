@@ -7,7 +7,7 @@
 
 ChatSession::ChatSession(TackyBackend *backend, const QString &acc,
                          const QString &jid, bool groupchat, QObject *parent)
-    : QObject(parent) {
+    : QObject(parent), m_backend(backend), m_acc(acc), m_jid(jid) {
     // Backend last: the account and chat are what the model needs before it will
     // ask for anything, and setting it first sends off an initial load for an
     // empty chat.
@@ -20,6 +20,42 @@ ChatSession::ChatSession(TackyBackend *backend, const QString &acc,
     m_omemo.setJid(jid);
     m_omemo.setGroupchat(groupchat);
     m_omemo.setBackend(backend);
+
+    // A reattached backend (Android's service) may not know the chat is open.
+    if (backend)
+        connect(backend, &TackyBackend::connected, this, [this] {
+            if (m_holds > 0)
+                sendOpen(true);
+        });
+}
+
+ChatSession::~ChatSession() {
+    if (m_holds > 0)
+        sendOpen(false);
+}
+
+void ChatSession::hold() {
+    if (m_holds++ == 0)
+        sendOpen(true);
+}
+
+void ChatSession::release() {
+    if (m_holds == 0)
+        return;
+    if (--m_holds == 0)
+        sendOpen(false);
+}
+
+void ChatSession::sendOpen(bool open) {
+    if (!m_backend)
+        return;
+    if (open)
+        m_messages.forgetMarkedRead();
+    const QVariantMap args{{QStringLiteral("acc"), m_acc},
+                           {QStringLiteral("chat"), m_jid}};
+    m_backend->notify(QStringLiteral("chat"),
+                      open ? QStringLiteral("open") : QStringLiteral("close"),
+                      args);
 }
 
 void ChatSession::setGroupchat(bool v) {

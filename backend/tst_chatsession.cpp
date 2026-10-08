@@ -19,6 +19,7 @@ private slots:
     void theQueueGoesOutAheadOfTheWords();
     void anEditGoesAloneAndLeavesTheQueueWhereItIs();
     void nothingUnreadableIsEverQueued();
+    void everyViewHoldsOneOpenChat();
 };
 
 // Every `message <method>` the spy saw, as "method arg" pairs. A queued send
@@ -228,4 +229,36 @@ void TestChatSession::nothingUnreadableIsEverQueued() {
     s.unattach(0);
     s.unattach(-1);
     QCOMPARE(queued.count(), 0);
+}
+
+void TestChatSession::everyViewHoldsOneOpenChat() {
+    TackyBackend backend;
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    const auto marks = [&sent] {
+        QStringList out;
+        for (const QList<QVariant> &call : std::as_const(sent))
+            if (call.at(0).toString() == QLatin1String("chat"))
+                out << call.at(1).toString() + ' ' +
+                               call.at(2).toMap().value("chat").toString();
+        return out;
+    };
+    {
+        ChatSession s(&backend, "me@h", "a@h", false);
+        s.hold();
+        s.hold();
+        QCOMPARE(marks(), QStringList{"open a@h"});
+        s.release();
+        QCOMPARE(marks(), QStringList{"open a@h"});
+        s.release();
+        s.release(); // unbalanced
+        QCOMPARE(marks(), (QStringList{"open a@h", "close a@h"}));
+
+        sent.clear();
+        s.hold();
+        emit backend.connected();
+        QCOMPARE(marks(), (QStringList{"open a@h", "open a@h"}));
+        sent.clear();
+    }
+    // Destroyed while held.
+    QCOMPARE(marks(), QStringList{"close a@h"});
 }

@@ -11,6 +11,7 @@
 #define CHATSESSION_H
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QUrl>
 #include <QVariantList>
@@ -48,6 +49,7 @@ class ChatSession : public QObject {
 public:
     ChatSession(TackyBackend *backend, const QString &acc, const QString &jid,
                 bool groupchat, QObject *parent = nullptr);
+    ~ChatSession() override;
 
     ChatModel *messages() { return &m_messages; }
     OmemoChat *omemo() { return &m_omemo; }
@@ -88,6 +90,11 @@ public:
     // there is nowhere on one to hang a file.
     Q_INVOKABLE void sendDraft();
 
+    // One hold per page showing the chat. tacky gets `chat open` on the first
+    // and `chat close` on the last.
+    Q_INVOKABLE void hold();
+    Q_INVOKABLE void release();
+
 signals:
     void draftChanged();
     void pendingChanged();
@@ -96,6 +103,13 @@ signals:
 
 private:
     void restoreStash();
+    void sendOpen(bool open);
+
+    // AppController destroys its backend member before its children.
+    QPointer<TackyBackend> m_backend;
+    QString m_acc;
+    QString m_jid;
+    int m_holds = 0;
 
     ChatModel m_messages;
     OmemoChat m_omemo;
