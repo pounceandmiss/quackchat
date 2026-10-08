@@ -853,28 +853,38 @@ Page {
                 Card {
                     id: legendCard
                     objectName: "legendCard"
-                    property bool open: false
+                    readonly property bool open: legendToggle.checked
 
-                    RowLayout {
+                    AbstractButton {
+                        id: legendToggle
+                        objectName: "legendToggle"
                         Layout.fillWidth: true
-                        spacing: 8
-                        Text {
-                            Layout.fillWidth: true
-                            text: qsTr("What do these mean?")
-                            color: Theme.textPrimary
-                            font.pixelSize: 14
-                            font.bold: true
+                        checkable: true
+                        text: qsTr("What do these mean?")
+                        focusPolicy: Qt.TabFocus
+                        background: Rectangle {
+                            radius: 6
+                            color: "transparent"
+                            border.width: legendToggle.visualFocus ? 2 : 0
+                            border.color: Theme.accent
                         }
-                        Glyph {
-                            path: legendCard.open ? Icons.keyboardArrowUp
-                                                  : Icons.keyboardArrowDown
-                            color: Theme.textDim
-                            size: 20
+                        contentItem: RowLayout {
+                            spacing: 8
+                            Text {
+                                Layout.fillWidth: true
+                                text: legendToggle.text
+                                color: Theme.textPrimary
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+                            Glyph {
+                                path: legendToggle.checked ? Icons.keyboardArrowUp
+                                                           : Icons.keyboardArrowDown
+                                color: Theme.textDim
+                                size: 20
+                            }
                         }
-                        TapHandler {
-                            objectName: "legendToggle"
-                            onTapped: legendCard.open = !legendCard.open
-                        }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                     }
 
                     ColumnLayout {

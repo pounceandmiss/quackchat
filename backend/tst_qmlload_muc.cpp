@@ -117,6 +117,27 @@ private slots:
         e.assertNoErrors();
     }
 
+    // The legend stays folded until asked for.
+    void theLegendOpensAndFoldsAgain() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+
+        QObject *toggle = w->findChild<QObject *>("legendToggle");
+        QObject *body = w->findChild<QObject *>("legendBody");
+        QVERIFY(toggle);
+        QVERIFY(body);
+        QVERIFY(!body->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(toggle, "toggle"));
+        QVERIFY(body->property("visible").toBool());
+        QVERIFY(QMetaObject::invokeMethod(toggle, "toggle"));
+        QVERIFY(!body->property("visible").toBool());
+
+        e.assertNoErrors();
+    }
+
     // One heading per role present, in the model's order. Through QTRY, because
     // the section items are built on the view's next polish rather than when the
     // rows land.
