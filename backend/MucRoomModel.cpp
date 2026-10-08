@@ -2,39 +2,7 @@
 
 #include "BackendBinding.h"
 
-#include <algorithm>
-
-namespace {
-// The four buckets the page groups rows into. `none` and an empty role are the
-// same thing here - somebody the room lists without saying what they are.
-QString groupFor(const QString &role) {
-    if (role == QLatin1String("moderator"))
-        return QStringLiteral("moderator");
-    if (role == QLatin1String("participant"))
-        return QStringLiteral("participant");
-    if (role == QLatin1String("visitor"))
-        return QStringLiteral("visitor");
-    return QStringLiteral("other");
-}
-
-int groupRank(const QString &group) {
-    if (group == QLatin1String("moderator"))
-        return 0;
-    if (group == QLatin1String("participant"))
-        return 1;
-    if (group == QLatin1String("visitor"))
-        return 2;
-    return 3;
-}
-} // namespace
-
-QString MucRoomModel::Occupant::group() const { return groupFor(role); }
-
-bool MucRoomModel::Occupant::sameAs(const Occupant &other) const {
-    return nick == other.nick && realJid == other.realJid && role == other.role
-           && affiliation == other.affiliation && show == other.show
-           && status == other.status && caps == other.caps;
-}
+#include <QSet>
 
 MucRoomModel::MucRoomModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -45,28 +13,34 @@ int MucRoomModel::rowCount(const QModelIndex &parent) const {
 QVariant MucRoomModel::data(const QModelIndex &index, int role) const {
     if (index.row() < 0 || index.row() >= m_rows.size())
         return {};
-    const Occupant &o = m_rows.at(index.row());
+    const Person &p = m_rows.at(index.row());
     switch (role) {
+    case KeyRole:
+        return p.key;
     case NickRole:
-        return o.nick;
+        return p.nick;
     case OccupantJidRole:
-        return occupantJid(o.nick);
+        return p.occupantJid;
     case RealJidRole:
-        return o.realJid;
+        return p.realJid;
     case RoleRole:
-        return o.role;
+        return p.role;
     case AffiliationRole:
-        return o.affiliation;
+        return p.affiliation;
     case ShowRole:
-        return o.show;
+        return p.show;
     case StatusRole:
-        return o.status;
+        return p.status;
     case CapsRole:
-        return o.caps;
+        return p.caps;
     case SelfRole:
-        return !m_myNick.isEmpty() && o.nick == m_myNick;
+        return p.self;
     case GroupRole:
-        return o.group();
+        return p.group;
+    case PresentRole:
+        return p.present;
+    case KeysRole:
+        return p.keys;
     default:
         return {};
     }
@@ -74,6 +48,7 @@ QVariant MucRoomModel::data(const QModelIndex &index, int role) const {
 
 QHash<int, QByteArray> MucRoomModel::roleNames() const {
     return {
+        {KeyRole, "key"},
         {NickRole, "nick"},
         {OccupantJidRole, "occupantJid"},
         {RealJidRole, "realJid"},
@@ -84,6 +59,8 @@ QHash<int, QByteArray> MucRoomModel::roleNames() const {
         {CapsRole, "caps"},
         {SelfRole, "self"},
         {GroupRole, "group"},
+        {PresentRole, "present"},
+        {KeysRole, "keys"},
     };
 }
 
@@ -126,132 +103,131 @@ void MucRoomModel::setFilter(const QString &text) {
     rebuild();
 }
 
-QString MucRoomModel::myRole() const {
-    for (const Occupant &o : m_occupants)
-        if (o.nick == m_myNick)
-            return o.role;
-    return {};
+void MucRoomModel::setActive(bool on) {
+    if (m_active == on)
+        return;
+    m_active = on;
+    emit activeChanged();
+    if (m_active && m_stale)
+        readPeople();
 }
 
-QString MucRoomModel::myAffiliation() const {
-    for (const Occupant &o : m_occupants)
-        if (o.nick == m_myNick)
-            return o.affiliation;
+MucRoomModel::Person MucRoomModel::mine() const {
+    for (const Person &p : m_people)
+        if (p.self)
+            return p;
     return {};
-}
-
-QVariantMap MucRoomModel::groupCounts() const {
-    QVariantMap counts;
-    for (const Occupant &o : m_occupants) {
-        const QString g = o.group();
-        counts.insert(g, counts.value(g).toInt() + 1);
-    }
-    return counts;
 }
 
 void MucRoomModel::refresh() {
     // Whichever of them changed, what is on screen belongs to the room we were
     // showing before.
     clearRoom();
+    m_stale = true;
 
     if (!m_backend || m_account.isEmpty() || m_roomJid.isEmpty())
         return;
 
     const QVariantMap args{{QStringLiteral("acc"), m_account},
                            {QStringLiteral("jid"), m_roomJid}};
-    m_occupantsToken =
-        m_backend->request(QStringLiteral("muc"), QStringLiteral("occupants"), args);
     m_subjectToken =
         m_backend->request(QStringLiteral("muc"), QStringLiteral("getSubject"), args);
-    m_nickToken =
-        m_backend->request(QStringLiteral("muc"), QStringLiteral("myNick"), args);
     m_joinedToken =
         m_backend->request(QStringLiteral("muc"), QStringLiteral("isJoined"), args);
+    if (m_active)
+        readPeople();
+}
+
+// Asked again rather than patched from the event: the event only says that
+// something changed, and the whole answer is what the page shows.
+void MucRoomModel::readPeople() {
+    m_stale = true;
+    if (!m_backend || m_account.isEmpty() || m_roomJid.isEmpty())
+        return;
+    m_stale = false;
+    m_peopleToken = m_backend->request(
+        QStringLiteral("muc"), QStringLiteral("people"),
+        QVariantMap{{QStringLiteral("acc"), m_account},
+                    {QStringLiteral("jid"), m_roomJid}});
 }
 
 void MucRoomModel::clearRoom() {
-    m_occupants.clear();
-    rebuild();
+    applyPeople({});
     applySubject({});
-    applyMyNick({});
     applyJoined(false);
 }
 
-MucRoomModel::Occupant MucRoomModel::fromMap(const QVariantMap &m) {
-    Occupant o;
-    o.nick = m.value(QStringLiteral("nick")).toString();
-    o.realJid = m.value(QStringLiteral("jid")).toString();
-    o.role = m.value(QStringLiteral("role")).toString();
-    o.affiliation = m.value(QStringLiteral("affiliation")).toString();
-    o.show = m.value(QStringLiteral("show")).toString();
-    o.status = m.value(QStringLiteral("status")).toString();
-    o.caps = m.value(QStringLiteral("caps")).toMap();
-    return o;
+MucRoomModel::Person MucRoomModel::fromMap(const QVariantMap &m) {
+    Person p;
+    p.key = m.value(QStringLiteral("key")).toString();
+    p.nick = m.value(QStringLiteral("nick")).toString();
+    p.occupantJid = m.value(QStringLiteral("occupant")).toString();
+    p.realJid = m.value(QStringLiteral("jid")).toString();
+    p.role = m.value(QStringLiteral("role")).toString();
+    p.affiliation = m.value(QStringLiteral("affiliation")).toString();
+    p.show = m.value(QStringLiteral("show")).toString();
+    p.status = m.value(QStringLiteral("status")).toString();
+    p.caps = m.value(QStringLiteral("caps")).toMap();
+    p.self = m.value(QStringLiteral("self")).toBool();
+    p.group = m.value(QStringLiteral("group")).toString();
+    p.present = m.value(QStringLiteral("present")).toBool();
+    p.keys = m.value(QStringLiteral("keys")).toMap();
+    return p;
 }
 
-int MucRoomModel::compare(const Occupant &a, const Occupant &b) {
-    const int byGroup = groupRank(a.group()) - groupRank(b.group());
-    if (byGroup != 0)
-        return byGroup;
-    // Case-insensitively, so "alice" and "Bob" read as one list rather than as
-    // two; exactly when that ties, so the order is total and the merge below
-    // never meets two rows it cannot tell apart.
-    const int byNick = QString::compare(a.nick, b.nick, Qt::CaseInsensitive);
-    return byNick != 0 ? byNick : QString::compare(a.nick, b.nick);
-}
-
-QString MucRoomModel::occupantJid(const QString &nick) const {
-    if (m_roomJid.isEmpty() || nick.isEmpty())
-        return {};
-    return m_roomJid + QLatin1Char('/') + nick;
-}
-
-bool MucRoomModel::matches(const Occupant &o, const QString &filter) {
+bool MucRoomModel::matches(const Person &p, const QString &filter) {
     if (filter.isEmpty())
         return true;
-    return o.nick.contains(filter, Qt::CaseInsensitive)
-           || o.realJid.contains(filter, Qt::CaseInsensitive);
+    return p.nick.contains(filter, Qt::CaseInsensitive)
+           || p.realJid.contains(filter, Qt::CaseInsensitive);
 }
 
-// A merge over two lists in the same order: what only the old side has left,
-// what only the new side has arrived, and what both hold gets compared field by
-// field. Anything coarser would reset the model on every presence, which in a
-// busy room throws the scroll position away several times a minute.
+// The rows walked onto the new list one place at a time, by key: a row that
+// stayed is updated in place, one that moved is moved, and only what came or
+// went is inserted or removed. Anything coarser would reset the model on every
+// presence, which in a busy room throws the scroll position away several times
+// a minute.
 void MucRoomModel::rebuild() {
-    QList<Occupant> next;
-    next.reserve(m_occupants.size());
-    for (const Occupant &o : m_occupants)
-        if (matches(o, m_filter))
-            next.append(o);
+    QList<Person> next;
+    next.reserve(m_people.size());
+    for (const Person &p : m_people)
+        if (matches(p, m_filter))
+            next.append(p);
 
-    int i = 0; // into m_rows
-    int j = 0; // into next
-    while (i < m_rows.size() || j < next.size()) {
-        int c;
-        if (j >= next.size())
-            c = -1; // only the old side has rows left, so they have gone
-        else if (i >= m_rows.size())
-            c = 1; // only the new side, so they have arrived
-        else
-            c = compare(m_rows.at(i), next.at(j));
+    QSet<QString> wanted;
+    for (const Person &p : next)
+        wanted.insert(p.key);
+    for (int i = m_rows.size() - 1; i >= 0; --i) {
+        if (wanted.contains(m_rows.at(i).key))
+            continue;
+        beginRemoveRows({}, i, i);
+        m_rows.removeAt(i);
+        endRemoveRows();
+    }
 
-        if (c < 0) {
-            beginRemoveRows({}, i, i);
-            m_rows.removeAt(i);
-            endRemoveRows();
-        } else if (c > 0) {
-            beginInsertRows({}, i, i);
-            m_rows.insert(i, next.at(j));
-            endInsertRows();
-            ++i;
-            ++j;
-        } else {
-            if (!m_rows.at(i).sameAs(next.at(j))) {
-                m_rows[i] = next.at(j);
-                emit dataChanged(index(i), index(i));
+    for (int j = 0; j < next.size(); ++j) {
+        if (j < m_rows.size() && m_rows.at(j).key == next.at(j).key) {
+            if (!m_rows.at(j).sameAs(next.at(j))) {
+                m_rows[j] = next.at(j);
+                emit dataChanged(index(j), index(j));
             }
-            ++i;
-            ++j;
+            continue;
+        }
+        int k = j + 1;
+        while (k < m_rows.size() && m_rows.at(k).key != next.at(j).key)
+            ++k;
+        if (k < m_rows.size()) {
+            beginMoveRows({}, k, k, {}, j);
+            m_rows.move(k, j);
+            endMoveRows();
+            if (!m_rows.at(j).sameAs(next.at(j))) {
+                m_rows[j] = next.at(j);
+                emit dataChanged(index(j), index(j));
+            }
+        } else {
+            beginInsertRows({}, j, j);
+            m_rows.insert(j, next.at(j));
+            endInsertRows();
         }
     }
     // `total` and `groupCounts` ride on the same signal and move even when the
@@ -260,46 +236,19 @@ void MucRoomModel::rebuild() {
     emit countChanged();
 }
 
-void MucRoomModel::applyOccupants(const QVariantList &occupants) {
-    m_occupants.clear();
-    m_occupants.reserve(occupants.size());
-    for (const QVariant &v : occupants)
-        m_occupants.append(fromMap(v.toMap()));
-    std::sort(m_occupants.begin(), m_occupants.end(), less);
+void MucRoomModel::applyPeople(const QVariantMap &answer) {
+    const Person before = mine();
+    const QVariantMap me = answer.value(QStringLiteral("me")).toMap();
+    m_people.clear();
+    for (const QVariant &v : answer.value(QStringLiteral("people")).toList())
+        m_people.append(fromMap(v.toMap()));
+    m_groups = answer.value(QStringLiteral("groups")).toMap();
+    m_memberList = answer.value(QStringLiteral("list")).toString();
     rebuild();
-    emit meChanged();
-}
-
-void MucRoomModel::applyOccupant(const QVariantMap &map) {
-    const Occupant o = fromMap(map);
-    if (o.nick.isEmpty())
-        return;
-    // A role change moves the row between groups, so the old entry is dropped
-    // by nick and the new one placed afresh rather than written over in place.
-    dropNick(o.nick);
-    m_occupants.insert(
-        std::lower_bound(m_occupants.begin(), m_occupants.end(), o, less), o);
-    rebuild();
-    if (o.nick == m_myNick)
+    if (!mine().sameAs(before) || me != m_me) {
+        m_me = me;
         emit meChanged();
-}
-
-void MucRoomModel::removeOccupant(const QString &nick) {
-    if (!dropNick(nick))
-        return;
-    rebuild();
-    if (nick == m_myNick)
-        emit meChanged();
-}
-
-bool MucRoomModel::dropNick(const QString &nick) {
-    const auto it = std::find_if(
-        m_occupants.begin(), m_occupants.end(),
-        [&nick](const Occupant &o) { return o.nick == nick; });
-    if (it == m_occupants.end())
-        return false;
-    m_occupants.erase(it);
-    return true;
+    }
 }
 
 void MucRoomModel::applySubject(const QString &text) {
@@ -307,16 +256,6 @@ void MucRoomModel::applySubject(const QString &text) {
         return;
     m_subject = text;
     emit subjectChanged();
-}
-
-void MucRoomModel::applyMyNick(const QString &nick) {
-    if (m_myNick == nick)
-        return;
-    m_myNick = nick;
-    emit meChanged();
-    // Every row's `self` is measured against it.
-    if (!m_rows.isEmpty())
-        emit dataChanged(index(0), index(m_rows.size() - 1), {SelfRole});
 }
 
 void MucRoomModel::applyJoined(bool joined) {
@@ -336,20 +275,14 @@ void MucRoomModel::handleEvent(const QString &module, const QString &name,
     if (a.value(QStringLiteral("jid")).toString() != m_roomJid)
         return;
 
-    if (name == QLatin1String("Presence")) {
-        applyOccupant(a.value(QStringLiteral("occupant")).toMap());
-    } else if (name == QLatin1String("Unavailable")) {
-        removeOccupant(a.value(QStringLiteral("nick")).toString());
-    } else if (name == QLatin1String("NickChanged")) {
-        // The new nick arrives as its own presence; this only retires the old
-        // row, and takes our own nick with it when the change was ours.
-        if (a.value(QStringLiteral("self")).toBool())
-            applyMyNick(a.value(QStringLiteral("newNick")).toString());
-        removeOccupant(a.value(QStringLiteral("oldNick")).toString());
+    if (name == QLatin1String("PeopleChanged")) {
+        if (m_active)
+            readPeople();
+        else
+            m_stale = true;
     } else if (name == QLatin1String("Joined")) {
         // tacky records the join before it says so, so this is the first moment
-        // it has a room to answer for - ask it rather than piece the state
-        // together from the event.
+        // it has a room to answer for.
         refresh();
     } else if (name == QLatin1String("Left") || name == QLatin1String("Destroyed")) {
         clearRoom();
@@ -363,15 +296,12 @@ void MucRoomModel::handleResult(int token, const QVariant &data) {
     // is ever 0, so this is what keeps an idle field from matching.
     if (token == 0)
         return;
-    if (token == m_occupantsToken) {
-        m_occupantsToken = 0;
-        applyOccupants(data.toList());
+    if (token == m_peopleToken) {
+        m_peopleToken = 0;
+        applyPeople(data.toMap());
     } else if (token == m_subjectToken) {
         m_subjectToken = 0;
         applySubject(data.toString());
-    } else if (token == m_nickToken) {
-        m_nickToken = 0;
-        applyMyNick(data.toString());
     } else if (token == m_joinedToken) {
         m_joinedToken = 0;
         applyJoined(data.toBool());

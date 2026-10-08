@@ -258,6 +258,8 @@ Page {
             account: page.account
             jid: page.chatJid
             name: page.chatName
+            shown: detailsSheet.visible
+            omemo: page.chatGroupchat ? page.omemo : null
             onDone: detailsSheet.close()
         }
     }
@@ -1821,6 +1823,14 @@ Page {
             }
         }
 
+        UnreachableBanner {
+            objectName: "unreachableBanner"
+            Layout.fillWidth: true
+            Layout.preferredHeight: implicitHeight
+            omemo: page.chatGroupchat ? page.omemo : null
+            onReviewKeys: page.openDetails()
+        }
+
         // One strip for both: the session keeps a reply and an edit exclusive,
         // so there is never a second to draw.
         Rectangle {
@@ -2069,22 +2079,6 @@ Page {
                     // with it, in the field.
                     focusPolicy: Qt.TabFocus
                     onClicked: page.omemo.enabled = !page.omemo.enabled
-                    ContextMenuArea { menu: lockMenu }
-
-                    // The keys live behind the control that says whether they
-                    // are being used - the same pairing the chat menu has. They
-                    // are a card on the contact's page, so this and the header
-                    // lead to the same place.
-                    AppMenu {
-                        id: lockMenu
-                        objectName: "lockMenu"
-                        width: 170
-                        MenuEntry {
-                            objectName: "keysEntry"
-                            text: qsTr("OMEMO keys…")
-                            onTriggered: page.openContact()
-                        }
-                    }
                 }
                 IconButton {
                     objectName: "attachButton"

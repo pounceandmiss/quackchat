@@ -1,16 +1,16 @@
-// One room's occupants, and the room-level state a details screen draws around
-// them: the subject, the nick we are in there under, and whether we are in
-// there at all. Seeded from `muc occupants` and kept live by the muc events.
+// One room's people - everyone in it, then the members who are not - and the
+// room-level state a details screen draws around them: the subject, who we are
+// in there, and whether we are in there at all. Read from `muc people`, and
+// read again on each `muc <PeopleChanged>`.
 //
-// Every occupant arrives stamped with `caps` - what this account may do to that
-// one - which tacky works out from the XEP-0045 role/affiliation rules and
-// re-emits for the whole room whenever our own role moves. So the moderation
-// buttons follow a promotion without anyone asking again, and the authorization
-// policy stays in one place, which is not this one.
+// tacky does the deciding: who counts as a person, the grouping and order,
+// the counts, `caps` (what this account may do to each, and `me`, to the room
+// itself), and each member's OMEMO `keys`. This model only holds the answer,
+// narrows it by `filter`, and moves the rows onto the view one at a time.
 //
-// Rows are grouped by role and sorted by nick within the group, which is what
-// the Tk participant list draws; `filter` narrows what a crowded room shows
-// without changing what it holds.
+// It reads only while `active`, which the page holds while it is on screen: a
+// room's page is built with its chat, and a busy room changes many times a
+// minute. A change while inactive is remembered, and read on becoming active.
 #ifndef MUCROOMMODEL_H
 #define MUCROOMMODEL_H
 
@@ -35,43 +35,50 @@ class MucRoomModel : public QAbstractListModel {
     // Substring of a nick or a real JID. View-side only: it never unsubscribes
     // anyone, so clearing it brings the whole room straight back.
     Q_PROPERTY(QString filter READ filter WRITE setFilter NOTIFY filterChanged)
+    Q_PROPERTY(bool active READ active WRITE setActive NOTIFY activeChanged)
 
     Q_PROPERTY(QString subject READ subject NOTIFY subjectChanged)
+    // Our own person, the one tacky marks `self`, for the card that draws us
+    // outside the list.
     Q_PROPERTY(QString myNick READ myNick NOTIFY meChanged)
-    // Our own row's OccupantJidRole, for the card that draws us outside the
-    // list. Empty until there is a whole JID to give, since half of one is not
-    // a JID at all and tacky rejects it.
     Q_PROPERTY(QString myOccupantJid READ myOccupantJid NOTIFY meChanged)
-    // Read off our own row rather than asked for separately, so they cannot
-    // disagree with the occupant the list is drawing for us.
     Q_PROPERTY(QString myRole READ myRole NOTIFY meChanged)
     Q_PROPERTY(QString myAffiliation READ myAffiliation NOTIFY meChanged)
+    // What we may do about the room itself: request_voice, destroy.
+    Q_PROPERTY(QVariantMap me READ me NOTIFY meChanged)
     Q_PROPERTY(bool joined READ joined NOTIFY joinedChanged)
+    // How far the member list got: none, pending, complete, partial, presence.
+    Q_PROPERTY(QString memberList READ memberList NOTIFY countChanged)
 
-    // Rows after the filter, and occupants before it - "3 of 48" needs both.
+    // Rows after the filter, and people before it - "3 of 48" needs both.
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
     Q_PROPERTY(int total READ total NOTIFY countChanged)
-    // group -> how many occupants are in it, before the filter. A section header
-    // cannot count its own rows, and the count is about the room anyway.
+    // group -> how many people are in it, before the filter, as tacky counts
+    // them. A section header cannot count its own rows.
     Q_PROPERTY(QVariantMap groupCounts READ groupCounts NOTIFY countChanged)
 
 public:
     enum Role {
-        NickRole = Qt::UserRole + 1,
+        KeyRole = Qt::UserRole + 1, // the same for one person across reads
+        NickRole,                   // "" for a member who is not there
         // room@service/nick: the JID their avatar lives under, and the one a
-        // private message would go to.
+        // private message would go to. "" for someone not there.
         OccupantJidRole,
-        // Their own JID, which a semi-anonymous room does not disclose.
+        // Their own bare JID, which a semi-anonymous room does not disclose.
         RealJidRole,
         RoleRole,        // moderator, participant, visitor, none
         AffiliationRole, // owner, admin, member, none, outcast
         ShowRole,        // "" (available), chat, away, xa, dnd
         StatusRole,      // whatever they typed as their presence text
-        CapsRole,        // tacky's moderation flags against this occupant
+        CapsRole,        // tacky's moderation flags against this person
         SelfRole,
-        // Normalised role for grouping: moderator, participant, visitor, other.
-        // The wording of the heading is the page's business, not this model's.
+        // moderator, participant, visitor, other, absent. The wording of the
+        // heading is the page's business, not this model's.
         GroupRole,
+        PresentRole,
+        // Their OMEMO keys in a room that can be encrypted, {} otherwise:
+        // {keys, trusted, undecided, untrusted, compromised, attention, reason}.
+        KeysRole,
     };
     Q_ENUM(Role)
 
@@ -94,14 +101,19 @@ public:
     QString filter() const { return m_filter; }
     void setFilter(const QString &text);
 
+    bool active() const { return m_active; }
+    void setActive(bool on);
+
     QString subject() const { return m_subject; }
-    QString myNick() const { return m_myNick; }
-    QString myOccupantJid() const { return occupantJid(m_myNick); }
-    QString myRole() const;
-    QString myAffiliation() const;
+    QString myNick() const { return mine().nick; }
+    QString myOccupantJid() const { return mine().occupantJid; }
+    QString myRole() const { return mine().role; }
+    QString myAffiliation() const { return mine().affiliation; }
+    QVariantMap me() const { return m_me; }
     bool joined() const { return m_joined; }
-    int total() const { return m_occupants.size(); }
-    QVariantMap groupCounts() const;
+    QString memberList() const { return m_memberList; }
+    int total() const { return m_people.size(); }
+    QVariantMap groupCounts() const { return m_groups; }
 
     // (Re)read the whole room. Called on every change of subject below and
     // whenever the backend comes back.
@@ -134,11 +146,8 @@ public:
     void handleResult(int token, const QVariant &data);
     void handleError(int token, const QString &message);
 
-    void applyOccupants(const QVariantList &occupants);
-    void applyOccupant(const QVariantMap &occupant);
-    void removeOccupant(const QString &nick);
+    void applyPeople(const QVariantMap &answer);
     void applySubject(const QString &text);
-    void applyMyNick(const QString &nick);
     void applyJoined(bool joined);
 
 signals:
@@ -146,6 +155,7 @@ signals:
     void accountChanged();
     void jidChanged();
     void filterChanged();
+    void activeChanged();
     void subjectChanged();
     void meChanged();
     void joinedChanged();
@@ -154,43 +164,44 @@ signals:
     void actionFailed(const QString &action, const QString &message);
 
 private:
-    struct Occupant {
+    struct Person {
+        QString key;
         QString nick;
+        QString occupantJid;
         QString realJid;
         QString role;
         QString affiliation;
         QString show;
         QString status;
         QVariantMap caps;
+        bool self = false;
+        QString group;
+        bool present = false;
+        QVariantMap keys;
 
-        QString group() const;
-        bool sameAs(const Occupant &other) const;
+        bool sameAs(const Person &o) const {
+            return key == o.key && nick == o.nick && occupantJid == o.occupantJid
+                   && realJid == o.realJid && role == o.role
+                   && affiliation == o.affiliation && show == o.show
+                   && status == o.status && caps == o.caps && self == o.self
+                   && group == o.group && present == o.present && keys == o.keys;
+        }
     };
 
-    static Occupant fromMap(const QVariantMap &m);
-    // Role-then-nick order: the grouping the page draws, so rows arrive in the
-    // order they are shown and a heading never appears twice.
-    static int compare(const Occupant &a, const Occupant &b);
-    static bool less(const Occupant &a, const Occupant &b) {
-        return compare(a, b) < 0;
-    }
-    static bool matches(const Occupant &o, const QString &filter);
-    // Where one occupant's avatar lives: the room JID with their nick as the
-    // resource. Empty unless both halves are known - "room@svc/" and "/nick"
-    // are not JIDs, and asking tacky about one is an error, not a miss.
-    QString occupantJid(const QString &nick) const;
-    // Forget whoever holds `nick`, answering whether anyone did.
-    bool dropNick(const QString &nick);
+    static Person fromMap(const QVariantMap &m);
+    static bool matches(const Person &p, const QString &filter);
+    // The person tacky marks as us, or an empty one.
+    Person mine() const;
 
-    // Everything the room holds, in display order. The rows below are this
-    // narrowed by `filter`.
-    QList<Occupant> m_occupants;
-    QList<Occupant> m_rows;
+    // Everyone, in tacky's order. The rows below are this narrowed by `filter`.
+    QList<Person> m_people;
+    QList<Person> m_rows;
 
-    // Re-derives the rows from m_occupants and walks them onto the model, so a
-    // presence moves one row rather than resetting the list under the scroll.
+    // Walks the rows onto the model by key, so a presence moves one row rather
+    // than resetting the list under the scroll.
     void rebuild();
     void clearRoom();
+    void readPeople();
     void sendAction(const QString &label, const QString &method,
                     QVariantMap args);
     void notifyRoom(const QString &method, QVariantMap args);
@@ -201,12 +212,16 @@ private:
     QString m_roomJid; // what the muc module answers to
     QString m_filter;
     QString m_subject;
-    QString m_myNick;
+    QVariantMap m_me;
+    QVariantMap m_groups;
+    QString m_memberList;
     bool m_joined = false;
+    bool m_active = false;
+    // A change arrived while inactive, or nothing has been read yet.
+    bool m_stale = true;
 
-    int m_occupantsToken = 0;
+    int m_peopleToken = 0;
     int m_subjectToken = 0;
-    int m_nickToken = 0;
     int m_joinedToken = 0;
     QHash<int, QString> m_actions; // token -> what it was, for actionFailed
 };

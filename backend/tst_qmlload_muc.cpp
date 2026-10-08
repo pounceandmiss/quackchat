@@ -4,6 +4,7 @@
 #include <QSignalSpy>
 
 #include "AppController.h"
+#include "ChatSession.h"
 #include "ChatListModel.h"
 #include "ChatModel.h"
 #include "GroupCallsModel.h"
@@ -37,6 +38,25 @@ class TestMuc : public QObject {
         return w;
     }
 
+    // One person as `muc people` gives it.
+    static QVariantMap person(const QString &nick, const QString &group,
+                              const QString &affiliation, const QString &realJid = {}) {
+        return QVariantMap{
+            {"key", realJid.isEmpty() ? "nick:" + nick : realJid},
+            {"nick", nick},
+            {"jid", realJid},
+            {"occupant", nick.isEmpty() ? QString() : "room@muc.example.com/" + nick},
+            {"present", group != "absent"},
+            {"self", false},
+            {"group", group},
+            {"role", group == "absent" ? "none" : group},
+            {"affiliation", affiliation},
+            {"show", QString()},
+            {"status", QString()},
+            {"caps", QVariantMap{}},
+            {"keys", QVariantMap{}}};
+    }
+
     // One occupant of each role, us among them as "amy". Only the moderator has
     // an address the room discloses, and only the visitor has nothing at all.
     static MucRoomModel *joinedRoom(QQuickWindow *w) {
@@ -44,17 +64,16 @@ class TestMuc : public QObject {
         if (!room)
             return nullptr;
         room->applyJoined(true);
-        room->applyOccupants({QVariantMap{{"nick", "mo"},
-                                          {"role", "moderator"},
-                                          {"affiliation", "owner"},
-                                          {"jid", "mo@elsewhere.example"},
-                                          {"caps", QVariantMap{{"kick", true}}}},
-                              QVariantMap{{"nick", "amy"}, {"role", "participant"},
-                                          {"affiliation", "none"},
-                                          {"status", "online"}},
-                              QVariantMap{{"nick", "zoe"}, {"role", "visitor"},
-                                          {"affiliation", "member"}}});
-        room->applyMyNick("amy");
+        QVariantMap mo = person("mo", "moderator", "owner", "mo@elsewhere.example");
+        mo["caps"] = QVariantMap{{"kick", true}};
+        QVariantMap amy = person("amy", "participant", "none");
+        amy["status"] = "online";
+        amy["self"] = true;
+        room->applyPeople(QVariantMap{
+            {"list", "none"},
+            {"groups", QVariantMap{{"moderator", 1}, {"participant", 1}, {"visitor", 1}}},
+            {"me", QVariantMap{{"request_voice", false}, {"destroy", false}}},
+            {"people", QVariantList{mo, amy, person("zoe", "visitor", "member")}}});
         room->applySubject("what this room is about");
         QCoreApplication::processEvents();
         return room;
@@ -351,7 +370,7 @@ private slots:
         QVERIFY(!people->isVisible());
 
         openChat("room@example.com", true);
-        QVERIFY2(!lock->isVisible(), "a room was offered OMEMO");
+        QVERIFY2(!lock->isVisible(), "a room not known to qualify was offered OMEMO");
         QVERIFY(!chat->property("canEncrypt").toBool());
         QVERIFY(people->isVisible());
 
@@ -363,6 +382,165 @@ private slots:
 
         win.grabWindow();
         QCoreApplication::processEvents();
+        e.assertNoErrors();
+    }
+
+    // A room that qualifies gets the padlock, and a send its members stopped
+    // says who over the composer until it is put away.
+    void aQualifyingRoomOffersEncryptionAndSaysWhoStoppedASend() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        app->accounts()->applyList({"me@example.com"});
+
+        QQuickWindow win;
+        win.resize(1000, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"},
+             {"width", 1000},
+             {"height", 700}}));
+        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(shell);
+        shell->setParentItem(win.contentItem());
+
+        const QString room = "room@muc.example.com?join";
+        QVERIFY(QMetaObject::invokeMethod(shell, "openChat",
+                                          Q_ARG(QVariant, QVariant(room)),
+                                          Q_ARG(QVariant, QVariant(room)),
+                                          Q_ARG(QVariant, QVariant(true))));
+        QQuickItem *lock = findItem(shell, "omemoToggle");
+        QQuickItem *banner = findItem(shell, "unreachableBanner");
+        QVERIFY(lock && banner);
+        QVERIFY(!lock->isVisible());
+
+        const auto status = [&](bool enabled, const QVariantList &unreachable) {
+            emit app->backend()->event(
+                "omemo", "RoomStatus",
+                QVariantMap{{"acc", "me@example.com"}, {"jid", room},
+                            {"status", QVariantMap{{"jid", room},
+                                                   {"eligible", true},
+                                                   {"enabled", enabled},
+                                                   {"offered", true},
+                                                   {"reasons", QVariantList{}},
+                                                   {"member_list", "complete"},
+                                                   {"members", QVariantList{}},
+                                                   {"unreachable", unreachable}}}});
+        };
+        status(true, {});
+        QTRY_VERIFY(lock->isVisible());
+        QVERIFY(!banner->isVisible());
+
+        status(true, {QVariantMap{{"jid", "bob@example.com"}, {"reason", "no_devices"}}});
+        QTRY_VERIFY(banner->isVisible());
+        QVERIFY(findItem(banner, "unreachableText")->property("text").toString()
+                    .contains("bob@example.com"));
+
+        QQuickItem *dismiss = findItem(banner, "unreachableDismiss");
+        QVERIFY(dismiss);
+        QVERIFY(QMetaObject::invokeMethod(dismiss, "clicked"));
+        QTRY_VERIFY(!banner->isVisible());
+
+        win.grabWindow();
+        QCoreApplication::processEvents();
+        e.assertNoErrors();
+    }
+
+    // A room's page lists its members who are not here as well, under their
+    // own heading, and each member's keys in a line: who needs attention reads
+    // red and starts unfolded, everyone else stays folded until asked.
+    void theDetailsPageListsMembersAndTheirKeys() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        auto *room = w->findChild<MucRoomModel *>();
+        QVERIFY(room);
+        room->applyJoined(true);
+
+        const auto keys = [](int n, int trusted, bool attention, const QString &reason = {}) {
+            return QVariantMap{{"keys", n}, {"trusted", trusted}, {"undecided", n - trusted},
+                               {"untrusted", 0}, {"compromised", 0},
+                               {"attention", attention}, {"reason", reason}};
+        };
+        QVariantMap amy = person("amy", "participant", "member", "amy@example.com");
+        amy["self"] = true;
+        QVariantMap bob = person("bob", "participant", "member", "bob@example.com");
+        bob["keys"] = keys(2, 2, false);
+        QVariantMap gone = person({}, "absent", "member", "gone@example.com");
+        gone["keys"] = keys(1, 0, true);
+        room->applyPeople(QVariantMap{
+            {"list", "complete"},
+            {"groups", QVariantMap{{"participant", 2}, {"absent", 1}}},
+            {"me", QVariantMap{}},
+            {"people", QVariantList{amy, bob, gone}}});
+
+        QTRY_COMPARE(findItems(w->contentItem(), "keysLine").size(), 3);
+        const auto texts = [&](const QString &name) {
+            QStringList out;
+            for (QQuickItem *i : findItems(w->contentItem(), name))
+                out << i->property("text").toString();
+            return out;
+        };
+        QTRY_COMPARE(texts("occupantNick"),
+                     QStringList({"amy", "bob", "gone@example.com"}));
+        QStringList headings;
+        for (QQuickItem *i : findItems(w->contentItem(), "groupHeading"))
+            headings << i->property("section").toString();
+        QCOMPARE(headings, QStringList({"participant", "absent"}));
+
+        // Untranslated here, so in its source form.
+        const QList<QQuickItem *> lines = findItems(w->contentItem(), "keysLine");
+        QVERIFY(!lines.at(0)->isVisible()); // ours: no keys to show
+        QCOMPARE(lines.at(1)->property("text").toString(), QString("2 key(s), trusted"));
+        QCOMPARE(lines.at(2)->property("text").toString(), QString("1 new key(s)"));
+
+        const QList<QQuickItem *> folds = findItems(w->contentItem(), "personKeys");
+        QVERIFY(!folds.at(1)->property("active").toBool());
+        QVERIFY(folds.at(2)->property("active").toBool());
+        QQuickItem *toggle = findItems(w->contentItem(), "keysToggle").at(1);
+        QVERIFY(QMetaObject::invokeMethod(toggle, "clicked"));
+        QTRY_VERIFY(folds.at(1)->property("active").toBool());
+
+        const QString shot = qEnvironmentVariable("QUACK_SHOT");
+        if (!shot.isEmpty())
+            w->grabWindow().save(shot);
+        e.assertNoErrors();
+    }
+
+    // The encryption card follows the room's status, and its switch is the
+    // chat's own.
+    void theDetailsPageCarriesTheRoomsEncryption() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QQuickItem *card = findItem(w->contentItem(), "encryptionCard");
+        QQuickItem *toggle = findItem(w->contentItem(), "encryptionSwitch");
+        QVERIFY(card && toggle);
+        QVERIFY(!card->isVisible()); // nothing said yet
+
+        const QString room = "room@muc.example.com?join";
+        emit app->backend()->event(
+            "omemo", "RoomStatus",
+            QVariantMap{{"acc", "me@example.com"}, {"jid", room},
+                        {"status", QVariantMap{
+                            {"jid", room}, {"eligible", true}, {"enabled", true},
+                            {"offered", true}, {"reasons", QVariantList{}},
+                            {"member_list", "complete"}, {"members", QVariantList{}},
+                            {"attention", 2}, {"unreachable", QVariantList{}}}}});
+        QTRY_VERIFY(card->isVisible());
+        QVERIFY(toggle->isVisible());
+        QVERIFY(toggle->property("checked").toBool());
+        QCOMPARE(findItem(w->contentItem(), "encryptionState")->property("text").toString(),
+                 QString("2 member(s) need attention."));
         e.assertNoErrors();
     }
 

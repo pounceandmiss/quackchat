@@ -23,6 +23,12 @@ AppWindow {
         account: win.account
         jid: win.jid
         name: win.name
+        shown: win.visible
+        // Only rooms get this window, so asking for the chat as one is safe.
+        omemo: {
+            const s = App.chatFor(win.account, win.jid, true)
+            return s ? s.omemo : null
+        }
         showClose: false // the window's own close button is right there
         onDone: win.close()
     }

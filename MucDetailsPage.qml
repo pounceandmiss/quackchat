@@ -5,10 +5,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quack
 
-// Everything one room is: who is in it, what it is about, and what this account
-// may do about either. ContactDetailsPage for the other kind of chat, and
-// hosted the same two ways - a window on desktop, a full-screen sheet on
-// mobile. The Tk GUI spreads this over a participant sidebar, a legend toplevel
+// Everything one room is: who is in it and which members are not, what it is
+// about, whether it is encrypted and each member's keys, and what this account
+// may do about any of it. tacky works all of that out (`muc people`, `omemo
+// roomStatus`); the page only words it. ContactDetailsPage for the other kind
+// of chat, and hosted the same two ways - a window on desktop, a full-screen
+// sheet on mobile. The Tk GUI spreads this over a participant sidebar, a legend toplevel
 // and half the Chat menu.
 //
 // The whole page is a single ListView, so the room card scrolls away with the
@@ -24,9 +26,17 @@ Page {
     property string jid: ""
     property string name: ""
     property bool showClose: true
+    // Whether the page is on screen; its host holds it. The people are only
+    // read while it is - the page is built with its chat.
+    property bool shown: false
+    // The room's encryption switch, handed over by the host, which knows the
+    // chat is a room: asking App.chatFor from here would mark whatever chat it
+    // was handed as one.
+    property OmemoChat omemo: null
     signal done
 
     readonly property string roomTitle: name !== "" ? name : room.roomJid
+    readonly property bool omemoKnown: page.omemo !== null && page.omemo.known
 
     background: Rectangle { color: Theme.background }
 
@@ -36,6 +46,7 @@ Page {
         backend: App.backend
         account: page.account
         jid: page.jid
+        active: page.shown
         // Only while the box is up: a filter still narrowing the list from a
         // header nobody can see would read as a room that had emptied.
         filter: page.filterMode ? filterInput.text : ""
@@ -52,6 +63,7 @@ Page {
         case "moderator":   return qsTr("Moderators")
         case "participant": return qsTr("Participants")
         case "visitor":     return qsTr("Visitors")
+        case "absent":      return qsTr("Not here")
         default:            return qsTr("Others")
         }
     }
@@ -92,8 +104,54 @@ Page {
     // rather than one of them borrowing a third state's colour.
     function showFilled(show) { return show !== "xa" }
 
+    // A member's keys in a few words, from tacky's counts and its word on
+    // whether they need attention.
+    function keysLine(keys) {
+        switch (keys.reason) {
+        case "no_devices":
+            return qsTr("no encryption - cannot read encrypted messages")
+        case "no_usable_device":
+            return qsTr("no usable key - trust one to send")
+        }
+        if (keys.keys === 0)
+            return qsTr("no keys known yet")
+        if (keys.compromised > 0)
+            return qsTr("a key changed")
+        if (keys.attention && keys.undecided > 0)
+            return qsTr("%n new key(s)", "", keys.undecided)
+        return keys.trusted === keys.keys ? qsTr("%n key(s), trusted", "", keys.keys)
+                                          : qsTr("%n key(s)", "", keys.keys)
+    }
+    // Why a room cannot be encrypted, in tacky's words for it.
+    function reasonText(reason) {
+        switch (reason) {
+        case "unknown":
+            return qsTr("Whether this room can be encrypted is found out on joining it.")
+        case "not_members_only":
+            return qsTr("Only a members-only room can be encrypted.")
+        case "anonymous":
+            return qsTr("Only a room that shows its members' addresses can be encrypted.")
+        default:
+            return reason
+        }
+    }
+    // Which people's keys have been folded or unfolded by hand; the rest follow
+    // whether they need attention.
+    property var unfolded: ({})
+    function toggleKeys(key, open) {
+        const next = Object.assign({}, page.unfolded)
+        next[key] = !open
+        page.unfolded = next
+    }
+
     function copyText(text) {
         Clipboard.setText(text)
+        copiedNotice.text = qsTr("Address copied")
+        copiedNotice.show()
+    }
+    function copyFingerprint(spaced) {
+        Clipboard.setText(spaced)
+        copiedNotice.text = qsTr("Fingerprint copied")
         copiedNotice.show()
     }
 
@@ -310,14 +368,14 @@ Page {
         MenuEntry {
             objectName: "requestVoiceEntry"
             text: qsTr("Request voice")
-            offered: room.myRole === "visitor"
+            offered: room.me.request_voice === true
             onTriggered: room.requestVoice()
         }
         MenuEntry {
             objectName: "destroyEntry"
             text: qsTr("Destroy room…")
             labelColor: Theme.negative
-            offered: room.myAffiliation === "owner"
+            offered: room.me.destroy === true
             onTriggered: {
                 destroyConfirm.message =
                     qsTr("Destroy %1 for everyone, permanently?").arg(room.roomJid)
@@ -580,7 +638,9 @@ Page {
                                 spacing: 6
                                 Chip {
                                     objectName: "occupantCountChip"
-                                    text: qsTr("%n person(s)", "", room.total)
+                                    // Who is in there: the list also holds members who are not.
+                                    text: qsTr("%n person(s)", "",
+                                               room.total - (room.groupCounts.absent ?? 0))
                                     tone: Theme.accentDeep
                                 }
                                 Chip {
@@ -673,8 +733,82 @@ Page {
                     }
                     Caption {
                         Layout.fillWidth: true
-                        visible: room.myRole === "visitor"
+                        visible: room.me.request_voice === true
                         text: qsTr("Visitors cannot speak here. Ask for voice from the room menu.")
+                        wrapMode: Text.WordWrap
+                    }
+                }
+
+                // Whether what is written here is encrypted, and whether every
+                // member can read it. Who needs attention is marked on their
+                // own row below.
+                Card {
+                    objectName: "encryptionCard"
+                    visible: !page.filterMode && page.omemoKnown
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+                        Glyph {
+                            path: page.omemoKnown && page.omemo.enabled
+                                  ? Icons.lock : Icons.lockOpen
+                            color: page.omemoKnown && page.omemo.enabled
+                                   ? Theme.textPrimary : Theme.textDim
+                            size: 20
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: qsTr("Encryption")
+                            color: Theme.textPrimary
+                            font.pixelSize: 16
+                            font.bold: true
+                        }
+                        Switch {
+                            objectName: "encryptionSwitch"
+                            Accessible.name: qsTr("Encrypt messages")
+                            visible: page.omemoKnown && page.omemo.available
+                            checked: page.omemoKnown && page.omemo.enabled
+                            onToggled: page.omemo.enabled = checked
+                        }
+                    }
+                    Caption {
+                        objectName: "encryptionState"
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: !page.omemoKnown ? ""
+                              : !page.omemo.eligible
+                              ? page.omemo.reasons.map(r => page.reasonText(r)).join(" ")
+                              : !page.omemo.enabled
+                              ? qsTr("Messages go out unencrypted.")
+                              : page.omemo.attention > 0
+                              ? qsTr("%n member(s) need attention.", "", page.omemo.attention)
+                              : qsTr("Every member can read encrypted messages.")
+                    }
+                    // Turned on, then the room changed under it: what is
+                    // written now is held rather than sent in the clear.
+                    Caption {
+                        Layout.fillWidth: true
+                        visible: page.omemoKnown && page.omemo.enabled
+                                 && !page.omemo.eligible
+                        text: qsTr("Encryption is on, so messages here fail until it is turned off.")
+                        color: Theme.negative
+                        wrapMode: Text.WordWrap
+                    }
+                    Caption {
+                        objectName: "unreachableNotice"
+                        Layout.fillWidth: true
+                        visible: page.omemoKnown && page.omemo.unreachable.length > 0
+                        text: qsTr("The last message was not sent. Trust a device of each member marked below, or turn encryption off.")
+                        color: Theme.negative
+                        wrapMode: Text.WordWrap
+                    }
+                    Caption {
+                        objectName: "memberListNotice"
+                        Layout.fillWidth: true
+                        visible: page.omemoKnown && page.omemo.eligible
+                                 && (room.memberList === "partial"
+                                     || room.memberList === "presence")
+                        text: qsTr("The room did not give out its whole member list, so members who are not here now may be missing below and unable to read what you send.")
                         wrapMode: Text.WordWrap
                     }
                 }
@@ -690,8 +824,10 @@ Page {
             }
         }
 
-        delegate: ItemDelegate {
-            id: occupantRow
+        // A person's row, and under it their devices while unfolded.
+        delegate: Column {
+            id: personRow
+            required property string key
             required property string nick
             required property string occupantJid
             required property string realJid
@@ -701,120 +837,190 @@ Page {
             required property string status
             required property var caps
             required property bool self
+            required property bool present
+            required property var keys
 
             width: ListView.view.width
-            height: 58
-            onClicked: if (occupantRow.canModerate) {
-                occupantMenu.load(occupantRow)
-                occupantMenu.popup(occupantRow, occupantRow.pressX, occupantRow.pressY)
-            }
 
-            // Nothing to offer means nothing to press. The row is still a row -
-            // it just does not pretend to be a button.
-            readonly property bool canModerate: {
-                for (const key in occupantRow.caps)
-                    if (occupantRow.caps[key] === true)
-                        return true
-                return false
-            }
+            // Who they are on screen: a member who is not here has no nick.
+            readonly property string title:
+                personRow.nick !== "" ? personRow.nick : personRow.realJid
+            readonly property bool hasKeys: personRow.keys.keys !== undefined
+            readonly property bool open: personRow.hasKeys && personRow.keys.keys > 0
+                && (page.unfolded[personRow.key] ?? personRow.keys.attention)
 
-            // Under the nick: who they really are where the room says so, and
-            // otherwise whatever they said about themselves, quoted because it
-            // is theirs and not ours. Deliberately not a presence word to fall
-            // back on - the dot already carries that, and a row reading
-            // "Available" beside one reading "online" makes the app's own label
-            // look like somebody's status text.
-            readonly property string secondLine: {
-                if (occupantRow.realJid !== "")
-                    return occupantRow.realJid
-                return occupantRow.status !== ""
-                    ? qsTr("“%1”").arg(occupantRow.status) : ""
-            }
-
-            background: Rectangle {
-                color: occupantRow.hovered && occupantRow.canModerate
-                       ? Theme.menuHover : "transparent"
-            }
-
-            contentItem: RowLayout {
-                spacing: 12
-
-                Item {
-                    Layout.leftMargin: 16
-                    Layout.preferredWidth: 40
-                    Layout.preferredHeight: 40
-                    Avatar {
-                        anchors.fill: parent
-                        account: page.account
-                        jid: occupantRow.occupantJid
-                        label: occupantRow.nick
-                        initialsPixelSize: 15
-                    }
-                    PresenceDot {
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        tone: page.showColor(occupantRow.show)
-                        filled: page.showFilled(occupantRow.show)
-                        Accessible.name: page.showLabel(occupantRow.show)
-                    }
+            ItemDelegate {
+                id: occupantRow
+                width: personRow.width
+                height: personRow.hasKeys ? 72 : 58
+                onClicked: if (occupantRow.canModerate) {
+                    occupantMenu.load(personRow)
+                    occupantMenu.popup(occupantRow, occupantRow.pressX, occupantRow.pressY)
                 }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    RowLayout {
+                // Nothing to offer means nothing to press. The row is still a
+                // row - it just does not pretend to be a button.
+                readonly property bool canModerate: {
+                    for (const key in personRow.caps)
+                        if (personRow.caps[key] === true)
+                            return true
+                    return false
+                }
+
+                // Under the nick: who they really are where the room says so,
+                // and otherwise whatever they said about themselves, quoted
+                // because it is theirs and not ours. Deliberately not a
+                // presence word to fall back on - the dot already carries that,
+                // and a row reading "Available" beside one reading "online"
+                // makes the app's own label look like somebody's status text.
+                // Nothing for a member who is not here: the address is already
+                // their name.
+                readonly property string secondLine: {
+                    if (personRow.nick === "")
+                        return ""
+                    if (personRow.realJid !== "")
+                        return personRow.realJid
+                    return personRow.status !== ""
+                        ? qsTr("“%1”").arg(personRow.status) : ""
+                }
+
+                background: Rectangle {
+                    color: occupantRow.hovered && occupantRow.canModerate
+                           ? Theme.menuHover : "transparent"
+                }
+
+                contentItem: RowLayout {
+                    spacing: 12
+                    opacity: personRow.present ? 1 : 0.6
+
+                    Item {
+                        Layout.leftMargin: 16
+                        Layout.preferredWidth: 40
+                        Layout.preferredHeight: 40
+                        Avatar {
+                            anchors.fill: parent
+                            account: page.account
+                            jid: personRow.present ? personRow.occupantJid
+                                                   : personRow.realJid
+                            label: personRow.title
+                            initialsPixelSize: 15
+                        }
+                        PresenceDot {
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            visible: personRow.present
+                            tone: page.showColor(personRow.show)
+                            filled: page.showFilled(personRow.show)
+                            Accessible.name: page.showLabel(personRow.show)
+                        }
+                    }
+
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        spacing: 6
-                        Text {
-                            objectName: "occupantNick"
+                        spacing: 2
+                        RowLayout {
                             Layout.fillWidth: true
-                            text: occupantRow.nick
-                            color: Theme.textPrimary
-                            font.pixelSize: 15
-                            font.bold: true
+                            spacing: 6
+                            Text {
+                                objectName: "occupantNick"
+                                Layout.fillWidth: true
+                                text: personRow.title
+                                color: Theme.textPrimary
+                                font.pixelSize: 15
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            // The affiliation prefixes the Tk list puts in front
+                            // of a nick, as something readable without a key.
+                            Chip {
+                                objectName: "affiliationChip"
+                                visible: page.affiliationLabel(personRow.affiliation) !== ""
+                                text: page.affiliationLabel(personRow.affiliation)
+                                tone: personRow.affiliation === "owner"
+                                      ? Theme.accentDeep : Theme.textDim
+                            }
+                            Chip {
+                                objectName: "selfChip"
+                                visible: personRow.self
+                                text: qsTr("You")
+                                tone: Theme.accent
+                            }
+                        }
+                        Text {
+                            objectName: "occupantSecondLine"
+                            Layout.fillWidth: true
+                            // Nothing known about them beyond the nick, so the
+                            // nick takes the whole row rather than sitting over
+                            // a gap.
+                            visible: occupantRow.secondLine !== ""
+                            text: occupantRow.secondLine
+                            color: Theme.textDim
+                            font.pixelSize: 12
                             elide: Text.ElideRight
                         }
-                        // The affiliation prefixes the Tk list puts in front of
-                        // a nick, as something readable without a key.
-                        Chip {
-                            objectName: "affiliationChip"
-                            visible: page.affiliationLabel(occupantRow.affiliation) !== ""
-                            text: page.affiliationLabel(occupantRow.affiliation)
-                            tone: occupantRow.affiliation === "owner"
-                                  ? Theme.accentDeep : Theme.textDim
-                        }
-                        Chip {
-                            objectName: "selfChip"
-                            visible: occupantRow.self
-                            text: qsTr("You")
-                            tone: Theme.accent
+                        Text {
+                            objectName: "keysLine"
+                            Layout.fillWidth: true
+                            visible: personRow.hasKeys
+                            text: personRow.hasKeys ? page.keysLine(personRow.keys) : ""
+                            color: personRow.hasKeys && personRow.keys.attention
+                                   ? Theme.negative : Theme.textDim
+                            font.pixelSize: 12
+                            elide: Text.ElideRight
                         }
                     }
-                    Text {
-                        objectName: "occupantSecondLine"
-                        Layout.fillWidth: true
-                        // Nothing known about them beyond the nick, so the nick
-                        // takes the whole row rather than sitting over a gap.
-                        visible: occupantRow.secondLine !== ""
-                        text: occupantRow.secondLine
-                        color: Theme.textDim
-                        font.pixelSize: 12
-                        elide: Text.ElideRight
+
+                    // Their devices, folded under the row. Nothing to unfold
+                    // for someone with no keys on file: the line says so.
+                    IconButton {
+                        objectName: "keysToggle"
+                        visible: personRow.hasKeys && personRow.keys.keys > 0
+                        iconPath: personRow.open ? Icons.keyboardArrowUp
+                                                 : Icons.keyboardArrowDown
+                        iconSize: 18
+                        Accessible.name: personRow.open ? qsTr("Hide their keys")
+                                                        : qsTr("Show their keys")
+                        glyphColor: Theme.textDim
+                        onClicked: page.toggleKeys(personRow.key, personRow.open)
+                    }
+
+                    IconButton {
+                        id: occupantMenuButton
+                        objectName: "occupantMenuButton"
+                        Layout.rightMargin: 8
+                        iconPath: Icons.moreHoriz
+                        iconSize: 18
+                        Accessible.name: qsTr("Actions for this person")
+                        glyphColor: Theme.textDim
+                        visible: occupantRow.canModerate
+                        onClicked: {
+                            occupantMenu.load(personRow)
+                            occupantMenu.popupUnder(occupantMenuButton)
+                        }
                     }
                 }
+            }
 
-                IconButton {
-                    id: occupantMenuButton
-                    objectName: "occupantMenuButton"
-                    Layout.rightMargin: 8
-                    iconPath: Icons.moreHoriz
-                    iconSize: 18
-                    Accessible.name: qsTr("Actions for this person")
-                    glyphColor: Theme.textDim
-                    visible: occupantRow.canModerate
-                    onClicked: {
-                        occupantMenu.load(occupantRow)
-                        occupantMenu.popupUnder(occupantMenuButton)
+            // Built only while unfolded: each is a read of its own. The same
+            // key list a contact's page has, for this one member.
+            Loader {
+                objectName: "personKeys"
+                x: 72
+                width: personRow.width - 72 - 16
+                active: personRow.open
+                visible: active
+                sourceComponent: ColumnLayout {
+                    spacing: 6
+                    OmemoDevicesModel {
+                        id: theirKeys
+                        backend: App.backend
+                        account: page.account
+                        jid: personRow.realJid
+                    }
+                    TrustList {
+                        Layout.bottomMargin: 12
+                        devices: theirKeys
+                        onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                     }
                 }
             }

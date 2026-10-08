@@ -262,6 +262,7 @@ qt_add_qml_module(quack
         BackendNotice.qml
         ContactDetailsPage.qml
         MucDetailsPage.qml
+        UnreachableBanner.qml
         MessageXmlPage.qml
         Fingerprint.qml
         ConversationsPage.qml

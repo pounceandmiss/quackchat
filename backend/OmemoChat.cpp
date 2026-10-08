@@ -55,29 +55,49 @@ void OmemoChat::setGroupchat(bool v) {
 void OmemoChat::refresh() {
     setKnown(false);
     m_readToken = -1;
+    m_setToken = -1;
     m_prepared = false;
-    if (!m_backend || !available())
+    applyRoomStatus({});
+    if (!m_backend || m_account.isEmpty() || m_jid.isEmpty())
         return;
     m_readToken = m_backend->request(
-        QStringLiteral("omemo"), QStringLiteral("isEnabled"),
+        QStringLiteral("omemo"),
+        m_groupchat ? QStringLiteral("roomStatus") : QStringLiteral("isEnabled"),
         QVariantMap{{QStringLiteral("acc"), m_account},
                     {QStringLiteral("jid"), m_jid}});
 }
 
 void OmemoChat::handleResult(int token, const QVariant &data) {
+    if (token == m_setToken) {
+        m_setToken = -1;
+        return;
+    }
     if (token != m_readToken)
         return;
     m_readToken = -1;
-    applyEnabled(data.toBool());
+    if (m_groupchat) {
+        const QVariantMap status = data.toMap();
+        applyRoomStatus(status);
+        applyEnabled(status.value(QStringLiteral("enabled")).toBool());
+    } else {
+        applyEnabled(data.toBool());
+    }
     setKnown(true);
     if (m_enabled)
         prepare();
 }
 
-// Left unknown rather than guessed at: the next connected edge asks again, and
-// until then there is nothing to draw.
+// A failed read is left unknown rather than guessed at: the next connected
+// edge asks again, and until then there is nothing to draw. A refused switch
+// (the room stopped qualifying between drawing it and the click) is put back
+// by reading the room again.
 void OmemoChat::handleError(int token, const QString &message) {
     Q_UNUSED(message)
+    if (token == m_setToken) {
+        m_setToken = -1;
+        refresh();
+        return;
+    }
     if (token != m_readToken)
         return;
     m_readToken = -1;
@@ -86,8 +106,46 @@ void OmemoChat::handleError(int token, const QString &message) {
 void OmemoChat::setKnown(bool v) {
     if (m_known == v)
         return;
+    const bool was = available();
     m_known = v;
     emit knownChanged();
+    availableFrom(was);
+}
+
+void OmemoChat::availableFrom(bool was) {
+    if (was != available())
+        emit availableChanged();
+}
+
+void OmemoChat::applyRoomStatus(const QVariantMap &status) {
+    const bool was = available();
+    const bool eligible = status.value(QStringLiteral("eligible")).toBool();
+    const QStringList reasons = status.value(QStringLiteral("reasons")).toStringList();
+    const QString memberList = status.value(QStringLiteral("member_list")).toString();
+    const int attention = status.value(QStringLiteral("attention")).toInt();
+    const bool offered = status.value(QStringLiteral("offered")).toBool();
+    if (eligible != m_eligible || reasons != m_reasons || memberList != m_memberList
+        || attention != m_attention || offered != m_offered) {
+        m_eligible = eligible;
+        m_reasons = reasons;
+        m_memberList = memberList;
+        m_attention = attention;
+        m_offered = offered;
+        emit roomStatusChanged();
+    }
+    setUnreachable(status.value(QStringLiteral("unreachable")).toList());
+    availableFrom(was);
+}
+
+void OmemoChat::setUnreachable(const QVariantList &members) {
+    if (m_unreachable == members)
+        return;
+    m_unreachable = members;
+    emit unreachableChanged();
+}
+
+void OmemoChat::dismissUnreachable() {
+    setUnreachable({});
 }
 
 void OmemoChat::setEnabled(bool on) {
@@ -100,10 +158,15 @@ void OmemoChat::setEnabled(bool on) {
     setKnown(true);
     if (!m_backend)
         return;
-    m_backend->notify(QStringLiteral("omemo"), QStringLiteral("setEnabled"),
-                      QVariantMap{{QStringLiteral("acc"), m_account},
-                                  {QStringLiteral("jid"), m_jid},
-                                  {QStringLiteral("value"), on ? 1 : 0}});
+    const QVariantMap args{{QStringLiteral("acc"), m_account},
+                           {QStringLiteral("jid"), m_jid},
+                           {QStringLiteral("value"), on ? 1 : 0}};
+    if (m_groupchat)
+        m_setToken = m_backend->request(QStringLiteral("omemo"),
+                                        QStringLiteral("setEnabled"), args);
+    else
+        m_backend->notify(QStringLiteral("omemo"), QStringLiteral("setEnabled"),
+                          args);
 }
 
 void OmemoChat::handleEvent(const QString &module, const QString &name,
@@ -123,6 +186,25 @@ void OmemoChat::handleEvent(const QString &module, const QString &name,
         setKnown(true);
         if (on)
             prepare();
+    } else if (module == QLatin1String("omemo") && name == QLatin1String("RoomStatus")) {
+        if (!m_groupchat || a.value(QStringLiteral("jid")).toString() != m_jid)
+            return;
+        // The whole answer, the switch included, as the read's is.
+        const QVariantMap status = a.value(QStringLiteral("status")).toMap();
+        m_readToken = -1;
+        applyRoomStatus(status);
+        applyEnabled(status.value(QStringLiteral("enabled")).toBool());
+        setKnown(true);
+        if (m_enabled)
+            prepare();
+    } else if (module == QLatin1String("omemo")
+               && name == QLatin1String("MembersUnreachable")) {
+        // Its own event as well as part of <RoomStatus>, which says only what
+        // changed: a second send stopped by the same members is news here and
+        // nowhere else.
+        if (!m_groupchat || a.value(QStringLiteral("jid")).toString() != m_jid)
+            return;
+        setUnreachable(a.value(QStringLiteral("members")).toList());
     } else if (sessionUp(module, name, args)) {
         // The per-account store the setting lives in is opened with the
         // session, so anything asked for before then answered from nothing.
@@ -152,6 +234,8 @@ void OmemoChat::prepare() {
 void OmemoChat::applyEnabled(bool on) {
     if (m_enabled == on)
         return;
+    const bool was = available();
     m_enabled = on;
     emit enabledChanged();
+    availableFrom(was);
 }

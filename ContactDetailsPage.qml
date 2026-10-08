@@ -7,9 +7,8 @@ import Quack
 
 // One contact: who the roster says they are, and what we make of each of their
 // OMEMO devices. The mirror of AccountSettingsPage, for the other side of a
-// conversation. Reached from the chat's header and from the padlock beside the
-// message box, and hosted the same two ways the account page is: a window on
-// desktop, a full-screen sheet on mobile.
+// conversation. Reached from the chat's header, and hosted the same two ways
+// the account page is: a window on desktop, a full-screen sheet on mobile.
 //
 // Trust is written the moment it is picked, and nothing else here is editable,
 // so there is nothing to save and nothing to cancel. Blind trust is

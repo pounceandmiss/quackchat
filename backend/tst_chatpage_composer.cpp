@@ -53,7 +53,7 @@ private slots:
     void deletingAsksBeforeItGoesOut();
     void aTombstoneDrawsAPlaceholderAndOffersNothing();
     void togglingTheComposerLockChangesWhatIsSent();
-    void keysOpenFromTheComposerLock();
+    void keysOpenOnTheContactsPage();
     // Stops the shared backend, so nothing may run after it.
     void theFailedPillCarriesTheBackendsWords();
 };
@@ -459,8 +459,8 @@ void TestChatPageComposer::padlockFollowsTheRowStamp() {
     QVERIFY(!openLock->isVisible());
 }
 
-// A room's messages go out in the clear whatever the switch says, so it has
-// nothing to offer there.
+// A room is encrypted only once it qualifies, and one nothing is known about
+// yet has nothing to offer.
 void TestChatPageComposer::composerLockIsHiddenInRooms() {
     const Chat oneToOne = open("quiet@example.com");
     QVERIFY(oneToOne.win());
@@ -475,15 +475,13 @@ void TestChatPageComposer::composerLockIsHiddenInRooms() {
     QVERIFY(!roomLock->property("visible").toBool());
 }
 
-// A touch point carries no button, so the padlock's right-click handler was
-// offered every tap: on a phone the keys came up over the switch it flipped.
+// A tap on the padlock flips it; the keys are on the contact's or the room's
+// page, reached from the header.
 void TestChatPageComposer::aTouchTapOnTheLockOnlyFlipsIt() {
     const Chat chat = open("touch@example.com");
     QVERIFY(chat.win());
     auto *lock = shownLock(chat.win());
     QVERIFY(lock);
-    auto *menu = lock->findChild<QObject *>("lockMenu");
-    QVERIFY(menu);
     auto *page = chat.win()->findChild<QObject *>("chatPane");
     QVERIFY(page);
     QTRY_VERIFY(page->property("encryptOn").toBool());
@@ -495,9 +493,6 @@ void TestChatPageComposer::aTouchTapOnTheLockOnlyFlipsIt() {
     QTest::touchEvent(chat.win(), finger).release(0, centre);
 
     QTRY_VERIFY(!page->property("encryptOn").toBool());
-    settle();
-    QVERIFY2(!menu->property("opened").toBool(),
-             "a tap on the padlock brought up the keys menu");
 }
 
 void TestChatPageComposer::resendGatingFollowsTheRow() {
@@ -792,22 +787,11 @@ void TestChatPageComposer::togglingTheComposerLockChangesWhatIsSent() {
              QString("omemo"));
 }
 
-// The contact's page hangs off the padlock too, since that is the control that
-// says whether their keys are being used. A room has neither.
-void TestChatPageComposer::keysOpenFromTheComposerLock() {
+// The contact's page, where their keys are, opens as a window on desktop. A
+// room has no contact behind it.
+void TestChatPageComposer::keysOpenOnTheContactsPage() {
     const Chat chat = open("quiet@example.com");
     QVERIFY(chat.win());
-    auto *lock = shownLock(chat.win());
-    QVERIFY(lock);
-    auto *menu = lock->findChild<QObject *>("lockMenu");
-    QVERIFY(menu);
-    QVERIFY(!menu->property("opened").toBool());
-
-    const QPointF centre = lock->mapToScene(QPointF(lock->width() / 2, lock->height() / 2));
-    QTest::mouseClick(chat.win(), Qt::RightButton, {}, centre.toPoint());
-    QTRY_VERIFY(menu->property("opened").toBool());
-    QVERIFY(lock->findChild<QQuickItem *>("keysEntry"));
-
     auto *page = chat.win()->findChild<QObject *>("chatPane");
     QVERIFY(page);
     QVariant window;

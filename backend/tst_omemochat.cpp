@@ -29,10 +29,15 @@ private slots:
     void followsTheEvent();
     void eventsAreScopedToAccountAndJid();
     void switchingChatsGoesBackToUnknown();
-    void groupchatIsUnavailable();
+    void aRoomIsReadForItsStatus();
+    void aRoomIsUnavailableUntilItQualifies();
+    void aRoomThatStoppedQualifyingKeepsItsSwitch();
+    void aRefusedSwitchReadsTheRoomAgain();
+    void everyStoppedSendIsShown();
     void toggleFlipsBeforeTheEventLands();
     void readyReReadsTheSetting();
     void integrationReadAnswersWithTheStoredValue();
+    void integrationARoomIsAnsweredForBeforeItIsKnown();
 };
 
 // The default is on, which over a chat that is really off would draw a padlock
@@ -149,18 +154,126 @@ void TestOmemoChat::switchingChatsGoesBackToUnknown() {
     QVERIFY(!o.known());
 }
 
-// A room has no OMEMO at all - tacky sends its messages in the clear whatever
-// this says - so there is nothing to draw and nothing to set.
-void TestOmemoChat::groupchatIsUnavailable() {
-    OmemoChat o;
-    chat(o, "room@h");
+static void room(OmemoChat &o) {
     o.setGroupchat(true);
+    o.setAccount("me@h");
+    o.setJid("room@muc.h?join");
+}
+
+static QVariantMap roomStatus(bool eligible, bool enabled,
+                              const QStringList &reasons = {}) {
+    return QVariantMap{{"jid", "room@muc.h?join"},
+                       {"eligible", eligible},
+                       {"enabled", enabled},
+                       // tacky's word for whether there is a switch to show
+                       {"offered", eligible || enabled},
+                       {"reasons", reasons},
+                       {"member_list", eligible ? "complete" : "none"},
+                       {"members", QVariantList{}},
+                       {"attention", 0},
+                       {"unreachable", QVariantList{}}};
+}
+
+// One read says both whether the room is on and whether it could be.
+void TestOmemoChat::aRoomIsReadForItsStatus() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    room(o);
+
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.last().at(1).toString(), QString("roomStatus"));
+    QCOMPARE(sent.last().at(2).toMap().value("jid").toString(),
+             QString("room@muc.h?join"));
+}
+
+void TestOmemoChat::aRoomIsUnavailableUntilItQualifies() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    room(o); // token 1
     QVERIFY(!o.available());
 
-    QSignalSpy spy(&o, &OmemoChat::enabledChanged);
-    o.setEnabled(false);
+    o.handleResult(1, roomStatus(false, false, {"anonymous"}));
+    QVERIFY(o.known());
+    QVERIFY(!o.available());
+    QCOMPARE(o.reasons(), QStringList{"anonymous"});
+    o.setEnabled(true);
+    QVERIFY(!o.enabled());
+
+    QSignalSpy available(&o, &OmemoChat::availableChanged);
+    o.handleEvent("omemo", "RoomStatus",
+                  QVariantMap{{"acc", "me@h"}, {"jid", "room@muc.h?join"},
+                              {"status", roomStatus(true, false)}});
+    QVERIFY(o.available());
+    QCOMPARE(available.count(), 1);
+    QVERIFY(o.reasons().isEmpty());
+}
+
+// On, then the room went public: its sends fail rather than go out in the
+// clear, and the way out of that is the switch.
+void TestOmemoChat::aRoomThatStoppedQualifyingKeepsItsSwitch() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    room(o);
+    o.handleResult(1, roomStatus(false, true, {"not_members_only"}));
+    QVERIFY(o.available());
     QVERIFY(o.enabled());
-    QCOMPARE(spy.count(), 0);
+
+    o.setEnabled(false);
+    QVERIFY(!o.enabled());
+    // Off, it has no switch left - once tacky says so.
+    o.handleEvent("omemo", "RoomStatus",
+                  QVariantMap{{"acc", "me@h"}, {"jid", "room@muc.h?join"},
+                              {"status", roomStatus(false, false, {"not_members_only"})}});
+    QVERIFY(!o.available());
+    o.setEnabled(true);
+    QVERIFY(!o.enabled());
+}
+
+// The room stopped qualifying between drawing the switch and the click, and
+// tacky refused it. What is on screen goes back to what the room says.
+void TestOmemoChat::aRefusedSwitchReadsTheRoomAgain() {
+    TackyBackend backend;
+    OmemoChat o;
+    o.setBackend(&backend);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    room(o);
+    o.handleResult(1, roomStatus(true, false));
+
+    o.setEnabled(true); // token 2
+    QVERIFY(o.enabled());
+    QCOMPARE(sent.last().at(1).toString(), QString("setEnabled"));
+
+    o.handleError(2, "OMEMO ROOM_NOT_ELIGIBLE");
+    QVERIFY(!o.known());
+    QCOMPARE(sent.last().at(1).toString(), QString("roomStatus"));
+}
+
+// <RoomStatus> only says what changed, so the same members stopping a second
+// send arrive as <MembersUnreachable> alone - after the first was put away.
+void TestOmemoChat::everyStoppedSendIsShown() {
+    OmemoChat o;
+    room(o);
+    const QVariantMap stopped{
+        {"acc", "me@h"}, {"jid", "room@muc.h?join"},
+        {"members", QVariantList{QVariantMap{{"jid", "bob@h"}, {"reason", "no_devices"}}}}};
+
+    o.handleEvent("omemo", "MembersUnreachable", stopped);
+    QCOMPARE(o.unreachable().size(), 1);
+    o.dismissUnreachable();
+    QVERIFY(o.unreachable().isEmpty());
+    o.handleEvent("omemo", "MembersUnreachable", stopped);
+    QCOMPARE(o.unreachable().size(), 1);
+
+    // Another room's is not this one's.
+    o.dismissUnreachable();
+    QVariantMap elsewhere = stopped;
+    elsewhere["jid"] = "other@muc.h?join";
+    o.handleEvent("omemo", "MembersUnreachable", elsewhere);
+    QVERIFY(o.unreachable().isEmpty());
 }
 
 void TestOmemoChat::toggleFlipsBeforeTheEventLands() {
@@ -216,6 +329,31 @@ void TestOmemoChat::integrationReadAnswersWithTheStoredValue() {
     o.setJid("peer@example.com");
     QTRY_VERIFY(o.known());
     QVERIFY(!o.enabled());
+
+    backend.stop();
+}
+
+// A room nothing is known about yet: the status is a full answer, schema and
+// all, saying it does not qualify and why.
+void TestOmemoChat::integrationARoomIsAnsweredForBeforeItIsKnown() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "x"},
+                               {"domain", "example.com"},
+                               {"username", "me"}});
+
+    OmemoChat o;
+    o.setBackend(&backend);
+    o.setGroupchat(true);
+    o.setAccount("me@example.com");
+    o.setJid("room@muc.example.com?join");
+    QTRY_VERIFY(o.known());
+    QVERIFY(!o.enabled());
+    QVERIFY(!o.eligible());
+    QVERIFY(!o.available());
+    QCOMPARE(o.reasons(), QStringList{"unknown"});
 
     backend.stop();
 }

@@ -1,7 +1,8 @@
 // Driven with canned tacky replies and events, decoded exactly as TackyBackend
-// decodes them. What is under test is the row bookkeeping: a room's list moves
-// under a presence several times a minute, and the details page is scrolled
-// while it does, so the model has to move one row rather than replace the list.
+// decodes them. tacky decides who the people are, their order and their
+// groups; what is under test is the row bookkeeping: a room's list moves under
+// a presence several times a minute, and the details page is scrolled while it
+// does, so the model has to move one row rather than replace the list.
 #include <QtTest>
 #include <QJsonDocument>
 #include <QSignalSpy>
@@ -13,64 +14,67 @@ static QVariantMap mapFrom(const QByteArray &json) {
     return QJsonDocument::fromJson(json).object().toVariantMap();
 }
 
-// The shape `muc occupants` answers with, one entry per occupant.
-static QVariantMap occupant(const QString &nick, const QString &role,
-                            const QString &affiliation = QStringLiteral("none"),
-                            const QString &realJid = {},
-                            const QString &show = {}) {
-    return QVariantMap{{"nick", nick},
-                       {"role", role},
-                       {"affiliation", affiliation},
+// One person as `muc people` gives it.
+static QVariantMap person(const QString &nick, const QString &group,
+                          const QString &realJid = {},
+                          const QString &show = {}) {
+    return QVariantMap{{"key", realJid.isEmpty() ? "nick:" + nick : realJid},
+                       {"nick", nick},
                        {"jid", realJid},
+                       {"occupant", nick.isEmpty() ? QString() : "room@muc.h/" + nick},
+                       {"present", group != "absent"},
+                       {"self", false},
+                       {"group", group},
+                       {"role", group == "absent" ? "none" : group},
+                       {"affiliation", "none"},
                        {"show", show},
                        {"status", QString()},
-                       {"caps", QVariantMap{}}};
+                       {"caps", QVariantMap{}},
+                       {"keys", QVariantMap{}}};
 }
 
-static QStringList nicks(const MucRoomModel &m) {
+static QVariantMap people(const QVariantList &list,
+                          const QVariantMap &groups = {},
+                          const QVariantMap &me = {}) {
+    return QVariantMap{{"list", "complete"}, {"groups", groups},
+                       {"me", me}, {"people", list}};
+}
+
+static QStringList keys(const MucRoomModel &m) {
     QStringList out;
     for (int i = 0; i < m.rowCount(); ++i)
-        out << m.data(m.index(i), MucRoomModel::NickRole).toString();
+        out << m.data(m.index(i), MucRoomModel::KeyRole).toString();
     return out;
 }
 
 class TestMucRoom : public QObject {
     Q_OBJECT
 private slots:
-    void groupsByRoleThenNick();
+    void rowsComeInTheOrderGiven();
     void theJoinSuffixIsNotPartOfTheRoom();
-    void aPresenceMovesOneRow();
-    void aRoleChangeMovesTheRowBetweenGroups();
+    void aChangeMovesOneRow();
+    void aMovedPersonMovesTheirRow();
     void leavingEmptiesTheRoom();
-    void ourOwnRowIsMarkedAndSpeaksForUs();
+    void ourOwnPersonSpeaksForUs();
     void theFilterNarrowsTheRowsNotTheRoom();
+    void readsOnlyWhileActive();
     void anotherRoomsEventsAreNotOurs();
     void aRefusedActionSaysWhichOneItWas();
     void anAffiliationNeedsARealJid();
-    void halfAnOccupantJidIsNoJid();
+    void integrationARoomNotJoinedHasNoPeople();
 };
 
-// Moderators first, then participants, then visitors, and alphabetically
-// within each - the grouping the Tk participant list draws.
-void TestMucRoom::groupsByRoleThenNick() {
+// tacky orders and counts; the rows are its answer as it stands.
+void TestMucRoom::rowsComeInTheOrderGiven() {
     MucRoomModel m;
-    m.applyOccupants({occupant("zoe", "participant"),
-                      occupant("Bob", "visitor"),
-                      occupant("amy", "participant"),
-                      occupant("mo", "moderator"),
-                      occupant("ghost", "")});
-    QCOMPARE(nicks(m), QStringList({"mo", "amy", "zoe", "Bob", "ghost"}));
-    QCOMPARE(m.data(m.index(0), MucRoomModel::GroupRole).toString(),
-             QString("moderator"));
-    // A role the model has no group for is still somebody in the room.
-    QCOMPARE(m.data(m.index(4), MucRoomModel::GroupRole).toString(),
-             QString("other"));
-
-    const QVariantMap counts = m.groupCounts();
-    QCOMPARE(counts.value("moderator").toInt(), 1);
-    QCOMPARE(counts.value("participant").toInt(), 2);
-    QCOMPARE(counts.value("visitor").toInt(), 1);
-    QCOMPARE(counts.value("other").toInt(), 1);
+    m.applyPeople(people({person("mo", "moderator", "mo@h"),
+                          person("zoe", "participant"),
+                          person({}, "absent", "gone@h")},
+                         {{"moderator", 1}, {"participant", 1}, {"absent", 1}}));
+    QCOMPARE(keys(m), QStringList({"mo@h", "nick:zoe", "gone@h"}));
+    QCOMPARE(m.groupCounts().value("absent").toInt(), 1);
+    QVERIFY(!m.data(m.index(2), MucRoomModel::PresentRole).toBool());
+    QCOMPARE(m.memberList(), QString("complete"));
 }
 
 // Chat JIDs carry ?join to mark them as a room's. The muc module keys its rooms
@@ -80,61 +84,62 @@ void TestMucRoom::theJoinSuffixIsNotPartOfTheRoom() {
     MucRoomModel m;
     m.setBackend(&backend);
     m.setAccount("me@h");
+    m.setActive(true);
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     m.setJid("room@muc.h?join");
     QCOMPARE(m.roomJid(), QString("room@muc.h"));
-    QVERIFY(sent.count() >= 1);
-    QCOMPARE(sent.at(0).at(0).toString(), QString("muc"));
-    QCOMPARE(sent.at(0).at(1).toString(), QString("occupants"));
-    QCOMPARE(sent.at(0).at(2).toMap().value("jid").toString(),
-             QString("room@muc.h"));
-
-    // And an occupant's avatar lives under the room JID plus their nick.
-    m.applyOccupants({occupant("amy", "participant")});
-    QCOMPARE(m.data(m.index(0), MucRoomModel::OccupantJidRole).toString(),
-             QString("room@muc.h/amy"));
+    QStringList methods;
+    for (const auto &call : sent) {
+        methods << call.at(1).toString();
+        QCOMPARE(call.at(2).toMap().value("jid").toString(), QString("room@muc.h"));
+    }
+    QVERIFY(methods.contains("people"));
 }
 
-// A presence for somebody already listed changes their row where it stands.
+// A change to somebody already listed changes their row where it stands.
 // Resetting the model instead would throw the scroll position away, which in a
 // busy room happens several times a minute.
-void TestMucRoom::aPresenceMovesOneRow() {
+void TestMucRoom::aChangeMovesOneRow() {
     MucRoomModel m;
-    m.applyOccupants({occupant("amy", "participant"), occupant("zoe", "participant")});
+    m.applyPeople(people({person("amy", "participant"), person("zoe", "participant")}));
 
     QSignalSpy changed(&m, &MucRoomModel::dataChanged);
     QSignalSpy inserted(&m, &MucRoomModel::rowsInserted);
     QSignalSpy removed(&m, &MucRoomModel::rowsRemoved);
+    QSignalSpy reset(&m, &MucRoomModel::modelReset);
 
-    m.applyOccupant(occupant("amy", "participant", "none", {}, "away"));
+    m.applyPeople(people({person("amy", "participant", {}, "away"),
+                          person("zoe", "participant")}));
     QCOMPARE(inserted.count(), 0);
     QCOMPARE(removed.count(), 0);
     QCOMPARE(changed.count(), 1);
     QCOMPARE(changed.at(0).at(0).toModelIndex().row(), 0);
-    QCOMPARE(m.data(m.index(0), MucRoomModel::ShowRole).toString(), QString("away"));
 
-    // Somebody new arrives in the middle, and only that row is inserted.
-    m.applyOccupant(occupant("mia", "participant"));
-    QCOMPARE(nicks(m), QStringList({"amy", "mia", "zoe"}));
+    m.applyPeople(people({person("amy", "participant", {}, "away"),
+                          person("mia", "participant"),
+                          person("zoe", "participant")}));
     QCOMPARE(inserted.count(), 1);
     QCOMPARE(inserted.at(0).at(1).toInt(), 1);
 
-    m.removeOccupant("mia");
-    QCOMPARE(nicks(m), QStringList({"amy", "zoe"}));
+    m.applyPeople(people({person("amy", "participant", {}, "away"),
+                          person("zoe", "participant")}));
     QCOMPARE(removed.count(), 1);
+    QCOMPARE(reset.count(), 0);
 }
 
-// A promotion arrives as an ordinary presence, and has to leave the group it
-// was in rather than be written over in place.
-void TestMucRoom::aRoleChangeMovesTheRowBetweenGroups() {
+// A promotion puts somebody elsewhere in tacky's order: their row moves there
+// rather than going and coming back.
+void TestMucRoom::aMovedPersonMovesTheirRow() {
     MucRoomModel m;
-    m.applyOccupants({occupant("amy", "participant"), occupant("zoe", "participant")});
-    m.applyOccupant(occupant("zoe", "moderator"));
-    QCOMPARE(nicks(m), QStringList({"zoe", "amy"}));
-    QCOMPARE(m.rowCount(), 2);
-    QCOMPARE(m.groupCounts().value("participant").toInt(), 1);
-    QCOMPARE(m.groupCounts().value("moderator").toInt(), 1);
+    m.applyPeople(people({person("amy", "participant"), person("zoe", "participant")}));
+    QSignalSpy moved(&m, &MucRoomModel::rowsMoved);
+    QSignalSpy removed(&m, &MucRoomModel::rowsRemoved);
+    m.applyPeople(people({person("zoe", "moderator"), person("amy", "participant")}));
+    QCOMPARE(keys(m), QStringList({"nick:zoe", "nick:amy"}));
+    QCOMPARE(moved.count(), 1);
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(m.data(m.index(0), MucRoomModel::GroupRole).toString(), QString("moderator"));
 }
 
 void TestMucRoom::leavingEmptiesTheRoom() {
@@ -143,8 +148,9 @@ void TestMucRoom::leavingEmptiesTheRoom() {
     m.setBackend(&backend);
     m.setAccount("me@h");
     m.setJid("room@muc.h?join");
-    m.applyOccupants({occupant("amy", "participant")});
-    m.applyMyNick("amy");
+    QVariantMap amy = person("amy", "participant");
+    amy["self"] = true;
+    m.applyPeople(people({amy}));
     m.applySubject("about ducks");
     m.applyJoined(true);
 
@@ -156,46 +162,79 @@ void TestMucRoom::leavingEmptiesTheRoom() {
     QVERIFY(!m.joined());
 }
 
-// Our own role is read off our own row rather than asked for separately, so the
-// two cannot disagree about what the list is drawing for us.
-void TestMucRoom::ourOwnRowIsMarkedAndSpeaksForUs() {
+// Who we are is the person tacky marks as us, so the card and the list cannot
+// disagree; what we may do about the room is tacky's `me`.
+void TestMucRoom::ourOwnPersonSpeaksForUs() {
     MucRoomModel m;
-    m.applyOccupants({occupant("amy", "visitor"), occupant("zoe", "moderator")});
-    QCOMPARE(m.myRole(), QString());
-
+    QCOMPARE(m.myOccupantJid(), QString());
+    QVariantMap amy = person("amy", "visitor");
+    amy["self"] = true;
     QSignalSpy me(&m, &MucRoomModel::meChanged);
-    m.applyMyNick("amy");
+    m.applyPeople(people({person("zoe", "moderator"), amy}, {},
+                         {{"request_voice", true}, {"destroy", false}}));
     QCOMPARE(me.count(), 1);
+    QCOMPARE(m.myNick(), QString("amy"));
     QCOMPARE(m.myRole(), QString("visitor"));
-    QCOMPARE(m.myAffiliation(), QString("none"));
-    // zoe is row 0 (moderators first), so ours is the second.
-    QVERIFY(!m.data(m.index(0), MucRoomModel::SelfRole).toBool());
-    QVERIFY(m.data(m.index(1), MucRoomModel::SelfRole).toBool());
+    QCOMPARE(m.myOccupantJid(), QString("room@muc.h/amy"));
+    QVERIFY(m.me().value("request_voice").toBool());
 
-    // Granted voice: the same row, and our own standing moves with it.
-    m.applyOccupant(occupant("amy", "participant"));
-    QCOMPARE(m.myRole(), QString("participant"));
+    // The same answer again says nothing new about us.
+    m.applyPeople(people({person("zoe", "moderator"), amy}, {},
+                         {{"request_voice", true}, {"destroy", false}}));
+    QCOMPARE(me.count(), 1);
 }
 
 // The filter is a view over the room, not a subscription: clearing it brings
 // everyone straight back without asking anything.
 void TestMucRoom::theFilterNarrowsTheRowsNotTheRoom() {
     MucRoomModel m;
-    m.applyOccupants({occupant("amy", "participant", "none", "amy@elsewhere.h"),
-                      occupant("zoe", "participant")});
+    m.applyPeople(people({person("amy", "participant", "amy@elsewhere.h"),
+                          person("zoe", "participant")},
+                         {{"participant", 2}}));
 
     m.setFilter("AM"); // case-insensitively, and on the nick
-    QCOMPARE(nicks(m), QStringList({"amy"}));
-    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(keys(m), QStringList({"amy@elsewhere.h"}));
     QCOMPARE(m.total(), 2);
-    // Counted over the room rather than the rows: the heading is about the room.
     QCOMPARE(m.groupCounts().value("participant").toInt(), 2);
 
     m.setFilter("elsewhere"); // and on the JID behind the nick
-    QCOMPARE(nicks(m), QStringList({"amy"}));
+    QCOMPARE(m.rowCount(), 1);
 
     m.setFilter("");
-    QCOMPARE(nicks(m), QStringList({"amy", "zoe"}));
+    QCOMPARE(m.rowCount(), 2);
+}
+
+// The page is built with its chat, so a room nobody is looking at would read
+// its people on every presence. Inactive, a change is only remembered; it is
+// read once, on becoming active.
+void TestMucRoom::readsOnlyWhileActive() {
+    TackyBackend backend;
+    MucRoomModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    const auto peopleReads = [&] {
+        int n = 0;
+        for (const auto &call : sent)
+            if (call.at(1).toString() == "people")
+                ++n;
+        return n;
+    };
+    m.setJid("room@muc.h?join");
+    const QVariantMap changed = mapFrom(R"({"acc":"me@h","jid":"room@muc.h"})");
+    m.handleEvent("muc", "PeopleChanged", changed);
+    m.handleEvent("muc", "PeopleChanged", changed);
+    QCOMPARE(peopleReads(), 0);
+
+    m.setActive(true);
+    QCOMPARE(peopleReads(), 1);
+    m.handleEvent("muc", "PeopleChanged", changed);
+    QCOMPARE(peopleReads(), 2);
+
+    // Shown again with nothing changed meanwhile: nothing to read.
+    m.setActive(false);
+    m.setActive(true);
+    QCOMPARE(peopleReads(), 2);
 }
 
 void TestMucRoom::anotherRoomsEventsAreNotOurs() {
@@ -204,21 +243,18 @@ void TestMucRoom::anotherRoomsEventsAreNotOurs() {
     m.setBackend(&backend);
     m.setAccount("me@h");
     m.setJid("room@muc.h?join");
+    m.setActive(true);
+    QSignalSpy sent(&backend, &TackyBackend::sent);
 
-    m.handleEvent("muc", "Presence", mapFrom(R"({
-        "acc":"me@h","jid":"other@muc.h","nick":"amy",
-        "occupant":{"nick":"amy","role":"participant","affiliation":"none"}})"));
-    QCOMPARE(m.rowCount(), 0);
+    m.handleEvent("muc", "PeopleChanged",
+                  mapFrom(R"({"acc":"me@h","jid":"other@muc.h"})"));
+    m.handleEvent("muc", "PeopleChanged",
+                  mapFrom(R"({"acc":"someone@else","jid":"room@muc.h"})"));
+    QCOMPARE(sent.count(), 0);
 
-    m.handleEvent("muc", "Presence", mapFrom(R"({
-        "acc":"someone@else","jid":"room@muc.h","nick":"amy",
-        "occupant":{"nick":"amy","role":"participant","affiliation":"none"}})"));
-    QCOMPARE(m.rowCount(), 0);
-
-    m.handleEvent("muc", "Presence", mapFrom(R"({
-        "acc":"me@h","jid":"room@muc.h","nick":"amy",
-        "occupant":{"nick":"amy","role":"participant","affiliation":"none"}})"));
-    QCOMPARE(m.rowCount(), 1);
+    m.handleEvent("muc", "PeopleChanged",
+                  mapFrom(R"({"acc":"me@h","jid":"room@muc.h"})"));
+    QCOMPARE(sent.count(), 1);
 }
 
 // A moderation action can be refused ("not-allowed", "forbidden"), and the page
@@ -228,29 +264,29 @@ void TestMucRoom::aRefusedActionSaysWhichOneItWas() {
     MucRoomModel m;
     m.setBackend(&backend);
     m.setAccount("me@h");
-    m.setJid("room@muc.h?join"); // tokens 1-4: the four reads refresh() makes
+    m.setJid("room@muc.h?join"); // tokens 1-2: the two reads refresh() makes
 
     QSignalSpy sent(&backend, &TackyBackend::sent);
     QSignalSpy failed(&m, &MucRoomModel::actionFailed);
 
-    m.kick("amy", "spam"); // token 5
+    m.kick("amy", "spam"); // token 3
     QCOMPARE(sent.count(), 1);
     QCOMPARE(sent.at(0).at(1).toString(), QString("kick"));
     QCOMPARE(sent.at(0).at(2).toMap().value("reason").toString(), QString("spam"));
 
-    emit backend.error(5, "not-allowed");
+    emit backend.error(3, "not-allowed");
     QCOMPARE(failed.count(), 1);
     QCOMPARE(failed.at(0).at(0).toString(), QString("Kick"));
     QCOMPARE(failed.at(0).at(1).toString(), QString("not-allowed"));
 
     // One that went through says nothing: the room reports what it did by
     // presence, and there is no second place to hear about it.
-    m.setRole("amy", "moderator"); // token 6
-    m.handleResult(6, {});
+    m.setRole("amy", "moderator"); // token 4
+    m.handleResult(4, {});
     QCOMPARE(failed.count(), 1);
     // A reply to that same token arriving twice finds nothing left to complain
     // about either.
-    emit backend.error(6, "late");
+    emit backend.error(4, "late");
     QCOMPARE(failed.count(), 1);
 }
 
@@ -277,30 +313,25 @@ void TestMucRoom::anAffiliationNeedsARealJid() {
              QString("room@muc.h"));
 }
 
-// "room@svc/" and "/nick" are not JIDs, and tacky answers a request about one
-// with an error rather than a miss. The page draws its own row outside the list
-// from a card that is hidden until the nick lands - but a hidden item's
-// bindings still run, so the empty case has to be empty rather than "/".
-void TestMucRoom::halfAnOccupantJidIsNoJid() {
-    MucRoomModel m;
-    QCOMPARE(m.myOccupantJid(), QString()); // no room, no nick
-
-    m.applyMyNick("amy");
-    QCOMPARE(m.myOccupantJid(), QString()); // a nick, still no room
-
+// Through the real backend, for the schema: a room we are not in answers with
+// nobody, rather than an error.
+void TestMucRoom::integrationARoomNotJoinedHasNoPeople() {
     TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"}, {"password", "x"},
+                               {"domain", "example.com"}, {"username", "me"}});
+    MucRoomModel m;
+    QSignalSpy errors(&backend, &TackyBackend::error);
+    QSignalSpy counted(&m, &MucRoomModel::countChanged);
     m.setBackend(&backend);
-    m.setAccount("me@h");
-    m.setJid("room@muc.h?join"); // which forgets the nick along with the room
-    QCOMPARE(m.myOccupantJid(), QString());
-
-    m.applyMyNick("amy");
-    QCOMPARE(m.myOccupantJid(), QString("room@muc.h/amy"));
-
-    // And the rows follow the same rule, since it is the same rule.
-    m.applyOccupants({occupant("zoe", "participant")});
-    QCOMPARE(m.data(m.index(0), MucRoomModel::OccupantJidRole).toString(),
-             QString("room@muc.h/zoe"));
+    m.setAccount("me@example.com");
+    m.setJid("room@muc.example.com?join");
+    m.setActive(true);
+    QTRY_VERIFY(m.memberList() == "none");
+    QCOMPARE(m.rowCount(), 0);
+    QCOMPARE(errors.count(), 0);
+    backend.stop();
 }
 
 QTEST_MAIN(TestMucRoom)
