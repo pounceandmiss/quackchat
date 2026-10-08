@@ -14,6 +14,7 @@ private slots:
     void startsAndStops();
     void accountListRoundTrip();
     void errorOnUnknownModule();
+    void theAppsActiveStateIsTakenAsSent();
     void sentReportsCallsWithoutABackend();
     void aRequestThatNeverWentOutIsAnswered();
     void stoppingFailsWhateverWasStillOut();
@@ -88,6 +89,26 @@ void TestBackend::accountListRoundTrip() {
     // A fresh in-memory taco has no accounts -> empty list.
     QVERIFY(args.at(1).canConvert<QVariantList>());
     QCOMPARE(args.at(1).toList().size(), 0);
+
+    backend.stop();
+}
+
+// AppController reports focus as `app setActive` with a bool; a tacky that
+// read it as anything else, or routed `app` to an account, would refuse it.
+void TestBackend::theAppsActiveStateIsTakenAsSent() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+
+    QSignalSpy results(&backend, &TackyBackend::result);
+    QSignalSpy errors(&backend, &TackyBackend::error);
+    // Sent the way AppController sends it: a notify, which answers nothing.
+    backend.notify("app", "setActive", QVariantMap{{"active", false}});
+    const int asked = backend.request("app", "isActive", QVariantMap());
+    QTRY_VERIFY_WITH_TIMEOUT(!results.isEmpty() || !errors.isEmpty(), 5000);
+    QVERIFY2(errors.isEmpty(), qPrintable(errors.isEmpty() ? QString()
+                                          : errors.first().at(1).toString()));
+    QCOMPARE(results.first().at(0).toInt(), asked);
+    QCOMPARE(results.first().at(1).toBool(), false);
 
     backend.stop();
 }
