@@ -5,11 +5,13 @@
 // showing the same chat share one of these rather than each building its own -
 // two ChatModels on one chat means two paging cursors and two MAM round trips
 // for the same history. What stays in ChatPage is what belongs to a view of the
-// conversation rather than the conversation: the scroll position, the selection,
-// and an in-chat search.
+// conversation rather than the conversation: the selection and an in-chat
+// search. The scroll position is kept here so it survives switching chats, and
+// in tacky across runs.
 #ifndef CHATSESSION_H
 #define CHATSESSION_H
 
+#include <QJsonObject>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -45,6 +47,12 @@ class ChatSession : public QObject {
     // timestamp stays in here for the reason the reply's does: only the send
     // needs it.
     Q_PROPERTY(bool editing READ editing NOTIFY editChanged)
+    // Where the feed was left: the bottom row, and its bottom edge's offset
+    // above the view's in px. viewTs 0 is the newest edge. viewLoaded: tacky
+    // has answered.
+    Q_PROPERTY(qlonglong viewTs READ viewTs NOTIFY viewChanged)
+    Q_PROPERTY(qreal viewOffset READ viewOffset NOTIFY viewChanged)
+    Q_PROPERTY(bool viewLoaded READ viewLoaded NOTIFY viewChanged)
 
 public:
     ChatSession(TackyBackend *backend, const QString &acc, const QString &jid,
@@ -66,6 +74,15 @@ public:
     bool editing() const { return m_editing != 0; }
 
     QVariantList pending() const { return m_pending; }
+
+    qlonglong viewTs() const { return m_viewTs; }
+    qreal viewOffset() const { return m_viewOffset; }
+    bool viewLoaded() const { return m_viewLoaded; }
+    // Per scroll; only flush() writes it to tacky.
+    Q_INVOKABLE void setView(qlonglong ts, qreal offset);
+    // Write to tacky if changed. On the last release, on destruction, and when
+    // the app leaves the foreground.
+    void flush();
 
     // Queue a file, or drop it if there is nothing readable behind it.
     // Resolved to a local path now rather than at send time: on Android a
@@ -100,10 +117,14 @@ signals:
     void pendingChanged();
     void replyChanged();
     void editChanged();
+    void viewChanged();
 
 private:
     void restoreStash();
     void sendOpen(bool open);
+    void loadClientData();
+    void handleResult(int token, const QVariant &data);
+    void handleError(int token, const QString &message);
 
     // AppController destroys its backend member before its children.
     QPointer<TackyBackend> m_backend;
@@ -123,6 +144,14 @@ private:
     // not the same as nothing stashed.
     QString m_stashedDraft;
     bool m_stashed = false;
+
+    // The whole stored object, so keys we don't own survive a write.
+    QJsonObject m_clientData;
+    int m_clientDataToken = 0;
+    bool m_clientDataDirty = false;
+    qlonglong m_viewTs = 0;
+    qreal m_viewOffset = 0;
+    bool m_viewLoaded = false;
 };
 
 #endif // CHATSESSION_H

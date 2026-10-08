@@ -504,6 +504,8 @@ Page {
 
     // The row a jump landed on, tinted until the timer below clears it.
     property real highlightTs: 0
+    // The saved view's row while a goto fetches it; 0 otherwise.
+    property real restoreTs: 0
     Timer {
         id: highlightFade
         interval: 1600
@@ -529,6 +531,12 @@ Page {
     onViewingChanged: syncHold()
     Component.onDestruction: if (page.heldSession) page.heldSession.release()
 
+    // The saved view arrives from tacky asynchronously.
+    Connections {
+        target: page.session
+        function onViewChanged() { Qt.callLater(feed.restoreView) }
+    }
+
     Connections {
         target: page.chatModel
         // After layout, so the new row has a position.
@@ -540,6 +548,12 @@ Page {
         // either way the row exists by now. callLater lets the view lay the
         // new slice out before we ask for its index.
         function onAnchored(ts) {
+            // A restore's goto: place the row, no highlight. Any jump ends
+            // the wait.
+            if (page.restoreTs !== 0) {
+                Qt.callLater(feed.finishRestore, ts)
+                return
+            }
             if (ts === 0)
                 return
             page.highlightTs = ts
@@ -945,6 +959,11 @@ Page {
     // pop-out - and what keeps it from following you into the next chat.
     onSessionChanged: {
         input.text = page.session ? page.session.draft : ""
+        // No saving or read reports off this geometry until the view is
+        // restored.
+        feed.restoredFor = null
+        page.restoreTs = 0
+        Qt.callLater(feed.restoreView)
         // A switch between two chats leaves `viewing` true.
         page.syncHold()
     }
@@ -1453,10 +1472,13 @@ Page {
             function jumpToNewest() {
                 hitScroll.stop()
                 cancelFlick()
-                if (page.atTail)
+                if (page.atTail) {
                     positionViewAtBeginning()
-                else
+                } else {
+                    // The reloaded window restores to this.
+                    page.session.setView(0, 0)
                     page.chatModel.resetToBottom()
+                }
             }
 
             // Rows are variable-height and laid out bottom-to-top, so where
@@ -1513,7 +1535,19 @@ Page {
                 // may again be under-tall, so clear the exhausted latch and refill.
                 function onChatChanged() { feed.olderExhausted = false }
                 function onAccountChanged() { feed.olderExhausted = false }
+                // Stop saving until the replaced window is restored or adopted.
+                function onModelReset() { feed.restoredFor = null }
                 function onLoaded(dir, added) {
+                    // A user's goto becomes the new place; any other load
+                    // (opening, reconnect) restores the saved one.
+                    if (feed.restoredFor !== page.session && page.restoreTs === 0) {
+                        if (dir === "goto") {
+                            feed.restoredFor = page.session
+                            feed.reportShown()
+                        } else {
+                            Qt.callLater(feed.restoreView)
+                        }
+                    }
                     // Rows landing above move contentY under a slide already
                     // in flight, whose remaining frames would then aim at a
                     // place that has shifted.
@@ -1686,27 +1720,97 @@ Page {
                 if (!page.atTail && newerBuffer() < fillThreshold)
                     page.chatModel.loadNewer()
                 reportShown()
+                saveView()
             }
 
             // The newest row whose bottom edge is on screen. Probes step up
             // past the spacing and the bottom margin.
-            function newestShownTs() {
+            function bottomItem() {
                 const bottom = contentY + height
                 let row = -1
                 for (let y = bottom - 1; row < 0 && y > contentY; y -= spacing)
                     row = indexAt(width / 2, y)
                 if (row < 0)
-                    return 0
+                    return null
                 let item = itemAtIndex(row)
                 if (item && item.y + item.height > bottom + 1)
                     item = itemAtIndex(row + 1)
                 if (!item || item.y + item.height <= contentY)
-                    return 0
-                return item.timestamp
+                    return null
+                return item
+            }
+            function newestShownTs() {
+                const item = bottomItem()
+                return item ? item.timestamp : 0
             }
             function reportShown() {
-                if (page.chatModel && page.viewing)
+                if (page.chatModel && page.viewing && restoredFor === page.session)
                     page.chatModel.markReadUpTo(newestShownTs())
+            }
+
+            // The view is saved on the session as the bottom row and its
+            // offset in px, so a half-shown row comes back half-shown.
+            // restoredFor gates saving and read reports until this session's
+            // view is back.
+            property ChatSession restoredFor: null
+            function saveView() {
+                if (!page.session || restoredFor !== page.session || count === 0)
+                    return
+                // newerBuffer, not atNewestEdge: the binding may lag
+                // contentYChanged.
+                if (page.atTail && newerBuffer() < 10) {
+                    page.session.setView(0, 0)
+                    return
+                }
+                const item = bottomItem()
+                if (item)
+                    page.session.setView(item.timestamp,
+                                         contentY + height - (item.y + item.height))
+            }
+            // Needs the saved view and some rows; a row outside the window is
+            // fetched first.
+            function restoreView() {
+                const s = page.session
+                if (!s || restoredFor === s || page.restoreTs !== 0
+                        || !s.viewLoaded || count === 0)
+                    return
+                if (s.viewTs === 0 || page.chatModel.rowOfTimestamp(s.viewTs) >= 0) {
+                    finishRestore(s.viewTs)
+                    return
+                }
+                page.restoreTs = s.viewTs
+                page.chatModel.gotoTimestamp(s.viewTs, "local")
+            }
+            // ts 0, or a row that is gone, means the newest edge.
+            function finishRestore(ts) {
+                page.restoreTs = 0
+                const s = page.session
+                if (!s || restoredFor === s)
+                    return
+                hitScroll.stop()
+                cancelFlick()
+                // A goto slice may not be laid out yet.
+                forceLayout()
+                const row = ts !== 0 ? page.chatModel.rowOfTimestamp(ts) : -1
+                if (row < 0) {
+                    // Already there: don't move under a press in progress.
+                    if (newerBuffer() >= 10)
+                        positionViewAtBeginning()
+                } else {
+                    positionViewAtIndex(row, ListView.Center)
+                    const item = itemAtIndex(row)
+                    const top = originY - topMargin
+                    const end = originY + contentHeight + bottomMargin - height
+                    // No offset for a neighbour the goto settled on.
+                    const offset = ts === s.viewTs ? s.viewOffset : 0
+                    if (!item || end <= top)
+                        positionViewAtBeginning()
+                    else
+                        contentY = Math.max(top, Math.min(end,
+                            item.y + item.height + offset - height))
+                }
+                restoredFor = s
+                reportShown()
             }
 
             // Scrolling up and jumping to a reply's target both leave the

@@ -20,6 +20,7 @@ private slots:
     void anEditGoesAloneAndLeavesTheQueueWhereItIs();
     void nothingUnreadableIsEverQueued();
     void everyViewHoldsOneOpenChat();
+    void whereTheFeedWasLeftGoesToTackyOnRelease();
 };
 
 // Every `message <method>` the spy saw, as "method arg" pairs. A queued send
@@ -237,7 +238,9 @@ void TestChatSession::everyViewHoldsOneOpenChat() {
     const auto marks = [&sent] {
         QStringList out;
         for (const QList<QVariant> &call : std::as_const(sent))
-            if (call.at(0).toString() == QLatin1String("chat"))
+            if (call.at(0).toString() == QLatin1String("chat") &&
+                (call.at(1).toString() == QLatin1String("open") ||
+                 call.at(1).toString() == QLatin1String("close")))
                 out << call.at(1).toString() + ' ' +
                                call.at(2).toMap().value("chat").toString();
         return out;
@@ -261,4 +264,49 @@ void TestChatSession::everyViewHoldsOneOpenChat() {
     }
     // Destroyed while held.
     QCOMPARE(marks(), QStringList{"close a@h"});
+}
+
+// Saved per scroll, written once per visit, merged with other keys.
+void TestChatSession::whereTheFeedWasLeftGoesToTackyOnRelease() {
+    TackyBackend backend;
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    const auto stored = [&sent] {
+        QStringList out;
+        for (const QList<QVariant> &call : std::as_const(sent))
+            if (call.at(0).toString() == QLatin1String("chat") &&
+                call.at(1).toString() == QLatin1String("setClientData"))
+                out << call.at(2).toMap().value("data").toString();
+        return out;
+    };
+
+    ChatSession s(&backend, "me@h", "a@h", false);
+    // clientData is the session's last request, so it took the previous token.
+    const int load = backend.request("probe", "probe") - 1;
+    QVERIFY(!s.viewLoaded());
+
+    // Stored by an earlier run, with a key we don't own.
+    QSignalSpy changed(&s, &ChatSession::viewChanged);
+    emit backend.result(load, R"({"draft":"hi","view":{"ts":500,"offset":7.5}})");
+    QVERIFY(s.viewLoaded());
+    QCOMPARE(s.viewTs(), 500);
+    QCOMPARE(s.viewOffset(), 7.5);
+    QCOMPARE(changed.count(), 1);
+
+    s.hold();
+    s.setView(600, 12);
+    s.setView(700, 3.5);
+    // Nothing per scroll.
+    QVERIFY(stored().isEmpty());
+    s.release();
+    QCOMPARE(stored(), QStringList{R"({"draft":"hi","view":{"offset":3.5,"ts":700}})"});
+
+    // Unchanged: nothing sent.
+    s.hold();
+    s.release();
+    QCOMPARE(stored().size(), 1);
+
+    // The newest edge clears the view; the other key stays.
+    s.setView(0, 0);
+    s.flush();
+    QCOMPARE(stored().last(), QString(R"({"draft":"hi"})"));
 }

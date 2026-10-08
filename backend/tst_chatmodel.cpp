@@ -3,6 +3,7 @@
 #include <QSignalSpy>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include "ChatModel.h"
@@ -93,6 +94,7 @@ private slots:
     void attachmentsRoleReadsTheContentUnion();
     void inviteRoleReadsTheContentUnion();
     void fileUpdateMergesIntoTheRow();
+    void aDownloadedImageCarriesItsSize();
     void fileUpdateFansOutToEveryRowSharingTheUrl();
     void transferStatesReachTheViewIntact();
     void fileEventsFilterByAcc();
@@ -1099,6 +1101,40 @@ void TestChatModel::attachmentsRoleReadsTheContentUnion() {
     // A tombstone keeps no attachments either, same as it keeps no body.
     m.applyRetracted(100);
     QVERIFY(m.data(m.index(0), ChatModel::AttachmentsRole).toList().isEmpty());
+}
+
+// The size is read from the header once the file is local.
+void TestChatModel::aDownloadedImageCarriesItsSize() {
+    QTemporaryDir dir;
+    const QString path = dir.filePath("a.png");
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write(QByteArray::fromBase64( // a 24x12 PNG
+        "iVBORw0KGgoAAAANSUhEUgAAABgAAAAMCAIAAAD3UuoiAAAAGElEQVR4nGP4z8BAFUQdU0YN"
+        "GjVo2BoEABJgHvBnSuUAAAAAAElFTkSuQmCC"));
+    f.close();
+
+    ChatModel m;
+    m.setAccount("me@h");
+    m.applyBatch(msgs(kMediaRow));
+    // Still downloading: zeros.
+    feedEvent(m, R"(["event","file","Update",{"acc":"me@h","id":7,
+        "direction":"download","state":"active","loaded":10,"total":1234,
+        "url":"https://h/a.png","localpath":"","error":""}])");
+    QCOMPARE(att0(m).value("width").toInt(), 0);
+    QCOMPARE(att0(m).value("height").toInt(), 0);
+
+    QJsonObject done{{"acc", "me@h"}, {"id", 7}, {"direction", "download"},
+                     {"state", "done"}, {"loaded", 1234}, {"total", 1234},
+                     {"url", "https://h/a.png"}, {"localpath", path}, {"error", ""}};
+    m.handleEvent("file", "Update", done.toVariantMap());
+    QCOMPARE(att0(m).value("width").toInt(), 24);
+    QCOMPARE(att0(m).value("height").toInt(), 12);
+
+    // Not an image: unknown.
+    done.insert("localpath", dir.filePath("missing.png"));
+    m.handleEvent("file", "Update", done.toVariantMap());
+    QCOMPARE(att0(m).value("width").toInt(), 0);
 }
 
 void TestChatModel::fileUpdateMergesIntoTheRow() {

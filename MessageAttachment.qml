@@ -110,17 +110,30 @@ ColumnLayout {
         // A phone's photo is tens of megapixels; decode it at the long side
         // it is drawn at, scaled the way Avatar scales its sourceSize. Never
         // upscaled, so a smaller image keeps its own size.
-        sourceSize.width: Math.round(Theme.thumbSize * Screen.devicePixelRatio)
-        sourceSize.height: Math.round(Theme.thumbSize * Screen.devicePixelRatio)
+        readonly property real decodeBox:
+            Math.round(Theme.thumbSize * Screen.devicePixelRatio)
+        sourceSize.width: thumb.decodeBox
+        sourceSize.height: thumb.decodeBox
         asynchronous: true
-        // implicitWidth is source pixels, several per drawn one above ratio 1,
+        // The decoded size, predicted from the header size ChatModel reads, so
+        // the box is final before the decode lands. Else the decode decides.
+        readonly property real knownWidth: att.modelData.width ?? 0
+        readonly property real knownHeight: att.modelData.height ?? 0
+        readonly property real fitScale: thumb.knownWidth > 0 && thumb.knownHeight > 0
+            ? Math.min(1, thumb.decodeBox / thumb.knownWidth,
+                       thumb.decodeBox / thumb.knownHeight)
+            : 0
+        readonly property real sourceWidth: thumb.fitScale > 0
+            ? thumb.knownWidth * thumb.fitScale : thumb.implicitWidth
+        readonly property real aspect: thumb.fitScale > 0
+            ? thumb.knownHeight / thumb.knownWidth
+            : (thumb.implicitWidth > 0 ? thumb.implicitHeight / thumb.implicitWidth : 0)
+        // sourceWidth is source pixels, several per drawn one above ratio 1,
         // so cap at the size asked for.
         readonly property real drawWidth:
-            Math.min(thumb.implicitWidth, Theme.thumbSize, att.maxWidth)
+            Math.min(thumb.sourceWidth, Theme.thumbSize, att.maxWidth)
         Layout.preferredWidth: thumb.drawWidth
-        Layout.preferredHeight: thumb.implicitWidth > 0
-            ? thumb.drawWidth * thumb.implicitHeight / thumb.implicitWidth
-            : 0
+        Layout.preferredHeight: thumb.drawWidth * thumb.aspect
         TapHandler {
             enabled: !att.selectionMode
             gesturePolicy: TapHandler.ReleaseWithinBounds

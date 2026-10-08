@@ -162,6 +162,8 @@ private:
     // server (XEP-0352). `force` resends it unchanged, for a backend that has
     // only just come up or been reattached to.
     void reportActive(bool force = false);
+    // ChatSession::flush for every session.
+    void flushChatSessions();
     QStringList tacoArgs(const QString &mediaBackend) const;
     void onResult(int token, const QVariant &data);
     void onEvent(const QString &module, const QString &name, const QVariant &args);

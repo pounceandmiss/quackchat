@@ -4,6 +4,7 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QImageReader>
 
 #include "MessageMarkup.h"
 #include "MessageXml.h"
@@ -85,6 +86,8 @@ static QVariantMap idleTransfer() {
             {QStringLiteral("total"), 0},
             {QStringLiteral("localpath"), QString()},
             {QStringLiteral("thumburl"), QUrl()},
+            {QStringLiteral("width"), 0},
+            {QStringLiteral("height"), 0},
             {QStringLiteral("error"), QString()}};
 }
 
@@ -690,6 +693,9 @@ void ChatModel::handleError(int token, const QString &message) {
     m_failed.insert(dir);
     if (dir == QLatin1String("init") || dir == QLatin1String("old"))
         setLoadError(message);
+    // Tell a waiting restore the jump went nowhere.
+    if (dir == QLatin1String("goto"))
+        emit anchored(0);
 }
 
 void ChatModel::cancelAllDirs() {
@@ -841,6 +847,20 @@ void ChatModel::handleFileUpdate(const QString &name, const QVariantMap &a) {
     // hand loses to a '#' in a path.
     x.insert(QStringLiteral("thumburl"),
              local.isEmpty() ? QUrl() : QUrl::fromLocalFile(local));
+    // Size from the header, so the view can reserve the box before decoding.
+    // Once per file; unrotated, like the view's Image.
+    if (!local.isEmpty()) {
+        const QVariantMap was = m_xfer.value(url);
+        QSize size(was.value(QStringLiteral("width")).toInt(),
+                   was.value(QStringLiteral("height")).toInt());
+        if (was.value(QStringLiteral("localpath")).toString() != local
+            || !size.isValid() || size.isEmpty())
+            size = QImageReader(local).size();
+        if (size.isValid() && !size.isEmpty()) {
+            x.insert(QStringLiteral("width"), size.width());
+            x.insert(QStringLiteral("height"), size.height());
+        }
+    }
     m_xfer.insert(url, x);
     redrawRowsUsing(url);
 }

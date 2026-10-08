@@ -136,9 +136,13 @@ protected:
 
     // Opens a chat from scratch: sessions are cached app-wide and shared by
     // every window on a chat, so one an earlier test left loaded would hand this
-    // one a feed already full of history.
+    // one a feed already full of history. The saved view is dropped too, after
+    // the old session's destructor has flushed it.
     Chat open(const QString &jid, bool groupchat = false) {
         m_app->forgetChat(kAcc, jid);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        call(*m_app->backend(), "chat", "setClientData",
+             {{"acc", kAcc}, {"chat", jid}, {"data", QString()}});
         return alsoOpen(jid, groupchat);
     }
 

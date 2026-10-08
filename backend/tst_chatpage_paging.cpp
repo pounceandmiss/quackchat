@@ -19,6 +19,16 @@ class TestChatPagePaging : public ChatPageTest {
 
     qlonglong m_jumpTarget = 0; // first message of jump@, the reply's target
 
+    // The bottom row's ts and its top relative to the view.
+    static QPair<qlonglong, qreal> placeOf(const Chat &chat) {
+        QVariant ts;
+        QMetaObject::invokeMethod(chat.feed, "newestShownTs", Q_RETURN_ARG(QVariant, ts));
+        QQuickItem *item = chat.row(chat.model()->rowOfTimestamp(ts.toLongLong()));
+        if (!item)
+            return {0, 0};
+        return {ts.toLongLong(), item->y() - chat.prop("contentY")};
+    }
+
 private slots:
     void initTestCase();
     void cleanupTestCase();
@@ -36,6 +46,8 @@ private slots:
     void oneSessionServesEveryWindowOnAChat();
     void aChatOnScreenIsReadAsFarAsItShows();
     void theWayDownCountsWhatIsUnread();
+    void theFeedComesBackWhereItWasLeft();
+    void aForgottenSessionComesBackFromTacky();
 };
 
 void TestChatPagePaging::initTestCase() {
@@ -420,6 +432,89 @@ void TestChatPagePaging::theWayDownCountsWhatIsUnread() {
     QTRY_COMPARE(count->property("text").toString(), QString("99+"));
     unread(0);
     QTRY_VERIFY(!badge->isVisible());
+}
+
+void TestChatPagePaging::theFeedComesBackWhereItWasLeft() {
+    const QString jid = QStringLiteral("friend@example.com");
+    const Chat chat = open(jid);
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+
+    // Up 1.5 screens plus a few px, so the bottom row is cut.
+    chat.feed->setProperty("contentY",
+                           chat.prop("contentY") - chat.feed->height() * 1.5 - 17);
+    settle();
+    const auto left = placeOf(chat);
+    QVERIFY(left.first > 0);
+
+    chat.window->setProperty("chatJid", "quiet@example.com");
+    QTRY_COMPARE(chat.model()->chat(), QString("quiet@example.com"));
+    settle();
+    chat.window->setProperty("chatJid", jid);
+    QTRY_COMPARE(chat.model()->chat(), jid);
+    settle();
+    const auto back = placeOf(chat);
+    QCOMPARE(back.first, left.first);
+    QVERIFY2(qAbs(back.second - left.second) <= 1,
+             qPrintable(QString("left at %1, back at %2").arg(left.second).arg(back.second)));
+
+    // Left at the newest edge, comes back there.
+    QVERIFY(QMetaObject::invokeMethod(chat.feed, "positionViewAtBeginning"));
+    settle();
+    chat.window->setProperty("chatJid", "quiet@example.com");
+    QTRY_COMPARE(chat.model()->chat(), QString("quiet@example.com"));
+    settle();
+    chat.window->setProperty("chatJid", jid);
+    QTRY_COMPARE(chat.model()->chat(), jid);
+    settle();
+    QVERIFY(chat.buffer("newerBuffer") < 10);
+}
+
+// A new session, as after a restart, restores from tacky via goto: no
+// highlight, nothing read past the restored row.
+void TestChatPagePaging::aForgottenSessionComesBackFromTacky() {
+    const QString jid = QStringLiteral("friend@example.com");
+    Chat chat = open(jid);
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+    chat.scrollNearOldest();
+    QTRY_VERIFY(chat.count() >= 2 * kPage);
+    settle();
+    chat.scrollNearOldest(chat.feed->height() / 2 + 13);
+    settle();
+    const auto left = placeOf(chat);
+    QVERIFY(left.first > 0);
+    QVERIFY(chat.model()->rowOfTimestamp(left.first) >= kPage);
+
+    // Closing the window flushes the view.
+    chat.window.reset();
+    m_app->forgetChat(kAcc, jid);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+    QSignalSpy sent(m_app->backend(), &TackyBackend::sent);
+    const Chat again = alsoOpen(jid);
+    QVERIFY(again.feed);
+    QTRY_COMPARE_WITH_TIMEOUT(placeOf(again).first, left.first, 5000);
+    settle();
+    const auto back = placeOf(again);
+    QCOMPARE(back.first, left.first);
+    QVERIFY2(qAbs(back.second - left.second) <= 1,
+             qPrintable(QString("left at %1, back at %2").arg(left.second).arg(back.second)));
+
+    QCOMPARE(askedWith(sent, "message", "goto").value("date").toLongLong(), left.first);
+    QObject *page = again.feed;
+    while (page && !page->property("highlightTs").isValid())
+        page = page->parent();
+    QVERIFY(page);
+    QCOMPARE(page->property("highlightTs").toLongLong(), 0);
+
+    qlonglong read = 0;
+    for (const QList<QVariant> &call : std::as_const(sent))
+        if (call.at(0).toString() == "chat" && call.at(1).toString() == "view")
+            read = qMax(read, call.at(2).toMap().value("timestamp").toLongLong());
+    QCOMPARE(read, left.first);
 }
 
 QTEST_MAIN(TestChatPagePaging)

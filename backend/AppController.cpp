@@ -54,9 +54,23 @@ AppController::AppController(QObject *parent) : QObject(parent) {
     m_activeSettle.setInterval(200);
     connect(&m_activeSettle, &QTimer::timeout, this, [this] { reportActive(); });
     // Only a GUI application has a state; the headless tests run without one.
-    if (auto *gui = qobject_cast<QGuiApplication *>(QCoreApplication::instance()))
+    if (auto *gui = qobject_cast<QGuiApplication *>(QCoreApplication::instance())) {
         connect(gui, &QGuiApplication::applicationStateChanged, &m_activeSettle,
                 qOverload<>(&QTimer::start));
+        // Immediately: Android may kill a backgrounded app before the settle
+        // timer fires.
+        connect(gui, &QGuiApplication::applicationStateChanged, this,
+                [this](Qt::ApplicationState state) {
+                    if (state != Qt::ApplicationActive)
+                        flushChatSessions();
+                });
+    }
+}
+
+void AppController::flushChatSessions() {
+    for (const auto &chats : std::as_const(m_chatSessions))
+        for (ChatSession *c : chats)
+            c->flush();
 }
 
 void AppController::reportActive(bool force) {

@@ -192,8 +192,8 @@ signals:
     // the net rows inserted. The view pages off this to fill an under-tall
     // viewport, and stops when added == 0 (archive exhausted).
     void loaded(const QString &dir, int added);
-    // A jump settled on `ts`, which the view scrolls to; 0 when the target
-    // could not be resolved and nothing moved.
+    // A jump settled on `ts`, which the view scrolls to; 0 if unresolved or
+    // failed, and nothing moved.
     void anchored(qlonglong ts);
     // Where an attachment the user asked to open ended up, or empty when it
     // could not be fetched. Opening it is the view's job: that needs QtGui.
