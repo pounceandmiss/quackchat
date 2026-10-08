@@ -407,19 +407,27 @@ ApplicationWindow {
     }
 
     // How it ended, over the wall it ended on. "Rejoin" is a fresh join: the
-    // row is the same, the call is not.
-    Rectangle {
+    // row is the same, the call is not. Modal, so the keys and the controls
+    // underneath wait for an answer as the mouse does.
+    Popup {
         id: endedOverlay
-        anchors.fill: parent
-        anchors.topMargin: SafeArea.margins.top
-        color: Qt.rgba(0, 0, 0, 0.72)
+        objectName: "groupCallEnded"
+        parent: Overlay.overlay
+        x: 0
+        y: parent ? parent.SafeArea.margins.top : 0
+        width: parent ? parent.width : 0
+        height: parent ? parent.height - y : 0
+        padding: 0
+        modal: true
+        closePolicy: Popup.NoAutoClose
         visible: win.ended
-        MouseArea { anchors.fill: parent }
+        background: Rectangle { color: Qt.rgba(0, 0, 0, 0.72) }
+        Overlay.modal: Item {}
 
         ColumnLayout {
             anchors.centerIn: parent
             spacing: 6
-            width: Math.min(parent.width - 48, 420)
+            width: Math.min(endedOverlay.width - 48, 420)
 
             Text {
                 Layout.fillWidth: true
