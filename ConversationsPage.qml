@@ -229,13 +229,15 @@ Page {
         MenuEntry {
             objectName: "sortRecentEntry"
             text: qsTr("Sort by activity")
-            trailing: visibleChats.sortMode === ChatListFilter.Recent ? "✓" : ""
+            choice: true
+            checked: visibleChats.sortMode === ChatListFilter.Recent
             onTriggered: visibleChats.sortMode = ChatListFilter.Recent
         }
         MenuEntry {
             objectName: "sortNameEntry"
             text: qsTr("Sort by name")
-            trailing: visibleChats.sortMode === ChatListFilter.Name ? "✓" : ""
+            choice: true
+            checked: visibleChats.sortMode === ChatListFilter.Name
             onTriggered: visibleChats.sortMode = ChatListFilter.Name
         }
         // The Tk account window's View menu, which is a page of its own here:

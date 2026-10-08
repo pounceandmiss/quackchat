@@ -4,7 +4,8 @@ import QtQuick.Layouts
 import Quack
 
 // A row in one of the app's menus: its label, and a trailing note for whatever
-// the entry has to add - a keyboard shortcut, or a tick where it is a setting.
+// the entry has to add - a keyboard shortcut, or a tick where it is one choice
+// of several.
 MenuItem {
     id: entry
 
@@ -16,6 +17,12 @@ MenuItem {
     property bool offered: true
     property string trailing: ""
     property color labelColor: Theme.textPrimary
+    // One of a set of choices, ticked while `checked`. Not `checkable`: the
+    // choice in force is the caller's to bind, and a trigger would toggle it.
+    property bool choice: false
+
+    Accessible.checkable: entry.choice
+    Accessible.checked: entry.checked
 
     visible: entry.offered
     height: entry.offered ? 40 : 0
@@ -31,10 +38,18 @@ MenuItem {
             leftPadding: 8
         }
         Text {
+            visible: entry.trailing !== ""
             text: entry.trailing
             color: Theme.textDim
             font.pixelSize: 12
             rightPadding: 8
+        }
+        Glyph {
+            Layout.rightMargin: 8
+            visible: entry.choice && entry.checked
+            path: Icons.check
+            color: Theme.accentDeep
+            size: 16
         }
     }
     background: Rectangle {
