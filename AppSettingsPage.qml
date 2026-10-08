@@ -74,29 +74,35 @@ Page {
     // A theme drawn in its own colors, which is the whole of the preview: the
     // name over the surface it would give the app, beside its accent and its
     // outgoing bubble.
-    component ThemeChip: Rectangle {
+    component ThemeChip: AbstractButton {
         id: chip
         // The palette this chip picks; empty is the system's own, drawn in
         // whichever palette that resolves to.
         property string themeName: ""
         readonly property bool system: chip.themeName === ""
         readonly property var pal: Theme.palettes[chip.system ? Theme.systemName : chip.themeName]
+        // Not `checked`: the theme in force is Theme's, and the chip only
+        // shows it.
         readonly property bool current: chip.system ? Theme.followSystem
                                                     : !Theme.followSystem && Theme.name === chip.themeName
 
         objectName: "theme_" + (chip.system ? "system" : chip.themeName)
-        implicitWidth: chipRow.implicitWidth + 20
+        text: chip.system ? qsTr("system") : chip.themeName
+        Accessible.role: Accessible.RadioButton
+        Accessible.checked: chip.current
+        focusPolicy: Qt.TabFocus
+        padding: 10
         implicitHeight: 36
-        radius: 10
-        color: chip.pal.surface
-        border.width: chip.current ? 2 : 1
-        border.color: chip.current ? Theme.accent : Theme.hairline
+        onClicked: chip.system ? Theme.followSystem = true : Theme.choose(chip.themeName)
 
-        RowLayout {
-            id: chipRow
-            anchors.centerIn: parent
+        background: Rectangle {
+            radius: 10
+            color: chip.pal.surface
+            border.width: chip.current || chip.visualFocus ? 2 : 1
+            border.color: chip.current || chip.visualFocus ? Theme.accent : Theme.hairline
+        }
+        contentItem: RowLayout {
             spacing: 6
-
             Rectangle {
                 implicitWidth: 12; implicitHeight: 12
                 radius: width / 2
@@ -110,7 +116,7 @@ Page {
                 border.color: chip.pal.hairline
             }
             Text {
-                text: chip.system ? qsTr("system") : chip.themeName
+                text: chip.text
                 color: chip.pal.textPrimary
                 font.pixelSize: 13
                 font.bold: chip.current
@@ -118,9 +124,6 @@ Page {
         }
 
         HoverHandler { cursorShape: Qt.PointingHandCursor }
-        TapHandler {
-            onTapped: chip.system ? Theme.followSystem = true : Theme.choose(chip.themeName)
-        }
     }
 
     header: PageHeader {

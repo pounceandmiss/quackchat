@@ -953,36 +953,34 @@ Page {
             // The picture and the name are what the chat's own page is about, so
             // they are also what opens it - the contact behind a conversation of
             // two, and the room behind one of many.
-            Item {
+            AbstractButton {
                 id: chatIdentity
                 objectName: "chatIdentity"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Accessible.name: page.chatGroupchat
+                    ? qsTr("Room details: %1").arg(page.chatName !== "" ? page.chatName : page.chatJid)
+                    : qsTr("Contact details: %1").arg(page.chatName !== "" ? page.chatName : page.chatJid)
+                focusPolicy: Qt.TabFocus
+                onClicked: page.chatGroupchat ? page.openDetails() : page.openContact()
 
                 // Pressed feedback, short of the bar's own edges so it reads as
                 // a target rather than as the header changing colour.
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.topMargin: 6
-                    anchors.bottomMargin: 6
+                background: Rectangle {
+                    y: 6
+                    width: chatIdentity.width
+                    height: chatIdentity.height - 12
                     radius: 8
-                    color: Theme.textPrimary
-                    opacity: identityTap.pressed ? 0.12 : 0
+                    color: chatIdentity.visualFocus ? "transparent" : Theme.textPrimary
+                    opacity: chatIdentity.visualFocus ? 1 : chatIdentity.down ? 0.12 : 0
+                    border.width: chatIdentity.visualFocus ? 2 : 0
+                    border.color: Theme.accent
                     Behavior on opacity { NumberAnimation { duration: 120 } }
                 }
 
-                HoverHandler {
-                    enabled: identityTap.enabled
-                    cursorShape: Qt.PointingHandCursor
-                }
-                TapHandler {
-                    id: identityTap
-                    onTapped: page.chatGroupchat ? page.openDetails()
-                                                 : page.openContact()
-                }
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
 
-                RowLayout {
-                    anchors.fill: parent
+                contentItem: RowLayout {
                     spacing: 10
                     Avatar {
                         Layout.preferredWidth: 38
@@ -1309,7 +1307,8 @@ Page {
         }
     }
 
-    Rectangle {
+    // A tap puts it away early.
+    AbstractButton {
         id: notice
         z: 5
         anchors.top: parent.top
@@ -1317,23 +1316,30 @@ Page {
         anchors.topMargin: 10
         width: Math.min(parent.width - 24, 420)
         height: noticeText.implicitHeight + 20
-        radius: 8
-        color: Theme.surface
-        border.width: 1
-        border.color: Theme.negative
         visible: page.callNotice !== ""
+        Accessible.name: page.callNotice
+        Accessible.description: qsTr("Dismiss")
+        focusPolicy: Qt.NoFocus
+        onClicked: page.callNotice = ""
 
-        Text {
-            id: noticeText
-            anchors.centerIn: parent
-            width: parent.width - 24
-            text: page.callNotice
-            color: Theme.textPrimary
-            font.pixelSize: 13
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
+        background: Rectangle {
+            radius: 8
+            color: Theme.surface
+            border.width: 1
+            border.color: Theme.negative
         }
-        TapHandler { onTapped: page.callNotice = "" }
+        contentItem: Item {
+            Text {
+                id: noticeText
+                anchors.centerIn: parent
+                width: notice.width - 24
+                text: page.callNotice
+                color: Theme.textPrimary
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+            }
+        }
         Timer {
             running: notice.visible
             interval: 6000
@@ -1700,7 +1706,9 @@ Page {
             // edge the paging measures against. A `before` page can stay out
             // for a long time, and can fail outright, so say which rather than
             // look like the history simply ended.
-            Rectangle {
+            // A button only once the request has failed, when a tap retries it;
+            // till then it is a status.
+            AbstractButton {
                 id: olderPill
                 objectName: "olderPill"
                 // A ListView's declared children land in its scrolling
@@ -1716,16 +1724,23 @@ Page {
                 anchors.topMargin: 8
                 width: content.width + 20
                 height: 26
-                radius: 13
-                color: Theme.surface
+                enabled: olderPill.failed
+                Accessible.role: olderPill.failed ? Accessible.Button : Accessible.StaticText
+                Accessible.name: olderPill.failed ? qsTr("%1, retry").arg(page.loadError)
+                                                  : label.text
+                focusPolicy: Qt.TabFocus
+                onClicked: page.chatModel.retry()
                 opacity: (page.loadingOlder || failed) && !feed.olderExhausted
                          ? 0.95 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
-                TapHandler {
-                    enabled: olderPill.failed
-                    onTapped: page.chatModel.retry()
+                background: Rectangle {
+                    radius: 13
+                    color: Theme.surface
+                    border.width: olderPill.visualFocus ? 2 : 0
+                    border.color: Theme.accent
                 }
+                contentItem: Item {}
                 HoverHandler {
                     enabled: olderPill.failed
                     cursorShape: Qt.PointingHandCursor
@@ -1736,32 +1751,37 @@ Page {
                     anchors.centerIn: parent
                     spacing: 6
 
-                    // Not a BusyIndicator: the Basic style paints that from its
-                    // own palette, which ignores Theme. Animator, so a stalled
-                    // fetch spins on the render thread and costs the GUI one
-                    // nothing.
-                    Item {
+                    // Drawn as a ring of dots in the accent. Animator, so a
+                    // stalled fetch spins on the render thread and costs the
+                    // GUI one nothing.
+                    BusyIndicator {
                         id: spinner
                         anchors.verticalCenter: parent.verticalCenter
                         width: 12
                         height: 12
+                        padding: 0
                         visible: olderPill.working
-                        RotationAnimator on rotation {
-                            running: spinner.visible && olderPill.visible
-                            loops: Animation.Infinite
-                            from: 0; to: 360; duration: 900
-                        }
-                        Repeater {
-                            model: 8
-                            Rectangle {
-                                required property int index
-                                readonly property real angle: index * Math.PI / 4
-                                width: 3; height: 3; radius: 1.5
-                                color: Theme.accent
-                                // Fading around the ring gives the spin a direction.
-                                opacity: 0.15 + 0.85 * index / 7
-                                x: (spinner.width - width) / 2 * (1 + Math.cos(angle))
-                                y: (spinner.height - height) / 2 * (1 + Math.sin(angle))
+                        running: olderPill.working && olderPill.visible
+                        background: null
+                        contentItem: Item {
+                            id: ring
+                            RotationAnimator on rotation {
+                                running: spinner.running
+                                loops: Animation.Infinite
+                                from: 0; to: 360; duration: 900
+                            }
+                            Repeater {
+                                model: 8
+                                Rectangle {
+                                    required property int index
+                                    readonly property real angle: index * Math.PI / 4
+                                    width: 3; height: 3; radius: 1.5
+                                    color: Theme.accent
+                                    // Fading around the ring gives the spin a direction.
+                                    opacity: 0.15 + 0.85 * index / 7
+                                    x: (ring.width - width) / 2 * (1 + Math.cos(angle))
+                                    y: (ring.height - height) / 2 * (1 + Math.sin(angle))
+                                }
                             }
                         }
                     }
@@ -1956,29 +1976,31 @@ Page {
 
                     // Over the corner rather than beside the tile, which at
                     // this size would leave a strip of mostly buttons.
-                    Rectangle {
+                    AbstractButton {
+                        id: trayRemove
                         objectName: "trayRemove"
                         anchors.right: parent.right
                         anchors.top: parent.top
                         width: 20
                         height: 20
-                        radius: 10
-                        color: Theme.surface
-                        border.width: 1
-                        border.color: Theme.hairline
-                        Accessible.role: Accessible.Button
                         Accessible.name: qsTr("Remove %1").arg(tile.modelData.name)
-                        Accessible.onPressAction: if (page.session)
-                            page.session.unattach(tile.index)
-                        Glyph {
-                            anchors.centerIn: parent
-                            path: Icons.close
-                            color: Theme.textDim
-                            size: 12
+                        // A tap leaves the focus, and the keyboard with it, in
+                        // the field.
+                        focusPolicy: Qt.TabFocus
+                        onClicked: if (page.session) page.session.unattach(tile.index)
+                        background: Rectangle {
+                            radius: 10
+                            color: trayRemove.down ? Theme.menuHover : Theme.surface
+                            border.width: 1
+                            border.color: trayRemove.visualFocus ? Theme.accent : Theme.hairline
                         }
-                        TapHandler {
-                            onTapped: if (page.session)
-                                page.session.unattach(tile.index)
+                        contentItem: Item {
+                            Glyph {
+                                anchors.centerIn: parent
+                                path: Icons.close
+                                color: Theme.textDim
+                                size: 12
+                            }
                         }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                     }

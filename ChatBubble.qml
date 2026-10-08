@@ -491,30 +491,59 @@ Item {
             spacing: 2
             Repeater {
                 model: root.reactionChoices
-                delegate: Rectangle {
+                delegate: AbstractButton {
                     id: choice
                     required property string modelData
-                    width: 40; height: 40; radius: 20
-                    color: choiceHover.hovered ? Theme.menuHover : "transparent"
-                    Text {
-                        objectName: "reactionChoice"
-                        anchors.centerIn: parent
-                        text: choice.modelData
-                        // Emoji are bitmap glyphs: item scale magnifies the
-                        // raster cached at the resting size, so grow the font.
-                        property real grow: choiceHover.hovered ? 1.3 : 1.0
-                        font.pixelSize: Math.round(22 * grow)
-                        Behavior on grow { NumberAnimation { duration: 90; easing.type: Easing.OutBack } }
+                    width: 40; height: 40
+                    text: choice.modelData
+                    Accessible.name: qsTr("React with %1").arg(choice.modelData)
+                    // The composer keeps its keyboard while the bar is up.
+                    focusPolicy: Qt.NoFocus
+                    onClicked: {
+                        root.closeActions()
+                        root.take(root.reactRequested, choice.modelData)
                     }
-                    HoverHandler { id: choiceHover }
-                    TapHandler {
-                        onTapped: {
-                            root.closeActions()
-                            root.take(root.reactRequested, choice.modelData)
+                    background: Rectangle {
+                        radius: 20
+                        color: choiceHover.hovered ? Theme.menuHover : "transparent"
+                    }
+                    contentItem: Item {
+                        Text {
+                            objectName: "reactionChoice"
+                            anchors.centerIn: parent
+                            text: choice.modelData
+                            // Emoji are bitmap glyphs: item scale magnifies the
+                            // raster cached at the resting size, so grow the font.
+                            property real grow: choiceHover.hovered ? 1.3 : 1.0
+                            font.pixelSize: Math.round(22 * grow)
+                            Behavior on grow { NumberAnimation { duration: 90; easing.type: Easing.OutBack } }
                         }
                     }
+                    HoverHandler { id: choiceHover }
                 }
             }
+        }
+    }
+
+    // A text button with a rounded hover. Never the focus: the selection
+    // beside it is in the text, and taking the focus would clear it.
+    component PillButton: AbstractButton {
+        id: pill
+        property color textColor: Theme.textPrimary
+        height: 32
+        leftPadding: 12
+        rightPadding: 12
+        font.pixelSize: 14
+        focusPolicy: Qt.NoFocus
+        background: Rectangle {
+            radius: 16
+            color: pill.hovered ? Theme.menuHover : "transparent"
+        }
+        contentItem: Text {
+            text: pill.text
+            color: pill.textColor
+            font: pill.font
+            verticalAlignment: Text.AlignVCenter
         }
     }
 
@@ -537,41 +566,21 @@ Item {
         }
         contentItem: Row {
             spacing: 2
-            Rectangle {
+            PillButton {
                 objectName: "copyTextButton"
                 // Nothing to take between the press that cleared the selection
                 // and the drag that makes a new one.
                 visible: bodyText.selectedText !== ""
-                width: copyLabel.width + 24
-                height: 32
-                radius: 16
-                color: copyHover.hovered ? Theme.menuHover : "transparent"
-                Text {
-                    id: copyLabel
-                    anchors.centerIn: parent
-                    text: qsTr("Copy")
-                    color: Theme.accentDeep
-                    font.pixelSize: 14
-                    font.bold: true
-                }
-                HoverHandler { id: copyHover }
-                TapHandler { onTapped: root.copyTextRequested(bodyText.selectedText) }
+                text: qsTr("Copy")
+                textColor: Theme.accentDeep
+                font.bold: true
+                onClicked: root.copyTextRequested(bodyText.selectedText)
             }
-            Rectangle {
+            PillButton {
                 objectName: "doneTextButton"
-                width: doneLabel.width + 24
-                height: 32
-                radius: 16
-                color: doneHover.hovered ? Theme.menuHover : "transparent"
-                Text {
-                    id: doneLabel
-                    anchors.centerIn: parent
-                    text: qsTr("Done")
-                    color: Theme.textDim
-                    font.pixelSize: 14
-                }
-                HoverHandler { id: doneHover }
-                TapHandler { onTapped: root.textSelectEnded() }
+                text: qsTr("Done")
+                textColor: Theme.textDim
+                onClicked: root.textSelectEnded()
             }
         }
     }
@@ -587,24 +596,36 @@ Item {
         Behavior on opacity { NumberAnimation { duration: root.highlighted ? 120 : 450 } }
     }
 
-    Rectangle {
+    CheckBox {
         id: checkbox
-        width: 24; height: 24; radius: 12
+        // Well past the 24px circle it draws, for touch.
+        width: 44; height: 44
         anchors.verticalCenter: parent.verticalCenter
         x: (root.selShift - width) / 2
         visible: root.selectionMode
-        color: root.selected ? Theme.accent : "transparent"
-        border.color: root.selected ? Theme.accent : Theme.textDim
-        border.width: 2
-        Glyph {
+        // Shows the selection rather than holding it: the click asks, and the
+        // page's answer comes back through `selected`.
+        checkable: false
+        checked: root.selected
+        focusPolicy: Qt.TabFocus
+        Accessible.name: qsTr("Select message")
+        onClicked: root.toggleRequested()
+
+        indicator: Rectangle {
+            width: 24; height: 24; radius: 12
             anchors.centerIn: parent
-            path: Icons.check
-            color: Theme.textOnAccent
-            size: 16
-            visible: root.selected
+            color: checkbox.checked ? Theme.accent : "transparent"
+            border.color: checkbox.checked || checkbox.visualFocus ? Theme.accent : Theme.textDim
+            border.width: 2
+            Glyph {
+                anchors.centerIn: parent
+                path: Icons.check
+                color: Theme.textOnAccent
+                size: 16
+                visible: checkbox.checked
+            }
         }
-        // Hit area padded well past the 24px visual for touch.
-        MouseArea { anchors.fill: parent; anchors.margins: -10; onClicked: root.toggleRequested() }
+        contentItem: null
     }
 
     Glyph {
@@ -1034,7 +1055,7 @@ Item {
 
             Repeater {
                 model: root.reactionKeys
-                delegate: Rectangle {
+                delegate: AbstractButton {
                     id: chip
                     objectName: "reactionChip"
                     required property string modelData
@@ -1044,10 +1065,21 @@ Item {
 
                     height: 22
                     width: chipRow.width + 12
-                    radius: 11
-                    color: Theme.surface
-                    border.color: chip.mine ? Theme.accent : Theme.hairline
-                    border.width: chip.mine ? 1.5 : 1
+                    // Off while selecting, so the press goes to the row.
+                    enabled: !root.selectionMode
+                    // A tap toggles our own reaction, which `mine` reports back.
+                    Accessible.name: qsTr("%1, %n reaction(s)", "", chip.count).arg(chip.modelData)
+                    Accessible.checkable: true
+                    Accessible.checked: chip.mine
+                    focusPolicy: Qt.TabFocus
+                    onClicked: root.reactRequested(chip.modelData)
+
+                    background: Rectangle {
+                        radius: 11
+                        color: Theme.surface
+                        border.color: chip.mine || chip.visualFocus ? Theme.accent : Theme.hairline
+                        border.width: chip.mine || chip.visualFocus ? 1.5 : 1
+                    }
 
                     Component.onCompleted: {
                         const how = root.reactionEntrance(chip.modelData, chip.count)
@@ -1084,6 +1116,7 @@ Item {
                         }
                     }
 
+                    contentItem: Item {}
                     Row {
                         id: chipRow
                         anchors.centerIn: parent
@@ -1101,13 +1134,6 @@ Item {
                             font.pixelSize: 11
                             font.bold: true
                         }
-                    }
-                    // Exclusive on press, so the chip wins the tap outright
-                    // rather than firing alongside the row's menu.
-                    TapHandler {
-                        enabled: !root.selectionMode
-                        gesturePolicy: TapHandler.ReleaseWithinBounds
-                        onTapped: root.reactRequested(chip.modelData)
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                 }
