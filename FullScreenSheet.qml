@@ -26,4 +26,23 @@ Dialog {
     // type into - the XML viewer, say. A field on the sheet brings it back
     // when tapped.
     onOpened: Qt.inputMethod.hide() // qmllint disable missing-property
+
+    // WORKAROUND for a Qt bug: a modal popup blocks presses to what is behind
+    // it, but not drags to the pointer handlers there, which watch through a
+    // passive grab. A sideways drag on the XML viewer reached the message
+    // under it as a reply swipe, which focused the composer and raised the
+    // keyboard. Drop this once Qt blocks them itself:
+    //   https://bugreports.qt.io/browse/QTBUG-87815 (DragHandler, through popups)
+    //   https://bugreports.qt.io/browse/QTBUG-89873 (touch handlers, Android)
+    //   https://bugreports.qt.io/browse/QTBUG-100104 (DragHandler, modal Dialog)
+    // `covers` is the content the sheet is drawn over, taken out of reach
+    // while it is up.
+    property Item covers: null
+    Binding {
+        target: covers
+        property: "enabled"
+        value: false
+        when: covers !== null && visible
+        restoreMode: Binding.RestoreBindingOrValue
+    }
 }

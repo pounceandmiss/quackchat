@@ -272,6 +272,7 @@ Rectangle {
     // unknown length is a screenful.
     FullScreenSheet {
         id: settingsSheet
+        covers: list
         property alias account: settingsPage.account
         // The sheet outlives each visit, so start from what is stored rather
         // than from whatever was typed and abandoned last time.

@@ -517,6 +517,7 @@ Page {
     FullScreenSheet {
         id: prefsSheet
         objectName: "preferencesSheet"
+        covers: listView
 
         AppSettingsPage {
             anchors.fill: parent

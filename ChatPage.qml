@@ -212,6 +212,7 @@ Page {
     FullScreenSheet {
         id: contactSheet
         objectName: "contactSheet"
+        covers: chatColumn
 
         ContactDetailsPage {
             anchors.fill: parent
@@ -249,6 +250,7 @@ Page {
     FullScreenSheet {
         id: detailsSheet
         objectName: "detailsSheet"
+        covers: chatColumn
 
         MucDetailsPage {
             id: detailsPage
@@ -295,6 +297,7 @@ Page {
     FullScreenSheet {
         id: xmlSheet
         objectName: "xmlSheet"
+        covers: chatColumn
 
         // "" for a message that never had a stanza built.
         property alias xml: xmlPage.xml
@@ -1352,6 +1355,7 @@ Page {
     }
 
     ColumnLayout {
+        id: chatColumn
         anchors.fill: parent
         anchors.bottomMargin: page.keyboardInset
         Behavior on anchors.bottomMargin {
