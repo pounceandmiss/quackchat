@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 import Quack
 
@@ -181,18 +182,28 @@ ColumnLayout {
 
     // Under whichever of the two is showing, so an image being re-fetched keeps
     // its old thumbnail meanwhile.
-    Rectangle {
+    ProgressBar {
+        id: progress
         objectName: "attachmentProgress"
         visible: att.busy && att.modelData.total > 0
         Layout.fillWidth: true
         Layout.preferredHeight: 3
-        radius: 1.5
-        color: Theme.hairline
-        Rectangle {
-            width: parent.width * Math.min(1, att.modelData.loaded / att.modelData.total)
-            height: parent.height
-            radius: parent.radius
-            color: Theme.accent
+        from: 0
+        to: Math.max(1, att.modelData.total)
+        value: Math.min(att.modelData.loaded, att.modelData.total)
+        padding: 0
+        background: Rectangle {
+            implicitHeight: 3
+            radius: 1.5
+            color: Theme.hairline
+        }
+        contentItem: Item {
+            Rectangle {
+                width: progress.visualPosition * parent.width
+                height: parent.height
+                radius: 1.5
+                color: Theme.accent
+            }
         }
     }
 }
