@@ -298,20 +298,16 @@ void TestSearchModel::failedSearchSaysSoRatherThanShowingNothing() {
                              "complete":false,"last":300})"));
     QCOMPARE(m.rowCount(), 1);
 
-    // error/unsupported sit outside the declared JSON schema, so they arrive as
-    // the string "1" rather than a bool - which is how they are written here.
     m.setQuery("pasta");
     m.search();
-    m.handleResult(3, res(R"({"messages":[],"complete":false,"last":null,
-                              "error":"1","unsupported":"1"})"));
+    m.handleError(3, QStringLiteral("This server can't search its archive"));
     QVERIFY(m.failed());
     QVERIFY(m.complete()); // no cursor, so nothing to offer behind it
     // Nothing replaced them, so they would be read as this search's answer.
     QCOMPARE(m.rowCount(), 0);
 }
 
-// The other way a search fails: not a result carrying `error`, but the request
-// itself refused or abandoned.
+// Through the backend's error signal.
 void TestSearchModel::aSearchThatErrorsOutrightStopsSpinning() {
     TackyBackend backend;
     SearchModel m;

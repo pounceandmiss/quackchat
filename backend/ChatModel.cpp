@@ -955,8 +955,7 @@ void ChatModel::resolveAttachment(qlonglong ts, int idx,
         finishAction(act, {});
         return;
     }
-    // The file module answers with the local path, or "" if it could not get
-    // one - a failure, not an error reply, so there is no error leg to handle.
+    // The file module answers with the local path, or an error.
     QVariantMap args{{QStringLiteral("acc"), m_account}};
     args.insert(src);
     const int tok = m_backend->request(QStringLiteral("file"),
@@ -964,8 +963,8 @@ void ChatModel::resolveAttachment(qlonglong ts, int idx,
     m_pendingAction.insert(tok, act);
 }
 
-// An empty `path` is the file module saying it could not get one, which each of
-// these has to have a way of showing.
+// An empty `path` means the file could not be had, which each of these has to
+// have a way of showing.
 void ChatModel::finishAction(const PendingAction &act, const QString &path) {
     switch (act.kind) {
     case PendingAction::Open:

@@ -264,10 +264,8 @@ void SearchModel::handleResult(int token, const QVariant &data) {
     applyResult(data.toMap(), append);
 }
 
-// A search can fail two ways and only one of them arrives as a result: a bad
-// account, or the minute of connected time a request is given before it is
-// abandoned, come back here instead. Left unhandled they never clear `searching`
-// and the view spins for good.
+// Left unhandled a failed search never clears `searching` and the view spins
+// for good.
 void SearchModel::handleError(int token, const QString &message) {
     Q_UNUSED(message)
     if (m_capsToken != 0 && token == m_capsToken) {
@@ -283,14 +281,7 @@ void SearchModel::handleError(int token, const QString &message) {
     applyFailure(append);
 }
 
-// `error` and `unsupported` sit outside the declared JSON schema, so they come
-// over as the string "1" rather than a bool; QVariant reads either as true.
 void SearchModel::applyResult(const QVariantMap &result, bool append) {
-    if (result.value(QStringLiteral("error")).toBool()) {
-        applyFailure(append);
-        return;
-    }
-
     // A page that lands is the search working, so it cannot still be the one
     // that failed. Ordinarily forgetPage() has already cleared this, but a
     // result arriving after a failure must not leave both standing.
