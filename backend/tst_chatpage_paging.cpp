@@ -134,10 +134,19 @@ void TestChatPagePaging::scrollingUpOffersTheWayBackDown() {
     settle();
     const int rows = chat.count();
 
-    QTest::mouseClick(chat.win(), Qt::LeftButton, {},
-                      jump->mapToScene(QPointF(jump->width() / 2, jump->height() / 2)).toPoint());
+    // A finger, as on a phone: the bubble under the button must not take the
+    // same tap as a request for its menu.
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint at =
+        jump->mapToScene(QPointF(jump->width() / 2, jump->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, at);
+    QTest::touchEvent(chat.win(), finger).release(0, at);
     QTRY_VERIFY(!jump->isVisible());
     QVERIFY(chat.buffer("newerBuffer") < 10);
+    QTest::qWait(300); // longer than it takes a menu to open
+    for (QObject *menu : chat.win()->findChildren<QObject *>("bubbleMenu"))
+        QVERIFY2(!menu->property("opened").toBool(),
+                 "the tap on the button also opened a message's menu");
     // Same window as before the click, so it scrolled instead of reloading.
     QCOMPARE(chat.count(), rows);
 }

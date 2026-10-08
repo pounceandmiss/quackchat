@@ -1660,7 +1660,8 @@ Page {
 
             // Scrolling up and jumping to a reply's target both leave the
             // newest message off screen, a long way back by hand.
-            Rectangle {
+            AbstractButton {
+                id: jumpToLatest
                 objectName: "jumpToLatest"
                 parent: feed
                 anchors.right: parent.right
@@ -1669,20 +1670,28 @@ Page {
                 anchors.bottomMargin: 12
                 width: 38
                 height: 38
-                radius: 19
-                color: Theme.surface
-                border.color: Theme.hairline
+                Accessible.name: qsTr("Jump to the newest message")
+                // Tab reaches it; a tap leaves the focus, and the keyboard
+                // with it, in the field.
+                focusPolicy: Qt.TabFocus
                 opacity: page.atTail && feed.atNewestEdge ? 0 : 1
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: 150 } }
+                onClicked: feed.jumpToNewest()
 
-                Glyph {
-                    anchors.centerIn: parent
-                    path: Icons.keyboardArrowDown
-                    color: Theme.textDim
-                    size: 22
+                background: Rectangle {
+                    radius: 19
+                    color: jumpToLatest.down ? Theme.menuHover : Theme.surface
+                    border.color: jumpToLatest.visualFocus ? Theme.accent : Theme.hairline
                 }
-                TapHandler { onTapped: feed.jumpToNewest() }
+                contentItem: Item {
+                    Glyph {
+                        anchors.centerIn: parent
+                        path: Icons.keyboardArrowDown
+                        color: Theme.textDim
+                        size: 22
+                    }
+                }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
 
