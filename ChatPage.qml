@@ -1186,7 +1186,11 @@ Page {
                 rightPadding: 10
                 // The page holds the state, so this is not `checkable` - a
                 // button with its own checked state as well would leave two
-                // answers to the same question.
+                // answers to the same question. A screen reader is still told
+                // which way it is.
+                Accessible.name: qsTr("Search the server too")
+                Accessible.checkable: true
+                Accessible.checked: page.searchServer
                 onClicked: {
                     page.searchServer = !page.searchServer
                     if (searchInput.text !== "")
