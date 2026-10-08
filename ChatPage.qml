@@ -1402,6 +1402,22 @@ Page {
             readonly property bool atNewestEdge:
                 originY + contentHeight + bottomMargin - height - contentY < 10
 
+            // A bottom-to-top list keeps its top edge where it is when it
+            // changes height, so a banner, the tray or a growing composer
+            // taking height from it would push the newest message under the
+            // composer. A view that showed the newest edge at its old height
+            // moves by the difference and goes on showing it.
+            property real shownHeight: 0
+            function keepNewestEdge() {
+                const before = shownHeight
+                shownHeight = height
+                if (before <= 0 || before === height || !page.atTail)
+                    return
+                if (originY + contentHeight + bottomMargin - before - contentY >= 10)
+                    return
+                contentY += before - height
+            }
+
             // The way back to the newest message: scroll to it while the window
             // still holds it, and fetch the newest page again once a jump has
             // left it behind.
@@ -1496,7 +1512,10 @@ Page {
             // out, and topUp reading the geometry from before the page would
             // see no slack above and pull another one it does not need.
             onContentHeightChanged: Qt.callLater(topUp)
-            onHeightChanged: Qt.callLater(topUp)
+            onHeightChanged: {
+                keepNewestEdge()
+                Qt.callLater(topUp)
+            }
 
             delegate: Item {
                 id: wrap

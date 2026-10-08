@@ -26,6 +26,7 @@ private slots:
     void initialLoadStopsAtOnePage();
     void scrollingUpPagesOlder();
     void scrollingUpOffersTheWayBackDown();
+    void theNewestStaysInViewWhenTheFeedShrinks();
     void underTallViewportPagesWithoutScrolling();
     void reachingTheOldestEdgeRetriesAfterExhaustion();
     void tappingAQuoteJumpsToItsTarget();
@@ -139,6 +140,29 @@ void TestChatPagePaging::scrollingUpOffersTheWayBackDown() {
     QVERIFY(chat.buffer("newerBuffer") < 10);
     // Same window as before the click, so it scrolled instead of reloading.
     QCOMPARE(chat.count(), rows);
+}
+
+// A banner, the tray or a growing composer takes height from the feed after it
+// has settled on the newest message. A bottom-to-top list keeps its top edge
+// where it was, which would push the newest message under the composer.
+void TestChatPagePaging::theNewestStaysInViewWhenTheFeedShrinks() {
+    const Chat chat = open("friend@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), kPage);
+    settle();
+    QVERIFY(chat.buffer("newerBuffer") < 10);
+
+    chat.win()->setHeight(chat.win()->height() - 120);
+    settle();
+    QTRY_VERIFY(chat.buffer("newerBuffer") < 10);
+
+    // Scrolled away on purpose, it stays where it was put.
+    chat.scrollNearOldest();
+    QTRY_VERIFY(chat.buffer("newerBuffer") > 100);
+    chat.win()->setHeight(chat.win()->height() + 120);
+    settle();
+    QVERIFY(chat.buffer("newerBuffer") > 100);
 }
 
 // A chat whose whole history is shorter than the viewport cannot be scrolled,
