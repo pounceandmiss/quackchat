@@ -20,4 +20,10 @@ Dialog {
     rightPadding: parent ? parent.SafeArea.margins.right : 0
 
     background: Rectangle { color: Theme.background }
+
+    // Opening takes the focus off whatever had it, but on Android a keyboard
+    // already up for the chat's composer stays up over a page with nothing to
+    // type into - the XML viewer, say. A field on the sheet brings it back
+    // when tapped.
+    onOpened: Qt.inputMethod.hide() // qmllint disable missing-property
 }
