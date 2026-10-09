@@ -39,6 +39,7 @@ private slots:
     void tracksCallsOnSeveralAccounts();
     void bothEndsOfACallBetweenOurOwnAccountsAreSeparateRows();
     void hangupEndsRowWithoutAnEvent();
+    void aFinishedCallStaysFinished();
     void sendsTheAccountAndSidTheRowHolds();
     void perCallDeviceOverrideNamesBothEndpoints();
     // Re-seeding from `calls list`:
@@ -264,6 +265,19 @@ void TestCalls::hangupEndsRowWithoutAnEvent() {
         {"acc":"me@host","sid":"tk-11","from":"friend@host"}])");
     m.reject(QStringLiteral("me@host"), QStringLiteral("tk-11"));
     QCOMPARE(state(m, 1), QString("ended"));
+}
+
+// A hangup lands ahead of events the backend had already queued.
+void TestCalls::aFinishedCallStaysFinished() {
+    CallsModel m;
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-12","to":"friend@host"}])");
+    m.hangup(QStringLiteral("me@host"), QStringLiteral("tk-12"));
+    feed(m, R"(["event","calls","Active",{"acc":"me@host","sid":"tk-12"}])");
+    feed(m, R"(["event","calls","Warning",
+        {"acc":"me@host","sid":"tk-12","reason":"ICE consent lost"}])");
+    QCOMPARE(state(m), QString("ended"));
+    QVERIFY(m.data(m.index(0), CallsModel::WarningRole).toString().isEmpty());
 }
 
 // Callers pass a sid and nothing else; the account it belongs to comes off the

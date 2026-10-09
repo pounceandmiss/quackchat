@@ -110,6 +110,9 @@ void CallsModel::setState(const QString &acc, const QString &sid,
         << state;
     if (i < 0 || m_calls.at(i).state == state)
         return;
+    // Terminal is final: late backend events must not revive the call.
+    if (isTerminal(m_calls.at(i).state) && !isTerminal(state))
+        return;
     m_calls[i].state = state;
     const QModelIndex idx = index(i);
     emit dataChanged(idx, idx, {StateRole, TerminalRole});
@@ -210,8 +213,10 @@ void CallsModel::handleEvent(const QString &module, const QString &name,
                  a.value(QStringLiteral("reason")).toString());
         setState(acc, sid, QStringLiteral("failed"));
     } else if (name == QLatin1String("Warning")) {
-        setField(acc, sid, WarningRole,
-                 a.value(QStringLiteral("reason")).toString());
+        const int i = indexOf(acc, sid);
+        if (i >= 0 && !isTerminal(m_calls.at(i).state))
+            setField(acc, sid, WarningRole,
+                     a.value(QStringLiteral("reason")).toString());
     }
 }
 
@@ -394,6 +399,10 @@ void CallsModel::accept(const QString &acc, const QString &sid) {
     const bool video = m_calls.at(i).offeredVideo;
     withMicrophone(acc, m_calls.at(i).peer, [this, acc, sid, video] {
         withCamera(video, [this, acc, sid] {
+            // The prompts are async on Android; the caller may have hung up.
+            const int j = indexOf(acc, sid);
+            if (j < 0 || m_calls.at(j).state != QLatin1String("incoming"))
+                return;
             sendFor(acc, sid, QStringLiteral("accept"));
             // Nothing is emitted between our <proceed> and <Active>, which is
             // a long wait on a slow ICE path, so move the row ourselves.
