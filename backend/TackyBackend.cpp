@@ -30,6 +30,9 @@ void TackyBackend::setTransport(TackyTransport *transport) {
         return;
     const bool was = isRunning();
     const bool wasAttached = isAttached();
+    // Unhooked first, or its stop() on deletion reports the drop twice.
+    if (m_transport)
+        m_transport->disconnect(this);
     delete m_transport;
     m_transport = transport;
     if (m_transport) {

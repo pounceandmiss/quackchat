@@ -6,6 +6,7 @@
 #include <QVariantList>
 
 #include "BackendBinding.h"
+#include "SocketTransport.h"
 #include "TackyBackend.h"
 
 class TestBackend : public QObject {
@@ -17,6 +18,7 @@ private slots:
     void theAppsActiveStateIsTakenAsSent();
     void sentReportsCallsWithoutABackend();
     void aRequestThatNeverWentOutIsAnswered();
+    void swappingARunningTransportStopsOnce();
     void bindingCarriesEverySignalAModelNeeds();
     void optingOutLeavesOnlyTheReSeedBehind();
 };
@@ -162,6 +164,24 @@ void TestBackend::aRequestThatNeverWentOutIsAnswered() {
     QTRY_COMPARE(errors.count(), 1);
     QCOMPARE(errors.first().at(0).toInt(), tok);
     QVERIFY(!errors.first().at(1).toString().isEmpty());
+}
+
+void TestBackend::swappingARunningTransportStopsOnce() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    QVERIFY(backend.isRunning());
+    const int tok = backend.request("account", "list");
+    QSignalSpy running(&backend, &TackyBackend::runningChanged);
+    QSignalSpy errors(&backend, &TackyBackend::error);
+
+    backend.setTransport(new SocketTransport(QStringLiteral("quack-tst-nobody-%1")
+                                                 .arg(QCoreApplication::applicationPid())));
+    QVERIFY(!backend.isRunning());
+    QCOMPARE(running.count(), 1);
+    int failed = 0;
+    for (const QList<QVariant> &e : errors)
+        failed += e.at(0).toInt() == tok;
+    QVERIFY(failed <= 1);
 }
 
 QTEST_MAIN(TestBackend)
