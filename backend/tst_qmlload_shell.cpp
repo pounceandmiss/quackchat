@@ -382,6 +382,34 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A back press on Android is a refused close: it must not unregister the shell.
+    void aRefusedCloseKeepsTheShellForNotifications() {
+        AppEngine e;
+        QQmlComponent comp(&e);
+        comp.setData(R"(import QtQuick
+import Quack
+QtObject {
+    id: fake
+    signal closing(var close)
+    property string shown: ""
+    function showChat(account, jid) { shown = account + "/" + jid }
+    function raise() {}
+    function requestActivate() {}
+    function back() { closing({accepted: false}) }
+    function tap() { return AppWindows.showChat("me@h", "ann@h") === fake }
+    Component.onCompleted: AppWindows.registerShell(fake)
+})", QUrl(QStringLiteral("qrc:/tst_fakeshell.qml")));
+        QScopedPointer<QObject> shell(comp.create());
+        QVERIFY2(shell, qPrintable(comp.errorString()));
+
+        QVERIFY(QMetaObject::invokeMethod(shell.get(), "back"));
+        QVariant same;
+        QVERIFY(QMetaObject::invokeMethod(shell.get(), "tap", Q_RETURN_ARG(QVariant, same)));
+        QVERIFY2(same.toBool(), "the tap went to a new shell");
+        QCOMPARE(shell->property("shown").toString(), QString("me@h/ann@h"));
+        e.assertNoErrors();
+    }
+
     // An audio call's preview is an empty map, which JS reads as true.
     void onlyAVideoCallShowsTheCameraToggle() {
         AppEngine e;

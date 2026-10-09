@@ -49,7 +49,10 @@ QtObject {
         if (!w)
             return
         mgr._shells.push(w)
-        w.closing.connect(() => {
+        // ShellWindow refuses it when Android's back press had somewhere to go.
+        w.closing.connect((close) => {
+            if (!close.accepted)
+                return
             const i = mgr._shells.indexOf(w)
             if (i >= 0)
                 mgr._shells.splice(i, 1)
