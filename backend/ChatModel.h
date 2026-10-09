@@ -225,6 +225,7 @@ private:
     int insertPos(qlonglong ts) const;
     void issueHistory(const QString &dir, qlonglong cursor, bool haveCursor);
     void pullConnState();
+    void pullTail();
     void setLoadError(const QString &message);
     void setOnline(bool v);
     void clearFailure(const QString &dir);

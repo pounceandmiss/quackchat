@@ -386,6 +386,7 @@ void ChatModel::reload() {
     m_failed.clear();
     setLoadError({});
     pullConnState();
+    pullTail();
     loadInitial();
 }
 
@@ -447,6 +448,17 @@ void ChatModel::pullConnState() {
                       QVariantMap{{QStringLiteral("acc"), m_account},
                                   {QStringLiteral("event"),
                                    QStringLiteral("State")}});
+}
+
+// <Tail> is only pushed on change, so a window opened off the tail asks.
+void ChatModel::pullTail() {
+    if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("message"), QStringLiteral("pull"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("jid"), m_chat},
+                                  {QStringLiteral("event"),
+                                   QStringLiteral("Tail")}});
 }
 
 void ChatModel::setLoadError(const QString &message) {

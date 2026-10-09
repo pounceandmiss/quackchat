@@ -90,6 +90,7 @@ private slots:
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
     void gotoOutrunsTheOpeningPage();
+    void aWindowOpenedOffTheTailRejoinsIt();
     void searchMarkJoinsTheStylingSpans();
     void attachmentsRoleReadsTheContentUnion();
     void inviteRoleReadsTheContentUnion();
@@ -861,6 +862,35 @@ void TestChatModel::gotoOutrunsTheOpeningPage() {
     QCOMPARE(anchored.first().at(0).toLongLong(), 20LL);
     QCOMPARE(m.rowCount(), 2);
     QCOMPARE(m.data(m.index(0), ChatModel::TimestampRole).toLongLong(), 20LL);
+}
+
+// A window opened on an old slice asks for <Tail>, or it never rejoins.
+void TestChatModel::aWindowOpenedOffTheTailRejoinsIt() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.setChat("a@h");      // token 1
+    bool askedForTail = false;
+    for (const QList<QVariant> &f : sent) {
+        const QVariantMap a = f.at(2).toMap();
+        if (f.at(0) == "message" && f.at(1) == "pull"
+            && a.value("event") == "Tail" && a.value("jid") == "a@h")
+            askedForTail = true;
+    }
+    QVERIFY(askedForTail);
+    feedEvent(m, R"(["event","message","Tail",{"acc":"me@h","jid":"a@h","timestamp":30}])");
+
+    m.gotoTimestamp(10);   // token 2
+    m.handleResult(2, QJsonDocument::fromJson(R"({
+        "anchor":10,"messages":[{"timestamp":10},{"timestamp":20}]})")
+                          .object().toVariantMap());
+    QVERIFY(!m.atTail());
+
+    m.loadNewer();         // token 3
+    m.handleResult(3, msgs(R"([{"timestamp":30},{"timestamp":25}])"));
+    QVERIFY(m.atTail());
 }
 
 // Where a search matched is one more span over the same string, so it draws
