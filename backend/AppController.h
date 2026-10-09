@@ -64,6 +64,7 @@ class AppController : public QObject {
 
 public:
     explicit AppController(QObject *parent = nullptr);
+    ~AppController() override;
 
     TackyBackend *backend() { return &m_backend; }
     AccountsModel *accounts() { return &m_accounts; }

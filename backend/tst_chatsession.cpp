@@ -5,6 +5,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
+#include "AppController.h"
 #include "ChatSession.h"
 #include "TackyBackend.h"
 
@@ -21,6 +22,7 @@ private slots:
     void nothingUnreadableIsEverQueued();
     void everyViewHoldsOneOpenChat();
     void whereTheFeedWasLeftGoesToTackyOnRelease();
+    void whereTheFeedWasLeftGoesToTackyOnQuit();
 };
 
 // Every `message <method>` the spy saw, as "method arg" pairs. A queued send
@@ -131,8 +133,6 @@ void TestChatSession::replyAndEditTurnEachOtherOff() {
     QCOMPARE(s.draft(), QString());
 }
 
-QTEST_MAIN(TestChatSession)
-#include "tst_chatsession.moc"
 
 // The tray is a queue of messages waiting, not an album: tacky attaches one
 // file to a message, so each file goes out as one and the words as another.
@@ -310,3 +310,24 @@ void TestChatSession::whereTheFeedWasLeftGoesToTackyOnRelease() {
     s.flush();
     QCOMPARE(stored().last(), QString(R"({"draft":"hi"})"));
 }
+
+// Quitting while focused flushes nothing, so the sessions' teardown saves the view.
+void TestChatSession::whereTheFeedWasLeftGoesToTackyOnQuit() {
+    std::unique_ptr<QSignalSpy> sent;
+    {
+        AppController app;
+        sent = std::make_unique<QSignalSpy>(app.backend(), &TackyBackend::sent);
+        ChatSession *c = app.chatFor("me@h", "a@h", false);
+        QVERIFY(c);
+        c->setView(500, 12);
+    }
+    QStringList stored;
+    for (const QList<QVariant> &call : std::as_const(*sent))
+        if (call.at(0).toString() == QLatin1String("chat") &&
+            call.at(1).toString() == QLatin1String("setClientData"))
+            stored << call.at(2).toMap().value("data").toString();
+    QCOMPARE(stored, QStringList({R"({"view":{"offset":12,"ts":500}})"}));
+}
+
+QTEST_MAIN(TestChatSession)
+#include "tst_chatsession.moc"
