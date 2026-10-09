@@ -60,9 +60,9 @@ void NotificationController::handleEvent(const QString &module,
         return;
 
     const bool isNotify = module == QLatin1String("notify")
-                          && name == QLatin1String("<Notify>");
+                          && name == QLatin1String("Notify");
     const bool isOwnRead = module == QLatin1String("message")
-                           && name == QLatin1String("<OwnRead>");
+                           && name == QLatin1String("OwnRead");
     if (!isNotify && !isOwnRead)
         return;
 

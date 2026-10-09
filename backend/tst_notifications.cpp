@@ -67,7 +67,7 @@ private slots:
     }
 
     void notifyBecomesAnAlert() {
-        feed(R"(["event","notify","<Notify>",{"acc":"me@h","jid":"ann@h",
+        feed(R"(["event","notify","Notify",{"acc":"me@h","jid":"ann@h",
               "nick":"Ann","body":"pub?","timestamp":1700000000,"unread":3,
               "mention":false}])");
 
@@ -81,7 +81,7 @@ private slots:
     }
 
     void mentionCarriesThrough() {
-        feed(R"(["event","notify","<Notify>",{"acc":"me@h","jid":"room@c",
+        feed(R"(["event","notify","Notify",{"acc":"me@h","jid":"room@c",
               "nick":"Bo","body":"you about?","unread":1,"mention":true}])");
 
         QCOMPARE(m_notifier->shown.size(), 1);
@@ -91,7 +91,7 @@ private slots:
     // An alert naming the JID beats one with a blank sender. Same fallback
     // Android's Notifications.java applies.
     void blankNickFallsBackToJid() {
-        feed(R"(["event","notify","<Notify>",{"acc":"me@h","jid":"ann@h",
+        feed(R"(["event","notify","Notify",{"acc":"me@h","jid":"ann@h",
               "nick":"","body":"hi","unread":1}])");
 
         QCOMPARE(m_notifier->shown.size(), 1);
@@ -102,7 +102,7 @@ private slots:
     // arrives whether the chat was read here, in another window or on another
     // device.
     void ownReadRetracts() {
-        feed(R"(["event","message","<OwnRead>",{"acc":"me@h","jid":"ann@h",
+        feed(R"(["event","message","OwnRead",{"acc":"me@h","jid":"ann@h",
               "timestamp":1700000000}])");
 
         QCOMPARE(m_notifier->retracted, QStringList{key("me@h", "ann@h")});
@@ -111,9 +111,9 @@ private slots:
 
     // Two accounts talking to the same JID are two separate alerts.
     void accountIsPartOfTheKey() {
-        feed(R"(["event","notify","<Notify>",{"acc":"one@h","jid":"ann@h",
+        feed(R"(["event","notify","Notify",{"acc":"one@h","jid":"ann@h",
               "nick":"Ann","body":"a","unread":1}])");
-        feed(R"(["event","notify","<Notify>",{"acc":"two@h","jid":"ann@h",
+        feed(R"(["event","notify","Notify",{"acc":"two@h","jid":"ann@h",
               "nick":"Ann","body":"b","unread":1}])");
 
         QCOMPARE(m_notifier->shown.size(), 2);
@@ -130,9 +130,9 @@ private slots:
     }
 
     void incompleteEventsAreIgnored() {
-        feed(R"(["event","notify","<Notify>",{"jid":"ann@h","nick":"Ann"}])");
-        feed(R"(["event","notify","<Notify>",{"acc":"me@h","nick":"Ann"}])");
-        feed(R"(["event","message","<OwnRead>",{"acc":"me@h"}])");
+        feed(R"(["event","notify","Notify",{"jid":"ann@h","nick":"Ann"}])");
+        feed(R"(["event","notify","Notify",{"acc":"me@h","nick":"Ann"}])");
+        feed(R"(["event","message","OwnRead",{"acc":"me@h"}])");
 
         QVERIFY(m_notifier->shown.isEmpty());
         QVERIFY(m_notifier->retracted.isEmpty());
@@ -164,9 +164,9 @@ private slots:
     void noNotifierIsHarmless() {
         m_controller->setNotifier(nullptr);
 
-        feed(R"(["event","notify","<Notify>",{"acc":"me@h","jid":"ann@h",
+        feed(R"(["event","notify","Notify",{"acc":"me@h","jid":"ann@h",
               "nick":"Ann","body":"hi","unread":1}])");
-        feed(R"(["event","message","<OwnRead>",{"acc":"me@h","jid":"ann@h"}])");
+        feed(R"(["event","message","OwnRead",{"acc":"me@h","jid":"ann@h"}])");
 
         QVERIFY(m_controller->notifier() == nullptr);
     }
