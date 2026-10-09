@@ -59,10 +59,6 @@ void TestAuthorNames::fetchesOnChat() {
     a.handleResult(1, map(R"({"room@h/ann":"Ann","room@h/bo":"Bo"})"));
     QCOMPARE(changed.count(), 1);
     QCOMPARE(a.names().value("room@h/ann").toString(), QString("Ann"));
-
-    // A reply from a request we no longer care about is not ours to apply.
-    a.handleResult(7, map(R"({"room@h/ann":"Someone Else"})"));
-    QCOMPARE(a.names().value("room@h/ann").toString(), QString("Ann"));
 }
 
 void TestAuthorNames::changedUpdatesOneSender() {
@@ -112,8 +108,14 @@ void TestAuthorNames::chatSwitchDropsTheOldMap() {
     a.handleResult(1, map(R"({"room@h/ann":"Ann"})"));
     QVERIFY(!a.names().isEmpty());
 
-    a.setChat("other@h");
+    // A late reply for the chat left behind is not applied.
+    feedEvent(a, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])"); // token 2
+    a.setChat("other@h"); // token 3
     QVERIFY(a.names().isEmpty());
+    a.handleResult(2, map(R"({"room@h/ann":"Ann"})"));
+    QVERIFY(a.names().isEmpty());
+    a.handleResult(3, map(R"({"other@h":"Otto"})"));
+    QCOMPARE(a.names().value("other@h").toString(), QString("Otto"));
 }
 
 QTEST_MAIN(TestAuthorNames)
