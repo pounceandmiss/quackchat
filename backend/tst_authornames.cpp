@@ -42,6 +42,8 @@ void TestAuthorNames::refetchesOnReady() {
 
     feedEvent(a, R"(["event","conn","State",{"acc":"me@h","state":"connected"}])");
     QCOMPARE(sent.count(), 1); // token 2
+    // Same chat: the names stand until the new ones land.
+    QCOMPARE(a.names().value("room@h/ann").toString(), QString("Ann"));
     a.handleResult(2, map(R"({"room@h/ann":"Annabel"})"));
     QCOMPARE(a.names().value("room@h/ann").toString(), QString("Annabel"));
 }

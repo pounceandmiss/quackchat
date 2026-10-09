@@ -13,7 +13,7 @@ void AuthorNames::setBackend(TackyBackend *backend) {
     if (m_backend)
         bindBackend(this, m_backend, &AuthorNames::refresh);
     emit backendChanged();
-    refresh();
+    restart();
 }
 
 void AuthorNames::setAccount(const QString &acc) {
@@ -21,7 +21,7 @@ void AuthorNames::setAccount(const QString &acc) {
         return;
     m_account = acc;
     emit accountChanged();
-    refresh();
+    restart();
 }
 
 void AuthorNames::setChat(const QString &chat) {
@@ -29,17 +29,22 @@ void AuthorNames::setChat(const QString &chat) {
         return;
     m_chat = chat;
     emit chatChanged();
-    refresh();
+    restart();
 }
 
 // One map per chat, so the old one goes as soon as the chat does - a stale
 // name under a new conversation would be worse than a bare JID.
-void AuthorNames::refresh() {
-    m_pending = 0;
+void AuthorNames::restart() {
     if (!m_names.isEmpty()) {
         m_names.clear();
         emit namesChanged();
     }
+    refresh();
+}
+
+// Same chat: keep the names until the new ones land.
+void AuthorNames::refresh() {
+    m_pending = 0;
     if (!m_backend || m_account.isEmpty() || m_chat.isEmpty())
         return;
     m_pending = m_backend->request(

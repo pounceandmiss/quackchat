@@ -45,6 +45,7 @@ signals:
     void namesChanged();
 
 private:
+    void restart();
     void refresh();
 
     TackyBackend *m_backend = nullptr;
