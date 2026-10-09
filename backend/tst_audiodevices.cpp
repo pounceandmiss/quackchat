@@ -39,13 +39,16 @@ void TestAudioDevices::refreshesWhenTheBackendConnects() {
 
     emit backend.connected();
 
+    // What is asked, not in which order.
     QStringList asked;
-    for (const QList<QVariant> &call : sent)
+    for (const QList<QVariant> &call : sent) {
+        QCOMPARE(call.at(0).toString(), QString("audio"));
         asked << call.at(1).toString();
+    }
+    asked.sort();
     QCOMPARE(asked, QStringList({"enumerateDevices", "getPreferredDevice",
                                  "getPreferredDevice", "getVolume",
                                  "getVolume"}));
-    QCOMPARE(sent.first().at(0).toString(), QString("audio"));
 }
 
 void TestAudioDevices::volumeEventDrivesMuted() {
