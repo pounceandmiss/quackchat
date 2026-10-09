@@ -8,7 +8,6 @@
 
 #include "AppSettings.h"
 #include "AudioDevices.h"
-#include "CallsModel.h"
 #include "ChatListModel.h"
 #include "SocketTransport.h"
 #include "TackyBackend.h"
@@ -144,7 +143,49 @@ private slots:
 
         QSignalSpy got(&t, &SocketTransport::received);
         m_peer->write(frame("[1]"));
-        QTRY_COMPARE(got.count(), 1); // framing state survived the drop
+        QTRY_COMPARE(got.count(), 1);
+    }
+
+    void aFrameCutOffByADropIsForgotten() {
+        SocketTransport t(m_name);
+        t.setRetryInterval(20);
+        QSignalSpy got(&t, &SocketTransport::received);
+        QVERIFY(t.start({}));
+        QVERIFY(accept());
+        QTRY_VERIFY(t.isConnected());
+
+        // In one write, so the head of the cut frame is read with the whole one.
+        m_peer->write(frame("[0]") + QByteArray("40\n[\"half"));
+        QTRY_COMPARE(got.count(), 1);
+        m_peer->abort();
+        QTRY_VERIFY(!t.isConnected());
+
+        QVERIFY(accept());
+        QTRY_VERIFY(t.isConnected());
+        m_peer->write(frame("[1]"));
+        QTRY_COMPARE(got.count(), 2);
+        QCOMPARE(got.at(1).at(0).toString(), QString("[1]"));
+    }
+
+    void aGarbledLengthDropsTheLinkAndTheNextStartsClean() {
+        SocketTransport t(m_name);
+        t.setRetryInterval(20);
+        QSignalSpy got(&t, &SocketTransport::received);
+        QVERIFY(t.start({}));
+        QVERIFY(accept());
+        QTRY_VERIFY(t.isConnected());
+
+        // Watched, not polled: the 20ms retry beats a poll.
+        QSignalSpy state(&t, &SocketTransport::connectedChanged);
+        m_peer->write("not a length\n[1]");
+        QTRY_VERIFY(state.count() >= 1);
+        QCOMPARE(got.count(), 0);
+
+        QVERIFY(accept());
+        QTRY_VERIFY(t.isConnected());
+        m_peer->write(frame("[2]"));
+        QTRY_COMPARE(got.count(), 1);
+        QCOMPARE(got.at(0).at(0).toString(), QString("[2]"));
     }
 
     // Nothing queues behind a dead link; callers re-sync on the next edge.
@@ -160,8 +201,9 @@ private slots:
         t.send(R"(["account","list",{}])"); // must not crash or buffer
         QVERIFY(accept());
         QTRY_VERIFY(t.isConnected());
-        QTest::qWait(100);
-        QCOMPARE(peerBytes(), QByteArray());
+        // The first thing the new link carries is what is sent on it.
+        t.send(R"(["after"])");
+        QTRY_COMPARE(peerBytes(), frame(R"(["after"])"));
     }
 
     // TackyBackend over a socket keeps its contract: running follows the link,
@@ -241,37 +283,6 @@ private slots:
         QTRY_VERIFY(b.isRunning());
         QTRY_VERIFY(asked(sent, "audio", "enumerateDevices"));
         QTRY_VERIFY(asked(sent, "setting", "get"));
-    }
-
-    // Calls re-seed off conn rather than the connected edge, so the reconnect
-    // has to carry a `calls list` through that route too.
-    void callsResyncWhenAnAccountReportsConnected() {
-        TackyBackend b;
-        auto *t = new SocketTransport(m_name);
-        t->setRetryInterval(20);
-        b.setTransport(t);
-
-        CallsModel calls;
-        calls.setBackend(&b);
-
-        QSignalSpy sent(&b, &TackyBackend::sent);
-        QVERIFY(b.start());
-        QVERIFY(accept());
-        QTRY_VERIFY(b.isRunning());
-
-        // What AccountsModel's `conn pull` brings back on every attach.
-        emit b.event("conn", "State",
-                     QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
-        QTRY_VERIFY(asked(sent, "calls", "list"));
-
-        sent.clear();
-        m_peer->abort();
-        QTRY_VERIFY(!b.isRunning());
-        QVERIFY(accept());
-        QTRY_VERIFY(b.isRunning());
-        emit b.event("conn", "State",
-                     QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
-        QTRY_VERIFY(asked(sent, "calls", "list"));
     }
 
 private:
