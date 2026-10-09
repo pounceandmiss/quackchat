@@ -80,8 +80,13 @@ Java_org_qtproject_example_quackchat_TackyNative_nativeCreate(
     }
     jclass sink_cls = (*env)->GetObjectClass(env, sink);
     c->on_frame = (*env)->GetMethodID(env, sink_cls, "onFrame", "([B)V");
+    (*env)->DeleteLocalRef(env, sink_cls);
+    if (!c->on_frame) { /* NoSuchMethodError is pending, and goes to the caller */
+        free(c);
+        return 0;
+    }
     c->sink = (*env)->NewGlobalRef(env, sink);
-    if (!c->on_frame || !c->sink) {
+    if (!c->sink) {
         free(c);
         return 0;
     }
@@ -91,15 +96,26 @@ Java_org_qtproject_example_quackchat_TackyNative_nativeCreate(
     const jsize n = args ? (*env)->GetArrayLength(env, args) : 0;
     const char **argv = calloc((size_t)n + 1, sizeof(char *));
     jstring *held = calloc((size_t)n ? (size_t)n : 1, sizeof(jstring));
-    for (jsize i = 0; i < n; ++i) {
-        held[i] = (jstring)(*env)->GetObjectArrayElement(env, args, i);
-        argv[i] = (*env)->GetStringUTFChars(env, held[i], NULL);
+    jsize got = 0;
+    if (argv && held) {
+        /* Stop at a null or a failed copy: NULL would end argv early. */
+        for (; got < n; ++got) {
+            held[got] = (jstring)(*env)->GetObjectArrayElement(env, args, got);
+            argv[got] = held[got] ? (*env)->GetStringUTFChars(env, held[got], NULL)
+                                  : NULL;
+            if (!argv[got]) {
+                if (held[got])
+                    (*env)->DeleteLocalRef(env, held[got]);
+                break;
+            }
+        }
     }
 
     /* Callbacks can fire before this returns, so ctx is complete beforehand. */
-    c->client = tacky_create(argv, emit_cb, c);
+    if (argv && held && got == n)
+        c->client = tacky_create(argv, emit_cb, c);
 
-    for (jsize i = 0; i < n; ++i) {
+    for (jsize i = 0; i < got; ++i) {
         (*env)->ReleaseStringUTFChars(env, held[i], argv[i]);
         (*env)->DeleteLocalRef(env, held[i]);
     }
