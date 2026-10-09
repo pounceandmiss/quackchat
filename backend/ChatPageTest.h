@@ -32,9 +32,19 @@ protected:
     static inline const QString kSelectable =
             QStringLiteral("the quick brown fox jumps over the lazy dog");
 
+    // Finish any GC cycle before a window goes, as AppWindows does: tearing
+    // one down mid-cycle can crash Qt 6.12's incremental GC.
+    struct GcFirst {
+        void operator()(QObject *o) const {
+            if (QQmlEngine *e = o ? qmlEngine(o) : nullptr)
+                e->collectGarbage();
+            delete o;
+        }
+    };
+
     // A pop-out window on one chat, closed when it leaves scope.
     struct Chat {
-        std::unique_ptr<QObject> window;
+        std::unique_ptr<QObject, GcFirst> window;
         QQuickItem *feed = nullptr;
 
         ChatModel *model() const {

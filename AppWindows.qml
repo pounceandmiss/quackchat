@@ -211,6 +211,11 @@ QtObject {
                     delete held[key]
         if (mgr._prefsWindow === w)
             mgr._prefsWindow = null
+        // Finish any GC cycle first: a window torn down mid-cycle can crash
+        // Qt 6.12's incremental GC in its sweep (seen in our tests; related:
+        // https://github.com/arancormonk/dsd-neo/pull/629). A full collection
+        // here costs a few ms.
+        gc()
         w.destroy()
     }
 
