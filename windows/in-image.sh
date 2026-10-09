@@ -94,4 +94,16 @@ for f in "quackchat-$VERSION-win64.zip" "quackchat-$VERSION-win64.exe"; do
         sha256sum "/src/dist/$f"
     fi
 done
-ls -l /src/dist/quackchat-"$VERSION"-win64.* 2>/dev/null || true
+
+# cpack can finish without writing one.
+wanted=("quackchat-$VERSION-win64.zip")
+if [ -n "${QUACK_WIN_INSTALLER-}" ]; then
+    wanted+=("quackchat-$VERSION-win64.exe")
+fi
+for f in "${wanted[@]}"; do
+    [ -f "/src/dist/$f" ] || {
+        echo "in-image.sh: cpack produced no $f" >&2
+        exit 1
+    }
+done
+ls -l /src/dist/quackchat-"$VERSION"-win64.*
