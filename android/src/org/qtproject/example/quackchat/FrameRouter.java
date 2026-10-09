@@ -24,13 +24,13 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li><b>forward</b> - the default, both directions</li>
  *   <li><b>observe</b> - notify events drive notifications, UI attached or not</li>
  *   <li><b>inject</b> - notification actions write tokenless notify frames</li>
+ *   <li><b>renumber</b> - request tokens, through {@link TokenMap}</li>
  * </ul>
  *
  * <p>Two invariants keep tacky safe, since it is single-consumer by
- * construction: this class never allocates a token (so the UI stays the only
- * allocator, and tacky's global token map cannot collide), and it never issues
- * {@code avatar visible} (whose refcount is global, and silently starves a
- * second subscriber).
+ * construction: the tokens tacky sees are this class's and never reused (see
+ * {@link TokenMap}), and it never issues {@code avatar visible} (whose refcount
+ * is global, and silently starves a second subscriber).
  */
 final class FrameRouter implements TackyNative.FrameSink {
     private static final String TAG = "quack.router";
@@ -44,11 +44,36 @@ final class FrameRouter implements TackyNative.FrameSink {
     private final TackyNative tacky;
     private final Listener listener;
 
+    /** An attached UI and its connection number. */
+    private static final class Conn {
+        final LocalSocket sock;
+        final int gen;
+
+        Conn(LocalSocket sock, int gen) {
+            this.sock = sock;
+            this.gen = gen;
+        }
+    }
+
+    /** A frame for the UI, and which connection: TokenMap.ANY for events. */
+    private static final class Outgoing {
+        final byte[] frame;
+        final int gen;
+
+        Outgoing(byte[] frame, int gen) {
+            this.frame = frame;
+            this.gen = gen;
+        }
+    }
+
     /** Frames from tacky, awaiting the writer thread. */
-    private final BlockingQueue<byte[]> outbound = new ArrayBlockingQueue<>(1024);
+    private final BlockingQueue<Outgoing> outbound = new ArrayBlockingQueue<>(1024);
 
     /** The attached UI, if any. A later connection displaces an earlier one. */
-    private final AtomicReference<LocalSocket> client = new AtomicReference<>();
+    private final AtomicReference<Conn> client = new AtomicReference<>();
+
+    private final TokenMap tokens = new TokenMap();
+    private int lastGen; // acceptLoop's alone
 
     private volatile boolean running;
     private LocalServerSocket server;
@@ -86,8 +111,7 @@ final class FrameRouter implements TackyNative.FrameSink {
 
     /**
      * Sends a frame to tacky on someone else's behalf. Callers must pass a
-     * three-element array with no token: replies are routed by token and there
-     * is exactly one allocator, the UI.
+     * three-element array with no token: a reply would have no UI to go to.
      */
     void inject(byte[] tokenlessFrame) {
         tacky.send(tokenlessFrame);
@@ -102,7 +126,11 @@ final class FrameRouter implements TackyNative.FrameSink {
         if (env != null && env.isEvent) {
             listener.onEvent(env.module, env.name, json);
         }
-        if (!outbound.offer(json)) {
+        final TokenMap.Routed routed = tokens.inbound(json);
+        if (routed == null) {
+            return; // a reply owed to a UI that has gone
+        }
+        if (!outbound.offer(new Outgoing(routed.frame, routed.gen))) {
             // A UI that has stopped reading must not stall tacky's thread. The
             // models re-sync on the next connected edge, so dropping is safe.
             Log.w(TAG, "outbound queue full, dropping frame");
@@ -111,19 +139,23 @@ final class FrameRouter implements TackyNative.FrameSink {
 
     private void writeLoop() {
         while (running) {
-            final byte[] frame;
+            final Outgoing out;
             try {
-                frame = outbound.take();
+                out = outbound.take();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
             }
-            final LocalSocket sock = client.get();
-            if (sock == null) {
+            final Conn conn = client.get();
+            if (conn == null) {
                 continue; // nobody attached; the UI re-syncs when it returns
             }
+            // Queued for a UI that has since been replaced.
+            if (out.gen != TokenMap.ANY && out.gen != conn.gen) {
+                continue;
+            }
             try {
-                Lenpipe.write(sock.getOutputStream(), frame);
+                Lenpipe.write(conn.sock.getOutputStream(), out.frame);
             } catch (IOException e) {
                 Log.i(TAG, "UI write failed, dropping it: " + e.getMessage());
                 closeClient();
@@ -158,8 +190,9 @@ final class FrameRouter implements TackyNative.FrameSink {
                 continue;
             }
             closeClient(); // one UI at a time; the newcomer wins
-            client.set(sock);
-            new Thread(() -> readLoop(sock), "quack-read").start();
+            final Conn conn = new Conn(sock, ++lastGen);
+            client.set(conn);
+            new Thread(() -> readLoop(conn), "quack-read").start();
         }
     }
 
@@ -176,22 +209,23 @@ final class FrameRouter implements TackyNative.FrameSink {
         return false;
     }
 
-    private void readLoop(LocalSocket sock) {
+    private void readLoop(Conn conn) {
         try {
             // Buffered: the length prefix is read a byte at a time, and on a
             // raw socket stream that is a syscall per digit.
-            final InputStream in = new BufferedInputStream(sock.getInputStream());
+            final InputStream in = new BufferedInputStream(conn.sock.getInputStream());
             byte[] frame;
             while ((frame = Lenpipe.read(in)) != null) {
-                dispatchFromUi(frame);
+                dispatchFromUi(conn, frame);
             }
         } catch (IOException e) {
             Log.i(TAG, "UI read ended: " + e.getMessage());
         } finally {
-            // Only if this socket is still the current one: a displaced reader
-            // must not clear its replacement.
-            client.compareAndSet(sock, null);
-            closeQuietly(sock);
+            // Only if this connection is still the current one: a displaced
+            // reader must not clear its replacement.
+            client.compareAndSet(conn, null);
+            tokens.forget(conn.gen);
+            closeQuietly(conn.sock);
         }
     }
 
@@ -200,18 +234,23 @@ final class FrameRouter implements TackyNative.FrameSink {
      * deaf and every later request would hang with no reply, exactly as
      * lenpipe.tcl warns about its own drain loop.
      */
-    private void dispatchFromUi(byte[] frame) {
+    private void dispatchFromUi(Conn conn, byte[] frame) {
+        // A displaced reader still draining: nobody would get the replies.
+        if (client.get() != conn) {
+            return;
+        }
         try {
-            tacky.send(frame);
+            tacky.send(tokens.outbound(frame, conn.gen));
         } catch (RuntimeException e) {
             Log.e(TAG, "dropping unhandled frame", e);
         }
     }
 
     private void closeClient() {
-        final LocalSocket old = client.getAndSet(null);
+        final Conn old = client.getAndSet(null);
         if (old != null) {
-            closeQuietly(old);
+            tokens.forget(old.gen);
+            closeQuietly(old.sock);
         }
     }
 

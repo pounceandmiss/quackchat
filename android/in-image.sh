@@ -64,6 +64,14 @@ else
         WEBRTC_SRC="$QUACK_WEBRTC_SRC"
 fi
 
+# FrameRouter's token renaming, checked with the image's JDK before gradle.
+echo "==> TokenMap check"
+rm -rf "$build/tokencheck"
+javac -d "$build/tokencheck" \
+    /src/android/src/org/qtproject/example/quackchat/TokenMap.java \
+    /src/android/test/TokenMapCheck.java
+java -cp "$build/tokencheck" org.qtproject.example.quackchat.TokenMapCheck
+
 echo "==> quackchat"
 if [ -n "${QUACK_ANDROID_DEBUG-}" ]; then
     deployment=Debug
