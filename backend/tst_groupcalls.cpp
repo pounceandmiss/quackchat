@@ -58,6 +58,7 @@ private slots:
     void legVideoLandsOnTheTileAndPreviewOnTheCall();
     void theCallsOwnPreviewOutlivesItsLegs();
     void aLegPreviewGivesWayWhenItsLegEnds();
+    void aLegPreviewGoesWithItsLegAfterTheTileDoes();
     void theListRestoresTheCallsPreview();
     void legEventsRouteBySidAndAccount();
     void callsModelLeavesLegsAlone();
@@ -584,6 +585,23 @@ void TestGroupCalls::aLegPreviewGivesWayWhenItsLegEnds() {
     feed(m, R"(["event","calls","Ended",{"acc":"me@host","sid":"tk-dan"}])");
     QVERIFY(!c->sendingVideo());
     QVERIFY(c->preview().isEmpty());
+}
+
+// The tile goes before the leg's <Ended> does.
+void TestGroupCalls::aLegPreviewGoesWithItsLegAfterTheTileDoes() {
+    GroupCallsModel m;
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
+    GroupCall *c = m.find("me@host", "room@muc.host");
+    feed(m, R"(["event","groupcall","Session",
+        {"acc":"me@host","jid":"room@muc.host","peer":"bob@host/x","sid":"tk-bob","video":true}])");
+    feed(m, R"(["event","calls","VideoPreview",
+        {"acc":"me@host","sid":"tk-bob","direction":"preview","name":"pv-bob"}])");
+    QVERIFY(c->sendingVideo());
+
+    c->applyOccupants(occupants(R"([])"), "me");
+    QCOMPARE(c->participants()->rowCount(), 0);
+    feed(m, R"(["event","calls","Ended",{"acc":"me@host","sid":"tk-bob"}])");
+    QVERIFY(!c->sendingVideo());
 }
 
 // A reattach learns the self-view from `groupcall list`, not only the event.

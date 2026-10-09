@@ -551,8 +551,15 @@ void GroupCall::handleEvent(const QString &name, const QVariantMap &a) {
 bool GroupCall::handleLegEvent(const QString &name, const QVariantMap &a) {
     const QString sid = a.value(QStringLiteral("sid")).toString();
     const int i = m_participants.indexOfSid(sid);
-    if (i < 0)
+    if (i < 0) {
+        // The occupants refresh can drop the tile before the leg ends.
+        if ((name == QLatin1String("Ended") || name == QLatin1String("Failed"))
+                && m_legPreviews.remove(sid)) {
+            pickLegPreview();
+            return true;
+        }
         return false;
+    }
     if (name == QLatin1String("Active")) {
         m_participants.setState(i, QStringLiteral("active"));
     } else if (name == QLatin1String("Ended")) {
