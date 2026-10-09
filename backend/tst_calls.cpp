@@ -41,6 +41,7 @@ private slots:
     void hangupEndsRowWithoutAnEvent();
     void aFinishedCallStaysFinished();
     void sendsTheAccountAndSidTheRowHolds();
+    void videoComesAndGoesWithItsRings();
     void perCallDeviceOverrideNamesBothEndpoints();
     // Re-seeding from `calls list`:
     void listsOnConnectedAndNoOtherState();
@@ -311,6 +312,44 @@ void TestCalls::sendsTheAccountAndSidTheRowHolds() {
     QCOMPARE(accept.at(2).toMap().value("sid").toString(), QString("tk-b"));
     // No reason was given, so none is sent - the backend's own default stands.
     QVERIFY(!accept.at(2).toMap().contains("reason"));
+}
+
+void TestCalls::videoComesAndGoesWithItsRings() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"me@host","sid":"tk-v","from":"friend@host","video":"1"}])");
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"me@host","sid":"tk-w","from":"friend@host","video":true}])");
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"me@host","sid":"tk-a","from":"friend@host"}])");
+    const auto role = [&m](int row, CallsModel::Role r) { return m.data(m.index(row), r); };
+    QVERIFY(role(0, CallsModel::OfferedVideoRole).toBool());
+    QVERIFY(role(1, CallsModel::OfferedVideoRole).toBool());
+    QVERIFY(!role(2, CallsModel::OfferedVideoRole).toBool());
+
+    feed(m, R"(["event","calls","VideoTrack",
+        {"acc":"me@host","sid":"tk-v","direction":"incoming","name":"in-v"}])");
+    feed(m, R"(["event","calls","VideoPreview",
+        {"acc":"me@host","sid":"tk-v","direction":"preview","name":"pv-v"}])");
+    QVERIFY(role(0, CallsModel::HasRemoteVideoRole).toBool());
+    QCOMPARE(role(0, CallsModel::RemoteVideoRole).toMap().value("name").toString(), QString("in-v"));
+    QVERIFY(role(0, CallsModel::SendingVideoRole).toBool());
+    QCOMPARE(role(0, CallsModel::PreviewRole).toMap().value("name").toString(), QString("pv-v"));
+    QVERIFY(!role(1, CallsModel::HasRemoteVideoRole).toBool()); // another call's
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.setVideo(QStringLiteral("me@host"), QStringLiteral("tk-v"), false);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(1).toString(), QString("setVideo"));
+    QCOMPARE(sent.first().at(2).toMap().value("sid").toString(), QString("tk-v"));
+    QCOMPARE(sent.first().at(2).toMap().value("on").toInt(), 0);
+
+    feed(m, R"(["event","calls","VideoEnded",{"acc":"me@host","sid":"tk-v","mid":"video"}])");
+    QVERIFY(!role(0, CallsModel::HasRemoteVideoRole).toBool());
+    QVERIFY(!role(0, CallsModel::SendingVideoRole).toBool());
+    QVERIFY(role(0, CallsModel::PreviewRole).toMap().isEmpty());
 }
 
 // Both endpoints go in the one request, and "" is a real value there: it means
