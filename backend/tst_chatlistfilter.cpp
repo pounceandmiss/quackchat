@@ -13,11 +13,11 @@ static QVariantList entriesFrom(const QByteArray &json) {
 }
 
 // The three chats every test here works from: one named late, one named early,
-// one with no name at all.
+// one with no name at all. Newest first: bob, zoe, cy; by name: zoe (Amy), bob, cy.
 static void seed(ChatListModel &m) {
     m.applyList(entriesFrom(R"([
-        {"jid":"zoe@h","name":"Amy","last_activity":300},
-        {"jid":"bob@h","name":"Bob","last_activity":200},
+        {"jid":"zoe@h","name":"Amy","last_activity":200},
+        {"jid":"bob@h","name":"Bob","last_activity":300},
         {"jid":"cy@h","name":"","last_activity":100}
     ])"));
 }
@@ -50,7 +50,7 @@ void TestChatListFilter::passesEverythingThroughByDefault() {
     ChatListFilter f;
     f.setSource(&m);
     // Recent: the source's own order, newest first.
-    QCOMPARE(jids(f), QStringList({"zoe@h", "bob@h", "cy@h"}));
+    QCOMPARE(jids(f), QStringList({"bob@h", "zoe@h", "cy@h"}));
 }
 
 void TestChatListFilter::matchesNameOrJidCaseInsensitively() {
@@ -76,7 +76,7 @@ void TestChatListFilter::matchesNameOrJidCaseInsensitively() {
 }
 
 // An unnamed chat is listed by its JID, so that is what it sorts under - the
-// model's own rule, and the reason cy@h lands between Amy and Bob.
+// model's own rule, and the reason cy@h comes after Bob rather than first.
 void TestChatListFilter::sortByNameUsesWhatTheRowShows() {
     ChatListModel m;
     seed(m);
@@ -164,7 +164,7 @@ void TestChatListFilter::filteringOneViewLeavesTheModelAlone() {
     one.setSortMode(ChatListFilter::Name);
     QCOMPARE(one.rowCount(), 1);
     QCOMPARE(m.rowCount(), 3);
-    QCOMPARE(jids(two), QStringList({"zoe@h", "bob@h", "cy@h"}));
+    QCOMPARE(jids(two), QStringList({"bob@h", "zoe@h", "cy@h"}));
 }
 
 // Ctrl+Tab's walk over the list. Off either end is the other end.
@@ -172,12 +172,12 @@ void TestChatListFilter::steppingWrapsAtBothEnds() {
     ChatListModel m;
     seed(m);
     ChatListFilter f;
-    f.setSource(&m); // zoe@h, bob@h, cy@h
+    f.setSource(&m); // bob@h, zoe@h, cy@h
 
-    QCOMPARE(f.stepRow("zoe@h", 1), 1);
-    QCOMPARE(f.stepRow("bob@h", 1), 2);
+    QCOMPARE(f.stepRow("bob@h", 1), 1);
+    QCOMPARE(f.stepRow("zoe@h", 1), 2);
     QCOMPARE(f.stepRow("cy@h", 1), 0);   // off the foot, back to the head
-    QCOMPARE(f.stepRow("zoe@h", -1), 2); // and off the head, back to the foot
+    QCOMPARE(f.stepRow("bob@h", -1), 2); // and off the head, back to the foot
     QCOMPARE(f.stepRow("cy@h", -1), 1);
 
     // With no chat open the step comes in from the near end.
@@ -187,7 +187,7 @@ void TestChatListFilter::steppingWrapsAtBothEnds() {
     // The order stepped is the one on show, not the model's.
     f.setSortMode(ChatListFilter::Name);
     QCOMPARE(jids(f), QStringList({"zoe@h", "bob@h", "cy@h"})); // Amy, Bob, cy@h
-    QCOMPARE(f.stepRow("zoe@h", 1), 1);
+    QCOMPARE(f.stepRow("zoe@h", 1), 1); // bob@h, where Recent would say cy@h
 
     // Nothing to step to: an empty list has no row to name.
     ChatListModel empty;
