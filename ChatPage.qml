@@ -694,8 +694,9 @@ Page {
     // would put a MAM fetch in front of every step, and in a busy room each
     // keypress cancels the last one's before it lands.
     function jumpTo(ts, matches) {
-        if (!ts)
+        if (!ts || !page.chatModel)
             return
+        page.searchedModel = page.chatModel
         page.chatModel.highlightMatches(ts, matches)
         page.chatModel.gotoTimestamp(ts, "local")
     }
@@ -712,6 +713,8 @@ Page {
     // a round trip per search, and the store already holds every OMEMO message,
     // which reaches the server encrypted and can be matched nowhere else.
     property bool searchServer: false
+    // Where the hit marks were drawn.
+    property ChatModel searchedModel: null
 
     readonly property bool hasOlderHit: hitIndex + 1 < chatSearch.count
                                         || !chatSearch.complete
@@ -762,10 +765,10 @@ Page {
         page.hitIndex = -1
         page.hitPending = false
         chatSearch.clear()
-        // Reachable with no chat open: the field's own onTextChanged calls this
-        // when it is cleared.
-        if (page.chatModel)
-            page.chatModel.highlightMatches(0, [])
+        // chatModel may already be the next chat's.
+        if (page.searchedModel)
+            page.searchedModel.highlightMatches(0, [])
+        page.searchedModel = null
     }
 
     // The model drops includeServer where the archive advertises no full-text
@@ -959,6 +962,9 @@ Page {
     // of session is what carries a half-written message from the shell into a
     // pop-out - and what keeps it from following you into the next chat.
     onSessionChanged: {
+        // A pick or a search belongs to the chat being left.
+        page.clearSelection()
+        page.closeSearch()
         input.text = page.session ? page.session.draft : ""
         // No saving or read reports off this geometry until the view is
         // restored.

@@ -29,6 +29,7 @@ private slots:
     void takingAReactionDropsThePressedSelection();
     void pressingASelectedMessageAgainHandsOverItsWords();
     void tappingAnotherMessageAddsItToTheSelection();
+    void switchingChatsLetsGoOfTheSelectionAndTheSearch();
     void tappingAReactionChipDoesNotAlsoOpenTheMenu();
     void theBubbleMenuLeavesTheComposerFocused();
     void reactionChipsShowTheBackendSet();
@@ -600,6 +601,36 @@ void TestChatPageSelection::tappingAnotherMessageAddsItToTheSelection() {
     QVERIFY(QMetaObject::invokeMethod(copy, "clicked"));
     QCOMPARE(QGuiApplication::clipboard()->text(),
              QString("the older one\nthe newer one"));
+}
+
+// A pick or a search belongs to the chat it was made in.
+void TestChatPageSelection::switchingChatsLetsGoOfTheSelectionAndTheSearch() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 2);
+    ChatModel *before = chat.model();
+    const qlonglong ts = before->data(before->index(0), ChatModel::TimestampRole).toLongLong();
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    const QVariant row = QVariantMap{
+        {"body", "the newer one"}, {"canRetry", false}, {"canResendPlain", false}};
+    QVERIFY(QMetaObject::invokeMethod(page, "toggle", Q_ARG(QVariant, ts),
+                                      Q_ARG(QVariant, row)));
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
+    QVERIFY(QMetaObject::invokeMethod(page, "openSearch"));
+    const QVariant matches = QVariantList{QVariantMap{{"offset", 0}, {"length", 3}}};
+    QVERIFY(QMetaObject::invokeMethod(page, "jumpTo", Q_ARG(QVariant, ts),
+                                      Q_ARG(QVariant, matches)));
+    QVERIFY(page->property("searchMode").toBool());
+    QVERIFY(before->data(before->index(0), ChatModel::MarkupRole).toString()
+                .contains("background-color"));
+
+    chat.window->setProperty("chatJid", "select@example.com");
+    QCOMPARE(page->property("selectedCount").toInt(), 0);
+    QVERIFY(!page->property("searchMode").toBool());
+    QVERIFY(!before->data(before->index(0), ChatModel::MarkupRole).toString()
+                 .contains("background-color"));
 }
 
 // A tap on a chip has two claims on it: the chip's own, and the row's menu

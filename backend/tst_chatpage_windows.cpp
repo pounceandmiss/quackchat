@@ -494,9 +494,8 @@ void TestChatPageWindows::closingTheSearchBarEmptiesIt() {
 }
 
 // The other way into a query with no answer behind it, now that closing does
-// not: a chat switch resets the model under a bar that stays up. Return
-// searched only while the debounce was running, so here it stepped a list that
-// was not there.
+// not: the model reset under a bar that stays up. Return searched only while
+// the debounce was running, so here it stepped a list that was not there.
 void TestChatPageWindows::returnSearchesWhenTheLastAnswerIsGone() {
     const Chat chat = open("pair@example.com");
     QVERIFY(chat.win());
@@ -513,7 +512,7 @@ void TestChatPageWindows::returnSearchesWhenTheLastAnswerIsGone() {
     field->setProperty("text", "one");
     QTRY_VERIFY_WITH_TIMEOUT(search->rowCount() == 2, 5000);
 
-    // What the switch leaves: the answer gone, the query still on screen. The
+    // What a reset leaves: the answer gone, the query still on screen. The
     // debounce stops with it, so Return has nothing pending to run instead.
     QVERIFY(QMetaObject::invokeMethod(page, "dropHits"));
     QVERIFY(!search->searched());
