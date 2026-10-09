@@ -33,6 +33,9 @@ mkdir -p "$build"
 # successive debug apks install over each other.
 export ANDROID_USER_HOME=$build/android-user
 
+# Gradle's home likewise, or every build downloads it all again.
+export GRADLE_USER_HOME=$build/gradle-home
+
 # tacky's bionic archive. ANDROID_DOCKER=0 because this image already carries
 # the NDK: left at its default the Makefile would call zippy/in_docker.sh and
 # try to start the ndk container from inside this one.
