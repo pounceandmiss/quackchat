@@ -782,8 +782,12 @@ void ChatModel::handleEvent(const QString &module, const QString &name,
             return;
         applyBatch(QVariantList{a.value(QStringLiteral("message"))});
     } else if (name == QLatin1String("Edited")) {
-        // An edit re-sends the whole row; upsert redraws it in place.
-        applyBatch(QVariantList{a.value(QStringLiteral("message"))});
+        // An edit re-sends the whole row; upsert redraws it in place. A row outside
+        // the window stays out, or paging would skip what lies between.
+        const QVariant row = a.value(QStringLiteral("message"));
+        if (indexOfTs(row.toMap().value(QStringLiteral("timestamp")).toLongLong()) < 0)
+            return;
+        applyBatch(QVariantList{row});
     } else if (name == QLatin1String("Status")) {
         QVariantMap f = a;
         f.remove(QStringLiteral("acc"));

@@ -266,6 +266,17 @@ void TestChatModel::editedMarksTheRow() {
     QCOMPARE(m.data(m.index(1), ChatModel::BodyRole).toString(),
              QString("corrected"));
     QVERIFY(m.data(m.index(1), ChatModel::EditedRole).toBool());
+
+    // A row outside the window stays out.
+    feedEvent(m, R"(["event","message","Edited",
+        {"acc":"me@h","jid":"a@h","message":{"timestamp":100,"edited":true,
+         "content":{"type":"text","body":"old news"}}}])");
+    feedEvent(m, R"(["event","message","Edited",
+        {"acc":"me@h","jid":"a@h","message":{"timestamp":900,"edited":true,
+         "content":{"type":"text","body":"off the end"}}}])");
+    QCOMPARE(m.rowCount(), 2);
+    QCOMPARE(m.data(m.index(0), ChatModel::TimestampRole).toLongLong(), 300);
+    QCOMPARE(m.data(m.index(1), ChatModel::TimestampRole).toLongLong(), 200);
 }
 
 // Both are asks: tacky swaps its own store and answers with an event, so
