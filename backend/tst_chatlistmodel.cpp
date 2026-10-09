@@ -221,12 +221,14 @@ void TestChatList::integrationRefreshEmpty() {
                                {"username", "me"}});
 
     ChatListModel m;
-    QSignalSpy replies(&backend, &TackyBackend::result);
+    QSignalSpy applied(&m, &QAbstractItemModel::modelReset);
     m.setBackend(&backend);
     m.setAccount("me@example.com"); // triggers refresh -> chatlist get
 
-    QVERIFY2(replies.wait(5000), "no chatlist get reply");
+    // Only an applied reply resets the model.
+    QTRY_VERIFY2_WITH_TIMEOUT(applied.count() > 0, "no chatlist get reply applied", 5000);
     QCOMPARE(m.rowCount(), 0);
+    QVERIFY(m.loadError().isEmpty());
 
     backend.stop();
 }
