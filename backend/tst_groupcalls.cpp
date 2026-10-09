@@ -861,10 +861,18 @@ void TestGroupCalls::occupantsRoundTripThroughRealTacky() {
     QCOMPARE(c->count(), 0);
     QVERIFY(!c->joined());
 
-    // Not in any call: the list is empty, and answers.
+    // Picked out by token: the room reads refreshFor makes answer too.
     results.clear();
+    const int list = backend.request("account", "list") + 1; // refreshFor's first ask
     m.refreshFor("me@example.com");
-    QTRY_VERIFY_WITH_TIMEOUT(results.count() >= 1, 5000);
+    const auto answer = [&]() -> QVariant {
+        for (const QList<QVariant> &r : results)
+            if (r.at(0).toInt() == list)
+                return r.at(1);
+        return {};
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(answer().isValid(), 5000);
+    QCOMPARE(answer().toList().size(), 0);
     QVERIFY(errors.isEmpty());
 
     backend.stop();
