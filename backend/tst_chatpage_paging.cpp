@@ -359,6 +359,10 @@ void TestChatPagePaging::oneSessionServesEveryWindowOnAChat() {
     QVERIFY(echo);
     QCOMPARE(echo->property("text").toString(), QString("half a thought"));
 
+    // Still one draft: what is typed in either window shows in both.
+    echo->setProperty("text", "the whole thought");
+    QCOMPARE(input->property("text").toString(), QString("the whole thought"));
+
     // Point the first window at another conversation and the composer is that
     // one's, empty - not the thought left behind in this one.
     first.window->setProperty("chatJid", "elsewhere@example.com");
@@ -366,7 +370,7 @@ void TestChatPagePaging::oneSessionServesEveryWindowOnAChat() {
 
     // Which is still there for the chat it was written in.
     first.window->setProperty("chatJid", jid);
-    QTRY_COMPARE(input->property("text").toString(), QString("half a thought"));
+    QTRY_COMPARE(input->property("text").toString(), QString("the whole thought"));
 }
 
 void TestChatPagePaging::aChatOnScreenIsReadAsFarAsItShows() {

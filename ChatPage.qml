@@ -483,20 +483,16 @@ Page {
             page.session.cancelReply()
     }
 
-    // The field is seeded from the draft rather than bound to it, so both of
-    // these catch it up by hand, as sendCurrent() does.
+    // Both swap the draft, which the field follows through onDraftChanged.
     function startEdit(ts, body) {
         if (!page.session)
             return
         page.session.editMessage(ts, body)
-        input.text = page.session.draft
         input.forceActiveFocus()
     }
     function cancelEdit() {
-        if (!page.session)
-            return
-        page.session.cancelEdit()
-        input.text = page.session.draft
+        if (page.session)
+            page.session.cancelEdit()
     }
     function confirmDelete(ts) {
         deleteConfirm.target = ts
@@ -949,11 +945,9 @@ Page {
         if (!page.session)
             return
         // The session holds the draft and the reply it answers, so it does the
-        // whole send and clears both; the field only has to catch up. Read the
-        // draft back rather than blanking it, since sending an edit restores
-        // the one it displaced.
+        // whole send and clears both; the field follows the draft it leaves,
+        // which after an edit is the one the edit displaced.
         page.session.sendDraft()
-        input.text = page.session.draft
     }
 
     // The field is seeded from the session's draft and writes back to it, rather
@@ -961,6 +955,15 @@ Page {
     // live one would not survive the first keystroke. Re-seeding on every change
     // of session is what carries a half-written message from the shell into a
     // pop-out - and what keeps it from following you into the next chat.
+    // One draft per chat across windows: follow edits made elsewhere.
+    Connections {
+        target: page.session
+        function onDraftChanged() {
+            if (input.text !== page.session.draft)
+                input.text = page.session.draft
+        }
+    }
+
     onSessionChanged: {
         // A pick or a search belongs to the chat being left.
         page.clearSelection()
