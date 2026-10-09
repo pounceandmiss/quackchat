@@ -130,6 +130,27 @@ private slots:
         QVERIFY(theme->property("name").toString() != showing);
     }
 
+    // `legState`, not Item's own `state`.
+    void aGroupCallTileFollowsItsLegState() {
+        Engine e;
+        QQmlComponent comp(&e, "Quack", "GroupCallTile");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> tile(comp.createWithInitialProperties(
+            {{"legState", "connecting"}}));
+        QVERIFY2(tile, qPrintable(comp.errorString()));
+        QVERIFY(tile->property("waiting").toBool());
+        QVERIFY(!tile->property("gone").toBool());
+
+        tile->setProperty("legState", "ended");
+        QVERIFY(!tile->property("waiting").toBool());
+        QVERIFY(tile->property("gone").toBool());
+
+        tile->setProperty("legState", "active");
+        QVERIFY(!tile->property("waiting").toBool());
+        QVERIFY(!tile->property("gone").toBool());
+        e.assertNoErrors();
+    }
+
     // The device list is built from a plain JS array that gets replaced whole
     // every time devices are re-enumerated, so the menu is filled by an
     // Instantiator rather than declared. Check it really populates, that the

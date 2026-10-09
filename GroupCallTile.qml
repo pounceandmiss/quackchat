@@ -29,8 +29,8 @@ Rectangle {
     property bool micMuted: false
     property bool cameraOff: false
 
-    readonly property bool gone: state === "ended" || state === "failed"
-    readonly property bool waiting: state === "expected" || state === "connecting"
+    readonly property bool gone: legState === "ended" || legState === "failed"
+    readonly property bool waiting: legState === "expected" || legState === "connecting"
 
     readonly property string statusText: {
         switch (tile.legState) {
