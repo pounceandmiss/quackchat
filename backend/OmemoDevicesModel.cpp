@@ -50,7 +50,7 @@ void OmemoDevicesModel::setBackend(TackyBackend *backend) {
     if (m_backend)
         bindBackend(this, m_backend, &OmemoDevicesModel::refresh);
     emit backendChanged();
-    refresh();
+    restart();
 }
 
 void OmemoDevicesModel::setAccount(const QString &acc) {
@@ -58,7 +58,7 @@ void OmemoDevicesModel::setAccount(const QString &acc) {
         return;
     m_account = acc;
     emit accountChanged();
-    refresh();
+    restart();
 }
 
 void OmemoDevicesModel::setJid(const QString &jid) {
@@ -66,17 +66,21 @@ void OmemoDevicesModel::setJid(const QString &jid) {
         return;
     m_jid = jid;
     emit jidChanged();
-    refresh();
+    restart();
 }
 
-void OmemoDevicesModel::refresh() {
-    // Whichever of these changed, the rows on screen belong to the old subject.
+// Whichever of these changed, the rows on screen belong to the old subject.
+void OmemoDevicesModel::restart() {
     m_lastRows.clear();
     setRows({});
     m_ownFingerprint.clear();
     m_ownDevice = 0;
     emit ownChanged();
+    refresh();
+}
 
+// Same subject: keep the rows until, and unless, an answer replaces them.
+void OmemoDevicesModel::refresh() {
     if (!m_backend || m_account.isEmpty() || m_jid.isEmpty())
         return;
 

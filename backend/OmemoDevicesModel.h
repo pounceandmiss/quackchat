@@ -97,6 +97,7 @@ signals:
     void summaryChanged();
 
 private:
+    void restart();
     struct Device {
         int device = 0;
         QString trust;

@@ -39,6 +39,7 @@ private slots:
     void compromisedIsReadOnly();
     void eventsAreScopedToAccountAndJid();
     void peerListKeepsEveryDevice();
+    void aReconnectKeepsTheKeysOnScreen();
     void integrationEmptyListForFreshAccount();
 };
 
@@ -165,6 +166,26 @@ void TestOmemoDevices::peerListKeepsEveryDevice() {
     m.applyOwnDevice(7);
     m.applyTrustList({row(7, "trusted", true, "aa"), row(8, "undecided", true, "bb")});
     QCOMPARE(m.rowCount(), 2); // 7 is our device id, but this is their list
+}
+
+// An empty list would read as "this peer has no keys".
+void TestOmemoDevices::aReconnectKeepsTheKeysOnScreen() {
+    TackyBackend backend;
+    OmemoDevicesModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setJid("friend@h");
+    m.applyTrustList({row(7, "trusted", true, "aa"), row(8, "undecided", true, "bb")});
+
+    const int next = backend.request("probe", "probe") + 1;
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "me@h"}, {"state", "connected"}});
+    QCOMPARE(m.rowCount(), 2);
+    m.handleError(next, "timed out");
+    QCOMPARE(m.rowCount(), 2);
+
+    // Another peer is another subject: its rows are not these.
+    m.setJid("other@h");
+    QCOMPARE(m.rowCount(), 0);
 }
 
 // Real backend: an account that has never connected has no keys on file, and
