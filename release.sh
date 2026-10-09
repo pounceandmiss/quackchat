@@ -100,6 +100,8 @@ targets=${targets# }
 : "${QUACK_ANDROID_KEYSTORE:=}"
 : "${QUACK_ANDROID_KEY_ALIAS:=}"
 : "${QUACK_ANDROID_KEYSTORE_PASS:=}"
+# Exported so docker/run.sh forwards it.
+export QUACK_ANDROID_KEYSTORE_PASS
 
 selected() { case " $targets " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
@@ -198,6 +200,17 @@ then set QUACK_ANDROID_KEYSTORE and QUACK_ANDROID_KEY_ALIAS in release.env.
 one a release page hands out."
 }
 
+# apksigner gets no terminal (the build is piped through tee), so ask here.
+ask_keystore_pass() {
+    selected android && [ -n "$QUACK_ANDROID_KEYSTORE" ] &&
+        [ -z "$QUACK_ANDROID_KEYSTORE_PASS" ] || return 0
+    [ -t 0 ] || die "no terminal to ask for the keystore password on; set
+QUACK_ANDROID_KEYSTORE_PASS for an unattended build"
+    read -rsp "Password for $QUACK_ANDROID_KEYSTORE: " QUACK_ANDROID_KEYSTORE_PASS
+    printf '\n' >&2
+    [ -n "$QUACK_ANDROID_KEYSTORE_PASS" ] || die "no keystore password given"
+}
+
 # ------------------------------------------------------------------ targets
 
 build_windows() {
@@ -243,6 +256,8 @@ if [ "$check_only" -eq 1 ]; then
     note "quackchat $version: $targets - everything needed is in place"
     exit 0
 fi
+
+ask_keystore_pass
 
 note "quackchat $version: $targets"
 for t in $targets; do
