@@ -5,6 +5,7 @@
 #include <QSignalSpy>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QAbstractItemModelTester>
 #include <QScopeGuard>
 #include <QTranslator>
 
@@ -31,6 +32,7 @@ private slots:
     void insertKeepsOrder();
     void upsertRenameInPlace();
     void upsertActivityReorders();
+    void aReorderMovesTheRow();
     void removeDrops();
     void ignoresOtherAccounts();
     void integrationRefreshEmpty();
@@ -153,6 +155,33 @@ void TestChatList::upsertActivityReorders() {
     QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("c@h"));
     QCOMPARE(m.data(m.index(1), ChatListModel::JidRole).toString(), QString("a@h"));
     QCOMPARE(m.data(m.index(2), ChatListModel::JidRole).toString(), QString("b@h"));
+}
+
+// A move, so a view's current row follows the chat.
+void TestChatList::aReorderMovesTheRow() {
+    ChatListModel m;
+    QAbstractItemModelTester tester(&m, QAbstractItemModelTester::FailureReportingMode::QtTest);
+    m.setAccount("me@h");
+    m.applyList(entriesFrom(R"([
+        {"jid":"a@h","last_activity":300},
+        {"jid":"b@h","last_activity":200},
+        {"jid":"c@h","last_activity":100}
+    ])"));
+    QPersistentModelIndex c(m.index(2));
+    QPersistentModelIndex a(m.index(0));
+    QSignalSpy removed(&m, &QAbstractItemModel::rowsRemoved);
+    feedEvent(m, R"(["event","chatlist","Item",
+        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":400}}])");
+    QCOMPARE(removed.count(), 0);
+    QCOMPARE(c.row(), 0);
+    QCOMPARE(a.row(), 1);
+
+    // And back down past the others.
+    feedEvent(m, R"(["event","chatlist","Item",
+        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":50}}])");
+    QCOMPARE(c.row(), 2);
+    QCOMPARE(a.row(), 0);
+    QCOMPARE(m.data(c, ChatListModel::JidRole).toString(), QString("c@h"));
 }
 
 void TestChatList::removeDrops() {

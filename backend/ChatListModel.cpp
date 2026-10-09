@@ -283,9 +283,7 @@ void ChatListModel::applyItem(const QVariantMap &item) {
         return;
     }
 
-    // Replace the entry, then reposition it if the sort key moved. target is
-    // where it belongs among the *other* rows.
-    m_items[old] = entry;
+    // Where it belongs among the *other* rows, if the sort key moved.
     int target = 0;
     for (int i = 0; i < m_items.size(); ++i) {
         if (i == old)
@@ -294,18 +292,16 @@ void ChatListModel::applyItem(const QVariantMap &item) {
             break;
         ++target;
     }
-    if (target == old) {
-        const QModelIndex idx = index(old);
-        emit dataChanged(idx, idx);
-        return;
+    // A move keeps a view's current row on the chat. The destination counts the
+    // moving row still in place.
+    if (target != old) {
+        beginMoveRows({}, old, old, {}, target > old ? target + 1 : target);
+        m_items.move(old, target);
+        endMoveRows();
     }
-    // Remove + insert rather than beginMoveRows; same result, less fiddly.
-    beginRemoveRows({}, old, old);
-    m_items.removeAt(old);
-    endRemoveRows();
-    beginInsertRows({}, target, target);
-    m_items.insert(target, entry);
-    endInsertRows();
+    m_items[target] = entry;
+    const QModelIndex idx = index(target);
+    emit dataChanged(idx, idx);
 }
 
 void ChatListModel::applyRemove(const QString &jid) {
