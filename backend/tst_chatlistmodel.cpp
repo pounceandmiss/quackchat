@@ -37,6 +37,7 @@ private slots:
     void failedLoadIsNotAnEmptyList();
     void carriesMentionsAndRoomReason();
     void previewsTheNewestMessage();
+    void aLongPreviewIsCutBetweenCharacters();
     void contactEditsGoOutAsRosterCommands();
     void roomEditsGoOutAsBookmarkCommands();
     void editsWithoutAnAccountOrJidAreDropped();
@@ -287,6 +288,18 @@ void TestChatList::previewsTheNewestMessage() {
     QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("f@h"));
     QCOMPARE(m.data(m.index(0), ChatListModel::PreviewRole).toString(),
              QString("<b>hi</b>"));
+}
+
+void TestChatList::aLongPreviewIsCutBetweenCharacters() {
+    ChatListModel m;
+    m.setAccount("me@h");
+    const QString body = QString(199, QLatin1Char('a')) + QStringLiteral("\U0001F986 and more");
+    m.applyList({QVariantMap{
+        {"jid", "a@h"}, {"last_activity", 1},
+        {"last_message", QVariantMap{{"content", QVariantMap{{"type", "text"}, {"body", body}}}}}}});
+    const QString preview = m.data(m.index(0), ChatListModel::PreviewRole).toString();
+    QVERIFY(preview.isValidUtf16());
+    QVERIFY(preview.startsWith(QString(199, QLatin1Char('a'))));
 }
 
 void TestChatList::contactEditsGoOutAsRosterCommands() {

@@ -218,7 +218,11 @@ static QString previewOf(const QVariantMap &entry) {
     }
     // The row elides what is left; the cap only spares it laying out a whole
     // pasted log to show its first forty characters.
-    text = text.left(200).simplified();
+    // Don't split a surrogate pair.
+    int cap = 200;
+    if (text.size() > cap && text.at(cap - 1).isHighSurrogate())
+        --cap;
+    text = text.left(cap).simplified();
     if (text.isEmpty())
         return {};
 
