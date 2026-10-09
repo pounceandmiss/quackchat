@@ -29,6 +29,13 @@ QVariant resultFor(const QSignalSpy &spy, int token) {
             return row.at(1);
     return {};
 }
+
+// Returns once tacky has handled everything sent before it.
+bool barrier(TackyBackend &b) {
+    QSignalSpy results(&b, &TackyBackend::result);
+    const int token = b.request("account", "list");
+    return QTest::qWaitFor([&] { return resultFor(results, token).isValid(); }, 5000);
+}
 } // namespace
 
 class TestIntegration : public QObject {
@@ -487,7 +494,8 @@ void TestIntegration::openingAnUnsyncedChatOfflineWaitsRatherThanSpins() {
 
     // It stays out, and rightly: the stanza sits in tacky's write buffer until
     // the account connects. Inventing a failure for it would be wrong too.
-    QTest::qWait(1000);
+    QVERIFY(barrier(backend));
+    QCoreApplication::processEvents();
     QVERIFY(chat.loadingOlder());
     QVERIFY(chat.loadError().isEmpty());
 
@@ -527,7 +535,7 @@ void TestIntegration::stoppingTheBackendAnswersWhatWasStillOut() {
                     {"limit", 50},
                     {"before", oldest},
                     {"tag", "probe"}});
-    QTest::qWait(500);
+    QVERIFY(barrier(backend));
     QVERIFY2(!resultFor(results, tok).isValid(), "buffered, so not yet");
 
     backend.stop();
