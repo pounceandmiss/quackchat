@@ -148,6 +148,12 @@ void TestMucRooms::switchingAccountForgetsEverything() {
     QCOMPARE(m.rowCount(), 0);
     QVERIFY(!m.loaded());
     QCOMPARE(m.defaultNick(), QString());
+
+    // Including a nick still on its way for the account left behind.
+    m.requestDefaultNick(); // token 3, for other@h
+    m.setAccount("me@h");
+    m.handleResult(3, QVariant(QStringLiteral("mercutio")));
+    QCOMPARE(m.defaultNick(), QString());
 }
 
 QTEST_MAIN(TestMucRooms)

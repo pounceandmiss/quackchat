@@ -24,6 +24,7 @@ void MucRoomsModel::setAccount(const QString &acc) {
     emit accountChanged();
     // Another account's server hosts other rooms, and its nick is its own.
     clear();
+    m_nickToken = 0;
     setDefaultNick({});
 }
 
