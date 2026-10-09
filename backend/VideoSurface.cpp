@@ -16,6 +16,7 @@ VideoSurface::VideoSurface(QObject *parent) : QObject(parent)
     m_stallTimer.setInterval(kStallMs);
     connect(&m_stallTimer, &QTimer::timeout, this, &VideoSurface::stalled);
     connect(&m_stream, &FrameStream::frameReady, this, &VideoSurface::deliver);
+    connect(&m_stream, &FrameStream::ended, this, &VideoSurface::streamEnded);
 }
 
 VideoSurface::~VideoSurface() = default;
@@ -30,8 +31,12 @@ void VideoSurface::setVideoSink(QVideoSink *sink)
 
 void VideoSurface::setChannel(const QVariantMap &c)
 {
-    if (m_channel == c)
+    // Reopen the same channel if its stream has ended.
+    if (m_channel == c) {
+        if (!m_stream.isOpen())
+            reopen();
         return;
+    }
     m_channel = c;
     emit channelChanged();
     reopen();
@@ -45,13 +50,7 @@ void VideoSurface::reopen()
 
     m_stream.close();
     m_openName = name;
-    m_stallTimer.stop();
-    if (m_hasFrame) {
-        m_hasFrame = false;
-        emit hasFrameChanged();
-    }
-    if (m_sink)
-        m_sink->setVideoFrame(QVideoFrame());
+    clearPicture();
 
     m_stalled = false;
     m_w = 0;
@@ -62,6 +61,25 @@ void VideoSurface::reopen()
     m_stream.open(name);
     m_since.start();
     m_stallTimer.start();
+}
+
+void VideoSurface::clearPicture()
+{
+    m_stallTimer.stop();
+    if (m_hasFrame) {
+        m_hasFrame = false;
+        emit hasFrameChanged();
+    }
+    if (m_sink)
+        m_sink->setVideoFrame(QVideoFrame());
+}
+
+// No still of the last frame posing as a picture.
+void VideoSurface::streamEnded()
+{
+    qCWarning(lcVideo) << "frame stream" << m_openName << "ended";
+    m_stream.close();
+    clearPicture();
 }
 
 // The stream is open and nothing is coming through it: the line a

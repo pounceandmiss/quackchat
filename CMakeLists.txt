@@ -516,7 +516,7 @@ foreach(t tst_backend tst_chatlistmodel tst_chatmodel tst_chatsession tst_author
           tst_searchmodel tst_mucrooms tst_mucroom tst_chatlistfilter
           tst_integration tst_transport
           tst_calls tst_groupcalls tst_audiodevices tst_appsettings tst_notifications
-          tst_registration tst_i18n tst_logging tst_storage tst_framestream)
+          tst_registration tst_i18n tst_logging tst_storage)
     qt_add_executable(${t} backend/${t}.cpp)
     target_link_libraries(${t} PRIVATE quack Qt6::Test)
     add_test(NAME ${t} COMMAND ${t})
@@ -542,6 +542,12 @@ target_link_libraries(tst_avatar PRIVATE
     quack Qt6::Test Qt6::Gui Qt6::Quick)
 add_test(NAME tst_avatar COMMAND tst_avatar)
 set_tests_properties(tst_avatar PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# needs QtMultimedia for QVideoSink
+qt_add_executable(tst_framestream backend/tst_framestream.cpp)
+target_link_libraries(tst_framestream PRIVATE quack Qt6::Test Qt6::Multimedia)
+add_test(NAME tst_framestream COMMAND tst_framestream)
+set_tests_properties(tst_framestream PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # needs QtGui for QImage
 qt_add_executable(tst_avatarencoder

@@ -9,6 +9,10 @@
 #include <QtEndian>
 
 #include "FrameStream.h"
+#include "VideoSurface.h"
+
+#include <QVideoFrame>
+#include <QVideoSink>
 
 namespace {
 
@@ -42,6 +46,7 @@ private slots:
     void aLongerHeaderIsSkipped();
     void garbageEndsTheStream();
     void theWriterGoingAwayEndsTheStream();
+    void aSurfaceLetsGoOfTheLastFrameWhenItsStreamEnds();
 
 private:
     // Connects `stream` and returns the writer's end of it.
@@ -152,6 +157,25 @@ void TestFrameStream::theWriterGoingAwayEndsTheStream()
     QVERIFY(w);
     w->disconnectFromServer();
     QVERIFY(ended.wait(3000));
+}
+
+void TestFrameStream::aSurfaceLetsGoOfTheLastFrameWhenItsStreamEnds()
+{
+    QVideoSink sink;
+    VideoSurface surface;
+    surface.setVideoSink(&sink);
+    surface.setChannel({{QStringLiteral("name"), m_server->fullServerName()}});
+    QVERIFY(m_server->waitForNewConnection(3000));
+    QLocalSocket *w = m_server->nextPendingConnection();
+    QVERIFY(w);
+    w->write(frame(4, 2, 'a', 1));
+    w->flush();
+    QTRY_VERIFY(surface.hasFrame());
+    QVERIFY(sink.videoFrame().isValid());
+
+    w->disconnectFromServer();
+    QTRY_VERIFY(!surface.hasFrame());
+    QVERIFY(!sink.videoFrame().isValid());
 }
 
 QTEST_MAIN(TestFrameStream)

@@ -43,6 +43,8 @@ private:
     void reopen();
     void deliver();
     void stalled();
+    void streamEnded();
+    void clearPicture();
 
     QVideoSink  *m_sink = nullptr;
     QVariantMap  m_channel;
