@@ -9,10 +9,8 @@
 
 namespace {
 
-// Set once from main() before any other thread is logging, and never cleared:
-// the backend belongs to the App singleton, which outlives everything that
-// could still be writing a message.
-TackyBackend *g_backend = nullptr;
+// Set from main(), cleared by the App on its way out.
+std::atomic<TackyBackend *> g_backend{nullptr};
 QtMessageHandler g_previous = nullptr;
 // Read from every thread that logs, written from the main one.
 std::atomic<bool> g_active{false};
@@ -41,14 +39,15 @@ void handler(QtMsgType type, const QMessageLogContext &ctx,
     // message, and the queued write below would not have run anyway.
     if (g_previous)
         g_previous(type, ctx, msg);
-    if (!g_backend || !g_active.load(std::memory_order_relaxed))
+    TackyBackend *backend = g_backend.load();
+    if (!backend || !g_active.load(std::memory_order_relaxed))
         return;
     const QVariantMap args = logWriteArgs(type, ctx, msg);
     if (args.isEmpty())
         return;
     // Queued from every thread, our own included: the backend belongs to the
     // main thread, and one queue keeps the file in the order things happened.
-    QMetaObject::invokeMethod(g_backend, "notify", Qt::QueuedConnection,
+    QMetaObject::invokeMethod(backend, "notify", Qt::QueuedConnection,
                               Q_ARG(QString, QStringLiteral("log")),
                               Q_ARG(QString, QStringLiteral("write")),
                               Q_ARG(QVariant, args));
@@ -76,6 +75,14 @@ QVariantMap logWriteArgs(QtMsgType type, const QMessageLogContext &ctx,
 void installLogBridge(TackyBackend *backend) {
     g_backend = backend;
     g_previous = qInstallMessageHandler(handler);
+}
+
+void uninstallLogBridge(TackyBackend *backend) {
+    TackyBackend *expected = backend;
+    if (!g_backend.compare_exchange_strong(expected, nullptr))
+        return; // never installed, or for another backend
+    qInstallMessageHandler(g_previous);
+    g_previous = nullptr;
 }
 
 void setLogBridgeActive(bool active) {

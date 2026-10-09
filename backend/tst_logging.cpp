@@ -24,6 +24,7 @@ private slots:
     void loggingToAFileRoundTripsThroughTheBackend();
     void theBackendAnswersWithThePathItChose();
     void nothingIsForwardedWhileTheSinkIsStderr();
+    void nothingIsForwardedOnceTheBackendIsGone();
 };
 
 // Everything else bound to the backend reseeds on the same connect, so the log
@@ -351,6 +352,17 @@ void TestLogging::nothingIsForwardedWhileTheSinkIsStderr() {
     QTRY_VERIFY_WITH_TIMEOUT(sent.count() == 1, 5000);
     QCOMPARE(sent.first().at(1).toString(), QString("write"));
     setLogBridgeActive(false);
+}
+
+// Qt goes on logging after the App and its backend are gone.
+void TestLogging::nothingIsForwardedOnceTheBackendIsGone() {
+    {
+        AppController app;
+        installLogBridge(app.backend());
+        setLogBridgeActive(true);
+    }
+    qWarning("after the backend");
+    QCoreApplication::processEvents();
 }
 
 QTEST_MAIN(TestLogging)

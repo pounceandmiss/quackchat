@@ -22,14 +22,16 @@ QVariantMap logWriteArgs(QtMsgType type, const QMessageLogContext &ctx,
                          const QString &msg);
 
 // Install the handler, from main() and before anything else logs; `backend` has
-// to outlive the application. Exactly once: a second call would chain the
-// handler to itself. Messages logged before the backend is up are not held for
-// it - they reach the previous handler and no further.
+// to live until uninstallLogBridge. Messages logged before the backend is up
+// are not held for it - they reach the previous handler and no further.
 void installLogBridge(TackyBackend *backend);
 
 // Whether to forward at all. Off until the backend has a log file: with the
 // sink still on stderr the previous handler has already printed the message,
 // and forwarding would only print it a second time.
+// Restores the previous handler; call while `backend` still exists.
+void uninstallLogBridge(TackyBackend *backend);
+
 void setLogBridgeActive(bool active);
 
 #endif // LOGBRIDGE_H

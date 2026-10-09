@@ -70,6 +70,7 @@ AppController::AppController(QObject *parent) : QObject(parent) {
 // The sessions are children, deleted after m_backend, but saving each chat's
 // view on the way out needs it.
 AppController::~AppController() {
+    uninstallLogBridge(&m_backend);
     for (const auto &chats : std::as_const(m_chatSessions))
         qDeleteAll(chats);
     m_chatSessions.clear();
