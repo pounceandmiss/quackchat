@@ -382,6 +382,39 @@ private slots:
         e.assertNoErrors();
     }
 
+    // An audio call's preview is an empty map, which JS reads as true.
+    void onlyAVideoCallShowsTheCameraToggle() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QVERIFY(loadMain(e));
+
+        CallsModel *calls = app->calls();
+        calls->handleEvent("calls", "Outgoing",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"sid", "tk-cam"},
+                                       {"to", "friend@example.com"}});
+        QCoreApplication::processEvents();
+        auto *call = qobject_cast<QQuickWindow *>(visibleWindowTitled("friend@example.com"));
+        QVERIFY(call);
+
+        const auto cameraToggle = [call] {
+            return findItem(call->contentItem(), "cameraToggle");
+        };
+        QVERIFY(cameraToggle());
+        QVERIFY2(!cameraToggle()->isVisible(), "an audio call offers the camera");
+
+        calls->handleEvent("calls", "VideoPreview",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"sid", "tk-cam"},
+                                       {"name", "preview"}});
+        QTRY_VERIFY(cameraToggle()->isVisible());
+
+        calls->hangup("me@example.com", "tk-cam");
+        QTRY_COMPARE_WITH_TIMEOUT(calls->rowCount(), 0, 4000);
+        e.assertNoErrors();
+    }
+
     // Calling one of your own accounts from another is one session but two
     // calls, and this app is on both ends of it. What is on screen is one call
     // window and one ringing dialog - never two call windows on the same spot,

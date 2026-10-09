@@ -235,9 +235,11 @@ ApplicationWindow {
                 }
             }
 
-            // Camera on/off, shown once this call has video negotiated.
+            // Camera on/off, shown once this call has video negotiated. Turning
+            // the camera off keeps the preview ring, so sendingVideo stays true.
             CallButton {
-                visible: !win.terminal && (win.sendingVideo || win.preview)
+                objectName: "cameraToggle"
+                visible: !win.terminal && win.sendingVideo
                 iconPath: win.cameraOn ? Icons.videoCam : Icons.videoCamOff
                 fill: win.cameraOn ? Theme.positive : Theme.textDim
                 text: win.cameraOn ? qsTr("Camera off") : qsTr("Camera on")
