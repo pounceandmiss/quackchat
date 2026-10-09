@@ -702,12 +702,19 @@ void ChatModel::handleError(int token, const QString &message) {
              qUtf8Printable(message));
     // No loaded(dir, 0): that tells the view the archive ran dry, and it
     // latches on it.
+    if (dir == QLatin1String("goto")) {
+        // Tell a waiting restore the jump went nowhere, and refill a feed whose
+        // opening page it cancelled. Not something retry() repeats.
+        emit anchored(0);
+        if (m_msgs.isEmpty())
+            loadInitial();
+        return;
+    }
+    if (dir == QLatin1String("catchup"))
+        return; // the next scroll to the bottom asks again
     m_failed.insert(dir);
     if (dir == QLatin1String("init") || dir == QLatin1String("old"))
         setLoadError(message);
-    // Tell a waiting restore the jump went nowhere.
-    if (dir == QLatin1String("goto"))
-        emit anchored(0);
 }
 
 void ChatModel::cancelAllDirs() {
@@ -1119,6 +1126,9 @@ void ChatModel::handleResult(int token, const QVariant &data) {
         if (anchor != 0 && indexOfTs(anchor) < 0)
             applyGotoSlice(res.value(QStringLiteral("messages")).toList());
         emit anchored(anchor);
+        // The jump cancelled the opening page and found nothing to put there.
+        if (m_msgs.isEmpty())
+            loadInitial();
     }
     // goto resets the window, so its delta isn't a plain insert count; the view
     // only fills on init/old and ignores goto's number.

@@ -90,6 +90,8 @@ private slots:
     void anchorOffScreenReplacesTheWindow();
     void unresolvedReplyTargetMovesNothing();
     void gotoOutrunsTheOpeningPage();
+    void aJumpThatLandsNowhereFallsBackToTheNewestPage();
+    void aFailedJumpHoldsNoErrorUp();
     void aWindowOpenedOffTheTailRejoinsIt();
     void searchMarkJoinsTheStylingSpans();
     void attachmentsRoleReadsTheContentUnion();
@@ -862,6 +864,50 @@ void TestChatModel::gotoOutrunsTheOpeningPage() {
     QCOMPARE(anchored.first().at(0).toLongLong(), 20LL);
     QCOMPARE(m.rowCount(), 2);
     QCOMPARE(m.data(m.index(0), ChatModel::TimestampRole).toLongLong(), 20LL);
+}
+
+// A jump right after a chat switch cancels the opening page, which goes out again.
+void TestChatModel::aJumpThatLandsNowhereFallsBackToTheNewestPage() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");     // token 1, cancelled by the jump
+    m.gotoTimestamp(20);  // token 2
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.handleResult(2, QJsonDocument::fromJson(R"({"anchor":0,"messages":[]})")
+                          .object().toVariantMap());
+    QCOMPARE(historyCalls(sent), 1);
+    m.handleResult(3, msgs(R"([{"timestamp":900},{"timestamp":800}])"));
+    QCOMPARE(m.rowCount(), 2);
+    QVERIFY(m.atTail());
+
+    m.setChat("b@h");     // token 4
+    m.gotoTimestamp(20);  // token 5
+    sent.clear();
+    m.handleError(5, "timed out");
+    QCOMPARE(historyCalls(sent), 1);
+    m.handleResult(6, msgs(R"([{"timestamp":700}])"));
+    QCOMPARE(m.rowCount(), 1);
+}
+
+// retry() can't repeat a jump, so a failed one holds no error up.
+void TestChatModel::aFailedJumpHoldsNoErrorUp() {
+    TackyBackend backend;
+    ChatModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setChat("a@h");
+    m.handleResult(1, msgs(R"([{"timestamp":100},{"timestamp":200}])"));
+    m.gotoTimestamp(5);   // token 2
+    m.handleError(2, "timed out");
+    m.loadOlder();        // token 3
+    m.handleError(3, "Couldn't reach the message archive");
+    QVERIFY(!m.loadError().isEmpty());
+
+    m.retry();            // token 4
+    m.handleResult(4, msgs(R"([{"timestamp":50}])"));
+    QVERIFY(m.loadError().isEmpty());
 }
 
 // A window opened on an old slice asks for <Tail>, or it never rejoins.
