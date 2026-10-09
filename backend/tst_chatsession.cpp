@@ -4,8 +4,11 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QPointer>
 
 #include "AppController.h"
+#include "AccountsModel.h"
+#include "ChatListModel.h"
 #include "ChatSession.h"
 #include "TackyBackend.h"
 
@@ -23,6 +26,7 @@ private slots:
     void everyViewHoldsOneOpenChat();
     void whereTheFeedWasLeftGoesToTackyOnRelease();
     void whereTheFeedWasLeftGoesToTackyOnQuit();
+    void aRemovedAccountTakesItsChatsWithIt();
 };
 
 // Every `message <method>` the spy saw, as "method arg" pairs. A queued send
@@ -327,6 +331,21 @@ void TestChatSession::whereTheFeedWasLeftGoesToTackyOnQuit() {
             call.at(1).toString() == QLatin1String("setClientData"))
             stored << call.at(2).toMap().value("data").toString();
     QCOMPARE(stored, QStringList({R"({"view":{"offset":12,"ts":500}})"}));
+}
+
+void TestChatSession::aRemovedAccountTakesItsChatsWithIt() {
+    AppController app;
+    QPointer<ChatSession> gone = app.chatFor("me@h", "a@h", false);
+    QPointer<ChatListModel> goneList = app.chatListFor("me@h");
+    ChatSession *kept = app.chatFor("other@h", "a@h", false);
+    QVERIFY(gone && goneList && kept);
+    QCOMPARE(app.chatFor("me@h", "a@h", false), gone.data()); // one per chat
+
+    emit app.accounts()->removed("me@h");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(gone.isNull());
+    QVERIFY(goneList.isNull());
+    QCOMPARE(app.chatFor("other@h", "a@h", false), kept);
 }
 
 QTEST_MAIN(TestChatSession)
