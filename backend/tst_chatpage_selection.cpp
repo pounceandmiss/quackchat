@@ -26,6 +26,7 @@ private slots:
     void aPressOutsideAMenuOnlyDismissesIt();
     void aLongPressSelectsAndOffersItsActions();
     void theSelectionBarActsOnTheOneMessage();
+    void theSelectionBarFollowsTheMessagesState();
     void takingAReactionDropsThePressedSelection();
     void pressingASelectedMessageAgainHandsOverItsWords();
     void tappingAnotherMessageAddsItToTheSelection();
@@ -476,6 +477,41 @@ void TestChatPageSelection::theSelectionBarActsOnTheOneMessage() {
     // The quoted body is the row's, not whatever the composer had.
     QCOMPARE(page->property("replyBody").toString(), kSelectable);
     QCOMPARE(page->property("selectedCount").toInt(), 0);
+}
+
+// Retry follows the status of a message while it stays picked.
+void TestChatPageSelection::theSelectionBarFollowsTheMessagesState() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts = model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+    auto *page = chat.win()->findChild<QObject *>("chatPane");
+    QVERIFY(page);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    static QPointingDevice *finger = QTest::createTouchDevice();
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::touchEvent(chat.win(), finger).press(0, on);
+    QTRY_VERIFY_WITH_TIMEOUT(page->property("selectedCount").toInt() == 1, 3000);
+    QTest::touchEvent(chat.win(), finger).release(0, on);
+
+    auto *retry = chat.win()->findChild<QQuickItem *>("selectionRetry");
+    QVERIFY(retry);
+    QVERIFY(!retry->isVisible());
+
+    const auto status = [&](const char *server) {
+        model->handleEvent("message", "Status",
+                           QVariantMap{{"acc", kAcc}, {"jid", "select@example.com"},
+                                       {"timestamp", ts}, {"server_status", server}});
+    };
+    status("failed");
+    QTRY_VERIFY(retry->isVisible());
+    status("");
+    QTRY_VERIFY(!retry->isVisible());
+    QCOMPARE(page->property("selectedCount").toInt(), 1);
 }
 
 // Picking a reaction is an answer to the message rather than an interest in

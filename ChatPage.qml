@@ -427,6 +427,14 @@ Page {
             next[ts] = row
         selectedRows = next
     }
+    // Updates a picked row without dropping the marks toggle() does.
+    function refreshSelected(ts, row) {
+        if (!isSelected(ts))
+            return
+        const next = Object.assign({}, selectedRows)
+        next[ts] = row
+        selectedRows = next
+    }
     function armSelection(ts, row) {
         if (!isSelected(ts))
             toggle(ts, row)
@@ -1628,6 +1636,8 @@ Page {
                     canRetry: bubble.canRetry,
                     canResendPlain: bubble.canResendPlain
                 })
+                // Keeps the header's actions in step with the message's status.
+                onRowChanged: page.refreshSelected(wrap.timestamp, wrap.row)
                 width: feed.width
                 height: bubble.height
                 ChatBubble {
