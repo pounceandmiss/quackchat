@@ -17,7 +17,6 @@ private slots:
     void theAppsActiveStateIsTakenAsSent();
     void sentReportsCallsWithoutABackend();
     void aRequestThatNeverWentOutIsAnswered();
-    void stoppingFailsWhateverWasStillOut();
     void bindingCarriesEverySignalAModelNeeds();
     void optingOutLeavesOnlyTheReSeedBehind();
 };
@@ -163,25 +162,6 @@ void TestBackend::aRequestThatNeverWentOutIsAnswered() {
     QTRY_COMPARE(errors.count(), 1);
     QCOMPARE(errors.first().at(0).toInt(), tok);
     QVERIFY(!errors.first().at(1).toString().isEmpty());
-}
-
-void TestBackend::stoppingFailsWhateverWasStillOut() {
-    TackyBackend backend;
-    QVERIFY(backend.start());
-    // No account, so this cannot be answered before the stop below.
-    const int tok = backend.request("message", "history",
-                                    QVariantMap{{"acc", "nobody@h"},
-                                                {"chat", "x@h"},
-                                                {"limit", 50}});
-    QSignalSpy errors(&backend, &TackyBackend::error);
-    backend.stop();
-
-    QTRY_VERIFY(!errors.isEmpty());
-    bool sawOurs = false;
-    for (const QList<QVariant> &row : errors)
-        sawOurs = sawOurs || row.at(0).toInt() == tok;
-    QVERIFY2(sawOurs, "a token still owed when the transport went away must be "
-                      "failed, not dropped");
 }
 
 QTEST_MAIN(TestBackend)

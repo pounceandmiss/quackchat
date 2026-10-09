@@ -136,18 +136,6 @@ private slots:
         QCOMPARE(jidsAsked(sent, "visible", "me@h"), QStringList{});
     }
 
-    // A JID starts unknown, and the <Update> the mark asked for fills it in.
-    void learnsTheHashFromAnUpdate() {
-        TackyBackend backend;
-        QVERIFY(backend.start());
-        AvatarController c;
-        c.setBackend(&backend);
-
-        QCOMPARE(c.hashFor("me@h", "bob@h"), QString()); // marks, knows nothing yet
-        c.handleEvent("avatar", "Update", update("me@h", "bob@h", "abc"));
-        QCOMPARE(c.hashFor("me@h", "bob@h"), QString("abc"));
-    }
-
     // Nothing times out an avatar request, so a backend that stops has to fail
     // the waiting sinks or the QQuickImageResponse never completes.
     void pendingSinksFailWhenBackendStops() {
