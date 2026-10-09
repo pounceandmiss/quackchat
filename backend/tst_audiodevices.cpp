@@ -7,6 +7,7 @@
 #include <QJsonDocument>
 
 #include "AudioDevices.h"
+#include "CameraDevices.h"
 #include "TackyBackend.h"
 
 static void feed(AudioDevices &a, const QByteArray &json) {
@@ -21,6 +22,7 @@ private slots:
     void volumeEventDrivesMuted();
     void unmuteReturnsToThePreviousLevel();
     void preferredDeviceEventIsGlobal();
+    void preferredCameraEventMovesTheCamera();
     void refreshesWhenTheBackendConnects();
     // Against a real backend:
     void enumeratesRealDevices();
@@ -108,6 +110,17 @@ void TestAudioDevices::preferredDeviceEventIsGlobal() {
     // "" is a real value: whatever the system picks.
     feed(a, R"(["event","audio","PreferredDevice",{"kind":"capture","id":""}])");
     QCOMPARE(a.captureDevice(), QString());
+}
+
+// Picked elsewhere, under the bare name the wire sends.
+void TestAudioDevices::preferredCameraEventMovesTheCamera() {
+    CameraDevices c;
+    QSignalSpy changed(&c, &CameraDevices::cameraChanged);
+    const QJsonArray arr = QJsonDocument::fromJson(
+        R"(["event","video","PreferredCamera",{"id":"/dev/video2"}])").array();
+    c.handleEvent(arr.at(1).toString(), arr.at(2).toString(), arr.at(3).toVariant());
+    QCOMPARE(c.camera(), QString("/dev/video2"));
+    QCOMPARE(changed.count(), 1);
 }
 
 // Proves rtcma/miniaudio really is inside libtacky.a and reachable from the

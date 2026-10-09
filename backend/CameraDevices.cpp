@@ -57,7 +57,7 @@ void CameraDevices::handleEvent(const QString &module, const QString &name,
 {
     if (module != QLatin1String("video"))
         return;
-    if (name == QLatin1String("<PreferredCamera>"))
+    if (name == QLatin1String("PreferredCamera"))
         applyCamera(args.toMap().value(QStringLiteral("id")).toString());
 }
 
