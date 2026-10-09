@@ -2,6 +2,7 @@ package org.qtproject.example.quackchat;
 
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
+import android.os.Process;
 import android.util.Log;
 
 import java.io.BufferedInputStream;
@@ -151,10 +152,28 @@ final class FrameRouter implements TackyNative.FrameSink {
                 }
                 return;
             }
+            // The name is abstract, so any app can connect: only our own UI may.
+            if (!fromOurApp(sock)) {
+                closeQuietly(sock);
+                continue;
+            }
             closeClient(); // one UI at a time; the newcomer wins
             client.set(sock);
             new Thread(() -> readLoop(sock), "quack-read").start();
         }
+    }
+
+    private static boolean fromOurApp(LocalSocket sock) {
+        try {
+            final int uid = sock.getPeerCredentials().getUid();
+            if (uid == Process.myUid()) {
+                return true;
+            }
+            Log.w(TAG, "refused a connection from uid " + uid);
+        } catch (IOException e) {
+            Log.w(TAG, "no peer credentials, refusing: " + e.getMessage());
+        }
+        return false;
     }
 
     private void readLoop(LocalSocket sock) {

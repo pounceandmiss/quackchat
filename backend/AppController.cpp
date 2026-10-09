@@ -15,8 +15,7 @@
 #include "SocketTransport.h"
 
 // Abstract-namespace name the backend service binds. Same string on both sides;
-// SELinux keeps other apps from reaching it, since they cannot connectto a
-// socket owned by a different UID.
+// the service refuses peers with any UID but its own.
 static const QLatin1String kAndroidBackendSocket("quackchat.backend");
 #endif
 
