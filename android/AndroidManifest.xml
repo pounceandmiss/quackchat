@@ -27,15 +27,15 @@
         android:largeScreens="true"
         android:normalScreens="true"
         android:smallScreens="true" />
-    <!-- The one %%INSERT%% not left to androiddeployqt: its icon is Qt's logo. -->
+    <!-- The one %%INSERT%% not left to androiddeployqt: its icon is Qt's logo.
+         No backup: the files hold account passwords and OMEMO keys. -->
     <application
         android:name="org.qtproject.qt.android.bindings.QtApplication"
         android:hardwareAccelerated="true"
         android:label="-- %%INSERT_APP_NAME%% --"
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="false"
-        android:allowBackup="true"
-        android:fullBackupOnly="false">
+        android:allowBackup="false">
         <!-- adjustResize, not the pan Android picks by default: the chat lifts its
              composer over the keyboard itself, and a pan on top of that threw the
              view up and back. Not adjustNothing either, which leaves Qt no way
