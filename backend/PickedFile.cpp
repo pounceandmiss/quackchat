@@ -6,6 +6,7 @@
 #include <QMimeDatabase>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 
 #ifdef Q_OS_ANDROID
 #include <QCoreApplication> // QNativeInterface::QAndroidApplication
@@ -86,9 +87,13 @@ QString localPath(const QUrl &picked) {
     const QString dir = outgoingDir();
     if (dir.isEmpty())
         return {};
-    const QString dest = dir + QLatin1Char('/') +
-                         nameFor(picked, documentName(picked), documentMime(picked));
-    QFile::remove(dest);
+    // A directory per pick: two documents can share a display name.
+    QTemporaryDir own(dir + QStringLiteral("/XXXXXX"));
+    if (!own.isValid())
+        return {};
+    own.setAutoRemove(false);
+    const QString dest =
+        own.filePath(nameFor(picked, documentName(picked), documentMime(picked)));
     // toString(): Qt's file engine takes a content:// url as it stands.
     return QFile::copy(picked.toString(), dest) ? dest : QString();
 }
