@@ -34,13 +34,13 @@ if [ "${#images[@]}" -eq 0 ]; then
     images=(ubuntu:22.04)
 fi
 
-shopt -s nullglob
-built=("$project"/dist/*.AppImage)
-if [ "${#built[@]}" -eq 0 ]; then
-    echo "smoke-test: nothing in dist/ - run appimage/build.sh first" >&2
+# This version's, by name: glob order puts 0.1.10 ahead of 0.1.9.
+version=$(sed -n 's/.*project(quack_qml VERSION \([0-9.]*\).*/\1/p' "$project/CMakeLists.txt")
+appimage=$project/dist/quackchat-$version-x86_64.AppImage
+if [ ! -f "$appimage" ]; then
+    echo "smoke-test: no $(basename "$appimage") in dist/ - run appimage/build.sh first" >&2
     exit 1
 fi
-appimage=${built[0]}
 
 # Everything the app needs is inside the AppImage bar the graphics stack, which
 # linuxdeploy leaves out on purpose: it has to match the host's driver.
