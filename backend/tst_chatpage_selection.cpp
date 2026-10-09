@@ -2,6 +2,8 @@
 // selects, and the menus and reaction chips either one leaves behind.
 #include "ChatPageTest.h"
 
+#include <QClipboard>
+
 const QString kStyled = QStringLiteral("*bold* and plain");
 
 class TestChatPageSelection : public ChatPageTest {
@@ -591,6 +593,13 @@ void TestChatPageSelection::tappingAnotherMessageAddsItToTheSelection() {
     QObject *olderMenu = popupIn(olderBody, "bubbleMenu");
     QVERIFY(olderMenu);
     QVERIFY(!olderMenu->property("opened").toBool());
+
+    // Picked newest first, copied oldest first: the order they were said in.
+    auto *copy = chat.win()->findChild<QQuickItem *>("selectionCopy");
+    QVERIFY(copy);
+    QVERIFY(QMetaObject::invokeMethod(copy, "clicked"));
+    QCOMPARE(QGuiApplication::clipboard()->text(),
+             QString("the older one\nthe newer one"));
 }
 
 // A tap on a chip has two claims on it: the chip's own, and the row's menu

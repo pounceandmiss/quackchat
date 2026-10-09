@@ -442,9 +442,10 @@ Page {
         selectedRows = ({})
     }
     function copySelected() {
-        // Object keys iterate in ascending numeric order, so this joins the
-        // chosen messages oldest-first regardless of the tap order.
-        Clipboard.setText(Object.values(selectedRows).map(r => r.body).join("\n"))
+        // Oldest first. Microsecond keys are too big to be array indices, so
+        // Object.keys gives them in tap order.
+        Clipboard.setText(Object.keys(selectedRows).sort((a, b) => a - b)
+                          .map(ts => selectedRows[ts].body).join("\n"))
         clearSelection()
     }
 
