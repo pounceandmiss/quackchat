@@ -252,10 +252,18 @@ void TestLogging::loggingToAFileRoundTripsThroughTheBackend() {
     // of the GUI spoke.
     QVERIFY(text.contains(QLatin1String("frontend.quack.test")));
 
-    // Below the default threshold, so it is dropped until the level moves.
+    // Below the default threshold, so it is dropped until the level moves. The
+    // warning after it is written in order, so waiting on that is enough.
     backend.notify(QStringLiteral("log"), QStringLiteral("write"),
                    logWriteArgs(QtInfoMsg, ctx, QStringLiteral("only at info")));
-    QTest::qWait(200);
+    backend.notify(QStringLiteral("log"), QStringLiteral("write"),
+                   logWriteArgs(QtWarningMsg, ctx, QStringLiteral("after the info")));
+    QTRY_VERIFY_WITH_TIMEOUT(
+        [&] {
+            return log.seek(0) && QString::fromUtf8(log.readAll())
+                                      .contains(QLatin1String("after the info"));
+        }(),
+        5000);
     QVERIFY(log.seek(0));
     QVERIFY(!QString::fromUtf8(log.readAll())
                  .contains(QLatin1String("only at info")));
