@@ -1,5 +1,7 @@
 #include "GroupCallsModel.h"
 
+#include <QSet>
+
 #include "BackendBinding.h"
 #include "TackyBackend.h"
 
@@ -148,6 +150,7 @@ void GroupCallsModel::handleResult(int token, const QVariant &data) {
         const QString acc = it->acc;
         m_listTokens.erase(it);
         const QVariantList rows = data.toList();
+        QSet<GroupCall *> listed;
         for (const QVariant &v : rows) {
             const QVariantMap r = v.toMap();
             const QString room = r.value(QStringLiteral("jid")).toString();
@@ -157,8 +160,16 @@ void GroupCallsModel::handleResult(int token, const QVariant &data) {
                 c->applyListed(r.value(QStringLiteral("video")).toBool(),
                                r.value(QStringLiteral("preview")).toMap(),
                                r.value(QStringLiteral("sessions")).toMap());
+                listed.insert(c);
             }
         }
+        // A live call the list omits ended while no UI was attached. A joining one
+        // may postdate the list, so it is left alone.
+        const QList<GroupCall *> calls = m_calls;
+        for (GroupCall *c : calls)
+            if (c->account() == acc && c->phase() == QLatin1String("live")
+                    && !listed.contains(c))
+                c->handleEvent(QStringLiteral("Left"), {});
         return;
     }
 }

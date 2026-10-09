@@ -64,6 +64,7 @@ private slots:
     void callsModelLeavesLegsAlone();
     void theListSeedsTheSessions();
     void listOnConnectFindsUsInTheCall();
+    void aListWithoutTheCallEndsIt();
     void anInviteRingsWithItsStoredMessage();
     void dismissMakesRoomForANewJoin();
     // Against a real backend:
@@ -756,6 +757,26 @@ void TestGroupCalls::listOnConnectFindsUsInTheCall() {
     QCoreApplication::processEvents();
     QCOMPARE(phase.count(), 0);
     QCOMPARE(sent.count(), 6);
+}
+
+// A <Left> sent while no UI was attached is lost; the list is all there is.
+void TestGroupCalls::aListWithoutTheCallEndsIt() {
+    TackyBackend backend;
+    GroupCallsModel m;
+    m.setBackend(&backend);
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
+    feed(m, R"(["event","groupcall","Joined",{"acc":"other@host","jid":"room@muc.host"}])");
+    GroupCall *c = m.find("me@host", "room@muc.host");
+    GroupCall *other = m.find("other@host", "room@muc.host");
+    QCOMPARE(c->phase(), QString("live"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    const int list = backend.request("probe", "probe") + 1; // the connect's first ask
+    feed(m, R"(["event","conn","State",{"acc":"me@host","state":"connected"}])");
+    QCOMPARE(lastSent(sent, "groupcall", "list").value("acc").toString(), QString("me@host"));
+    backend.result(list, QVariantList{});
+    QCOMPARE(c->phase(), QString("ended"));
+    QCOMPARE(other->phase(), QString("live")); // another account's list says nothing of it
 }
 
 void TestGroupCalls::anInviteRingsWithItsStoredMessage() {
