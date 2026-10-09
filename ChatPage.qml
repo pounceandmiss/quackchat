@@ -840,6 +840,9 @@ Page {
     }
 
     function scrollToHighlight() {
+        // Queued, so the chat may have closed in between.
+        if (!page.chatModel)
+            return
         const row = page.chatModel.rowOfTimestamp(page.highlightTs)
         if (row >= 0)
             feed.centreOnRow(row)

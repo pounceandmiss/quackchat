@@ -93,6 +93,7 @@ private slots:
     void theAvatarPreferenceClosesTheGutter();
     void closingTheSearchBarEmptiesIt();
     void returnSearchesWhenTheLastAnswerIsGone();
+    void aJumpLandingAsTheChatClosesScrollsNothing();
 };
 
 void TestChatPageWindows::initTestCase() {
@@ -520,6 +521,20 @@ void TestChatPageWindows::returnSearchesWhenTheLastAnswerIsGone() {
 
     QTest::keyClick(chat.win(), Qt::Key_Return);
     QTRY_VERIFY_WITH_TIMEOUT(search->rowCount() == 2, 5000);
+}
+
+// The queued scroll runs after the chat has closed.
+void TestChatPageWindows::aJumpLandingAsTheChatClosesScrollsNothing() {
+    const Chat chat = open("pair@example.com");
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 2);
+    ChatModel *model = chat.model();
+    const qlonglong ts = model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+
+    QTest::failOnWarning(QRegularExpression("TypeError"));
+    emit model->anchored(ts);
+    chat.window->setProperty("chatJid", QString());
+    QCoreApplication::processEvents();
 }
 
 QTEST_MAIN(TestChatPageWindows)
