@@ -1,4 +1,5 @@
-# Build the release artifacts that need nothing but docker, and check them.
+# Run the tests, and build the release artifacts that need nothing but docker
+# and check them.
 #
 # Android is absent on purpose: its image is ~13 GB and does not fit on a hosted
 # runner beside a build tree. The Flatpak is absent because it wants
@@ -20,10 +21,40 @@ permissions:
   contents: read
   packages: read
 
+# Newer pushes to a pull request cancel its older runs; master runs always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/quack-build:common
 
 jobs:
+  # Separate from the release builds, which configure without tests.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm
+          df -h /
+
+      # Authenticated for the same reason as the appimage job's pull.
+      - name: Pull the toolchain image
+        continue-on-error: true
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull "${IMAGE,,}" && docker tag "${IMAGE,,}" quack-build:common
+
+      - name: Test
+        run: ./tools/test.sh
+
   appimage:
     runs-on: ubuntu-latest
     steps:

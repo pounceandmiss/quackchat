@@ -2,8 +2,11 @@ build/
 build-android/
 build-win/
 build-appimage/
+build-test/
+build-asan/
 dist/
 flatpak/.flatpak-builder/
+.flatpak-builder/
 flatpak/build-dir/
 flatpak/repo/
 *.flatpak
