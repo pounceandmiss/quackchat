@@ -7,7 +7,7 @@
      androiddeployqt, so the permissions Qt's modules ask for keep being merged
      in alongside ours. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="org.qtproject.example"
+    package="io.github.pounceandmiss.quack"
     android:installLocation="auto"
     android:versionCode="-- %%INSERT_VERSION_CODE%% --"
     android:versionName="-- %%INSERT_VERSION_NAME%% --">

@@ -436,6 +436,11 @@ if(ANDROID)
         QT_ANDROID_VERSION_NAME "${PROJECT_VERSION}"
         QT_ANDROID_VERSION_CODE "${_android_version_code}")
 
+    # Qt would use org.qtproject.example.<target>, which can't change once a
+    # signed build is out. The Java classes keep their package (the JNI names).
+    set_target_properties(quackchat PROPERTIES
+        QT_ANDROID_PACKAGE_NAME "io.github.pounceandmiss.quack")
+
     # The interpreter, loaded by the Java service in the :backend process. This
     # is the only thing that links libtacky on Android, and it is why the NDK
     # r29 / android-30 pinning still applies to the build as a whole.

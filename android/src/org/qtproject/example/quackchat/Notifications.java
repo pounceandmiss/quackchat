@@ -14,6 +14,7 @@ import android.graphics.drawable.Icon;
 import android.os.Build;
 import android.util.Log;
 
+import io.github.pounceandmiss.quack.R;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;

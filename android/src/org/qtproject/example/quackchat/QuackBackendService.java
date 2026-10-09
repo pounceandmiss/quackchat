@@ -16,6 +16,7 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
 
+import io.github.pounceandmiss.quack.R;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
