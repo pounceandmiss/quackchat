@@ -121,10 +121,9 @@ void TestBackend::errorOnUnknownModule() {
     QSignalSpy errSpy(&backend, &TackyBackend::error);
     const int token = backend.request("no_such_module", "nope", QVariantMap());
 
-    // Either an error reply arrives, or nothing does; a *result* must not.
-    errSpy.wait(3000);
-    if (errSpy.count() > 0)
-        QCOMPARE(errSpy.takeFirst().at(0).toInt(), token);
+    // Unanswered, the caller would wait for good.
+    QVERIFY2(errSpy.wait(3000), "an unknown module went unanswered");
+    QCOMPARE(errSpy.takeFirst().at(0).toInt(), token);
     QCOMPARE(okSpy.count(), 0);
 
     backend.stop();
