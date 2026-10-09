@@ -330,6 +330,7 @@ void GroupCall::declineInvite(const QString &chat, qlonglong ts) {
 void GroupCall::beginJoin(bool video, const QString &method, QVariantMap args) {
     if (inCall())
         return;
+    m_leaving = false; // a backend that had forgotten the call sends no <Left>
     m_participants.clear();
     m_sessions.clear();
     setReason({});
@@ -375,6 +376,7 @@ void GroupCall::leave() {
     // <Left> follows for a call the backend still holds; ending here too
     // covers a backend that already forgot it, and keeps the reason ours: a
     // call we walked out of has nothing to explain.
+    m_leaving = true;
     tearDown();
 }
 
@@ -520,6 +522,9 @@ void GroupCall::handleEvent(const QString &name, const QVariantMap &a) {
             tearDown();
         }
     } else if (name == QLatin1String("Joined")) {
+        // Sent before the backend heard our leave; its <Left> is still to come.
+        if (m_leaving)
+            return;
         setCallJid(a.value(QStringLiteral("jid")).toString());
         m_startedAt = QDateTime::currentMSecsSinceEpoch();
         setPhase(kLive);
@@ -527,6 +532,7 @@ void GroupCall::handleEvent(const QString &name, const QVariantMap &a) {
         bindSession(a.value(QStringLiteral("peer")).toString(),
                     a.value(QStringLiteral("sid")).toString());
     } else if (name == QLatin1String("Left")) {
+        m_leaving = false;
         if (inCall())
             setReason(a.value(QStringLiteral("reason")).toString());
         if (m_phase != kIdle)

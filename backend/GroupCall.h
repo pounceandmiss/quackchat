@@ -237,6 +237,8 @@ private:
     int m_count = 0;
     bool m_joined = false;
     QString m_phase = QStringLiteral("idle");
+    // We left, and the backend's <Left> for it has not come back yet.
+    bool m_leaving = false;
     QString m_reason;
     QString m_warning;
     bool m_video = false;

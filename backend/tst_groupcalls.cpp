@@ -50,6 +50,7 @@ private slots:
     void answerAndDeclineAStoredInvite();
     void inACallItsOwnRoomIsRead();
     void leaveEndsLocallyAndKeepsOurReason();
+    void aJoinedAlreadyOnItsWayDoesNotUndoALeave();
     void aRefusedJoinEndsWithTheMessage();
     void occupantsAndSessionsMakeTheWall();
     void aHiddenJidStillShows();
@@ -324,6 +325,29 @@ void TestGroupCalls::leaveEndsLocallyAndKeepsOurReason() {
     // Nothing to leave twice.
     c->leave();
     QCOMPARE(sent.count(), 1);
+}
+
+// The <Joined> sent before the backend heard the leave arrives after it.
+void TestGroupCalls::aJoinedAlreadyOnItsWayDoesNotUndoALeave() {
+    TackyBackend backend;
+    GroupCallsModel m;
+    m.setBackend(&backend);
+    GroupCall *c = m.callFor("me@host", "room@muc.host");
+    c->join(false);
+    c->leave();
+    QSignalSpy phase(c, &GroupCall::phaseChanged);
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
+    QCOMPARE(c->phase(), QString("ended"));
+    feed(m, R"(["event","groupcall","Left",
+        {"acc":"me@host","jid":"room@muc.host","reason":"left"}])");
+    QCOMPARE(c->phase(), QString("ended"));
+    QCOMPARE(phase.count(), 0);
+
+    // Joining again is joining again.
+    c->dismiss();
+    c->join(false);
+    feed(m, R"(["event","groupcall","Joined",{"acc":"me@host","jid":"room@muc.host"}])");
+    QCOMPARE(c->phase(), QString("live"));
 }
 
 // "not in room" comes back on the join's own token, and is the whole story:
