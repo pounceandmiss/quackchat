@@ -204,6 +204,29 @@ private slots:
         e.assertNoErrors();
     }
 
+    // backend <Dead> is an interpreter that created and then failed its init:
+    // the transport stays up, so only the event says nothing will answer.
+    void backendNoticeShowsADeadBackend() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QQuickWindow *win = loadMain(e);
+        QVERIFY(win);
+        auto *notice = win->findChild<QQuickItem *>("backendNotice");
+        QVERIFY(notice);
+        QVERIFY(!notice->isVisible());
+
+        fake->deliver(R"(["event","backend","Dead",)"
+                      R"({"error":"tackyd_embed_init failed: omemo: EPROTOBUF"}])");
+        QTRY_VERIFY(app->backendStartFailed());
+        QVERIFY(notice->isVisible());
+        QVERIFY(notice->property("message").toString().contains("EPROTOBUF"));
+        e.assertNoErrors();
+    }
+
     void loadsApp() {
         AppEngine e;
         // create the App singleton up front; backend stays unstarted

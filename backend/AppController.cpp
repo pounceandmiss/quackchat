@@ -96,8 +96,16 @@ void AppController::reportActive(bool force) {
 // The error module carries failures no reply can carry - a timer, a socket
 // handler, the stanza loop. Every model filters on its own module, so without
 // this they land nowhere at all.
-void AppController::onEvent(const QString &module, const QString &,
+void AppController::onEvent(const QString &module, const QString &name,
                             const QVariant &args) {
+    // An interpreter that created but failed its init: tacky_create already
+    // returned, so this is the only word of it, and nothing will ever answer.
+    if (module == QLatin1String("backend") && name == QLatin1String("Dead")) {
+        m_startFailed = true;
+        m_startError = args.toMap().value(QStringLiteral("error")).toString();
+        emit backendStartFailedChanged();
+        return;
+    }
     if (module != QLatin1String("error"))
         return;
     const QString message =

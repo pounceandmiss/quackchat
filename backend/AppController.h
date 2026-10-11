@@ -57,9 +57,13 @@ class AppController : public QObject {
     // window ends up showing it is decided when the user picks it.
     Q_PROPERTY(NotificationController *notifications READ notifications CONSTANT)
     // True when the backend never came up at all: on the desktop, an
-    // interpreter that would not create. Nothing retries that, so the UI says
-    // so rather than showing it as merely disconnected.
+    // interpreter that would not create, or one that created and then failed
+    // its init (backend <Dead>). Nothing retries that, so the UI says so
+    // rather than showing it as merely disconnected.
     Q_PROPERTY(bool backendStartFailed READ backendStartFailed NOTIFY
+                   backendStartFailedChanged)
+    // Why, when the backend said: <Dead>'s error. "" otherwise.
+    Q_PROPERTY(QString backendStartError READ backendStartError NOTIFY
                    backendStartFailedChanged)
 
 public:
@@ -78,6 +82,7 @@ public:
     QString logPath() const { return m_logPath; }
     NotificationController *notifications() { return &m_notifications; }
     bool backendStartFailed() const { return m_startFailed; }
+    QString backendStartError() const { return m_startError; }
 
     // Set by the GUI host, which owns the QImage side. Not owned here, and
     // expected to outlive this object.
@@ -194,6 +199,7 @@ private:
     QHash<QString, QHash<QString, ChatSession *>> m_chatSessions;
     bool m_started = false;
     bool m_startFailed = false;
+    QString m_startError;
 };
 
 #endif // APPCONTROLLER_H

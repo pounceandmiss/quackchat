@@ -20,7 +20,9 @@ Rectangle {
     readonly property bool down: App.backend.attached && !App.backend.running
     readonly property string message: {
         if (App.backendStartFailed)
-            return qsTr("The backend could not start. Quack has to be restarted.")
+            return App.backendStartError !== ""
+                ? qsTr("The backend could not start: %1").arg(App.backendStartError)
+                : qsTr("The backend could not start. Quack has to be restarted.")
         if (notice.down)
             return qsTr("Reconnecting to the backend.")
         return notice.reported
