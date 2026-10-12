@@ -62,13 +62,14 @@ public:
         DirectionRole, // "outgoing" | "incoming"
         StateRole,
         WarningRole,  // last <Warning> reason; the call carried on
-        ReasonRole,   // <Failed> reason
+        ReasonRole,   // <Failed>'s reason text, or <Ended>'s reason word
         TerminalRole, // state is ended or failed
-        OfferedVideoRole,   // the incoming propose advertised video
+        OfferedVideoRole,   // the call was placed or offered with video
         HasRemoteVideoRole, // a <VideoTrack> ring is live
         SendingVideoRole,   // a local-preview ring is live
         RemoteVideoRole,    // <VideoTrack> arg map (name + geometry + channel)
         PreviewRole,        // <VideoPreview> arg map
+        ActiveSinceRole,    // <Active>'s since, microseconds; 0 before it
     };
     Q_ENUM(Role)
 
@@ -148,6 +149,7 @@ private:
         bool sendingVideo = false;
         QVariantMap remoteVideo; // <VideoTrack> args
         QVariantMap preview;     // <VideoPreview> args
+        qint64 activeSince = 0;
         // Insert order, so a reconcile can tell a row older than the request it
         // answers from one that arrived while that request was out.
         quint64 seq = 0;

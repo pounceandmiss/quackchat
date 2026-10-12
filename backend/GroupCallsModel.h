@@ -7,11 +7,9 @@
 // so. The window manager instantiates over this and shows a window for the
 // rows whose phase is not idle.
 //
-// This owns the wire's fan-out and nothing else. groupcall events go to the
-// GroupCall of the chat they name, or else of the call room they name (a
-// call's room is the chat's own for an in-room call); the `calls` events of a
-// leg go to whichever GroupCall holds that sid; a room's `muc` events go to
-// whichever GroupCall reads its occupants.
+// This owns the wire's fan-out and nothing else: groupcall events go to the
+// GroupCall of the chat they name, or else of the call room they name (the
+// chat's own, for an in-room call).
 #ifndef GROUPCALLSMODEL_H
 #define GROUPCALLSMODEL_H
 
@@ -54,9 +52,10 @@ public:
     GroupCall *find(const QString &acc, const QString &jid) const;
     // The row whose call is held in `room`, if any.
     GroupCall *findByCall(const QString &acc, const QString &room) const;
+    GroupCall *callOf(const QString &acc, const QVariantMap &state);
 
-    // Ask what `acc` is in, and re-read every known room's occupants. Driven by
-    // the account's conn events; exposed so a view can force one.
+    // Every call of `acc` there is something to show for. Driven by the
+    // account's conn events; exposed so a view can force one.
     Q_INVOKABLE void refreshFor(const QString &acc);
 
     // Public so tests can drive it with canned events.

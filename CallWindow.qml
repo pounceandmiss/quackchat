@@ -2,19 +2,22 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 import QtMultimedia
 import Quack
 
-// The call itself: who you are talking to, how it is going, and the way out.
-// AppWindows builds one per CallsModel row and destroys it when that row goes,
-// but only ever shows one at a time - a call still ringing at you shows an
-// IncomingCallDialog instead, and takes this window when it is answered.
+// One call, from its ring to its end. Voice and ringing are centred in the
+// theme; once the peer's video flows it fills the window, with the controls on
+// scrims that fade while the mouse is still. Same design as Android's
+// CallActivity, which runs calls there instead of this window.
 //
-// Nothing here decides anything about the call - it reads `state` off the model
-// and calls back into it. The one piece of local policy is when to let go: a
-// call that ended closes itself after a beat, one that failed waits, so the
-// reason stays readable and "Call again" is there to press.
+// AppWindows builds one per CallsModel row and shows it while the call rings
+// or is the live one. Nothing here decides anything about the call - it reads
+// `state` off the model and calls back into it. The one piece of local policy
+// is when to let go: a call that ended closes itself after a beat, one that
+// failed waits, so the reason stays readable and "Call again" is there to
+// press.
 ApplicationWindow {
     id: win
 
@@ -31,27 +34,35 @@ ApplicationWindow {
     required property bool sendingVideo
     required property var remoteVideo
     required property var preview
+    required property double activeSince
 
     // Local intent to send camera. Starts true whenever this call has a
     // preview ring (i.e. video was negotiated); the toggle drives setVideo.
     property bool cameraOn: sendingVideo
 
-    // The dialog has a call while it rings, so this window is not normally up
-    // then - but leave() is the single exit path, and a ringing call is
-    // declined rather than hung up.
     readonly property bool ringingIn: state === "incoming"
 
-    // Video needs a taller layout to fit the button row below it; sized
-    // before <VideoTrack>/<VideoPreview> land by offeredVideo (incoming) or
-    // grown once sendingVideo/hasRemoteVideo turns true (outgoing).
+    readonly property bool videoLook: win.hasRemoteVideo && !win.terminal && !win.ringingIn
+
+    // Sized for video before <VideoTrack>/<VideoPreview> land.
     readonly property bool videoActive: win.offeredVideo || win.hasRemoteVideo || win.sendingVideo
 
-    width: Theme.mobile ? Screen.width : videoActive ? 480 : 380
-    height: Theme.mobile ? Screen.height : videoActive ? 640 : 460
-    minimumWidth: Theme.mobile ? 0 : videoActive ? 400 : 320
-    minimumHeight: Theme.mobile ? 0 : videoActive ? 560 : 380
-    title: qsTr("Call — %1").arg(peer)
-    color: Theme.background
+    // Read once; a rename mid-call can wait.
+    property string displayName: ""
+    Component.onCompleted: {
+        const list = App.chatListFor(win.account)
+        const entry = list ? list.entryFor(win.peer) : ({})
+        win.displayName = entry.name ?? ""
+    }
+    readonly property string shownName: win.displayName !== "" ? win.displayName : win.peer
+
+    width: videoActive ? 520 : 400
+    height: videoActive ? 720 : 600
+    minimumWidth: 340
+    minimumHeight: 480
+    title: win.ringingIn ? qsTr("Incoming call from %1").arg(win.peer)
+                         : qsTr("Call — %1").arg(win.peer)
+    color: win.videoLook ? "black" : Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
     Shortcut { sequence: "Escape"; onActivated: win.leave() }
@@ -76,7 +87,7 @@ ApplicationWindow {
     // forever waiting on a window that never appeared.
     Timer {
         running: win.state === "ended" || (win.terminal && !win.visible)
-        interval: 900
+        interval: 1500
         onTriggered: App.calls.dismiss(win.account, win.sid)
     }
 
@@ -84,109 +95,439 @@ ApplicationWindow {
         switch (win.state) {
         case "calling":    return qsTr("Calling…")
         case "ringing":    return qsTr("Ringing…")
-        case "incoming":   return qsTr("Incoming call")
+        case "incoming":   return win.offeredVideo ? qsTr("Incoming video call")
+                                                   : qsTr("Incoming call")
         case "connecting": return qsTr("Connecting…")
         case "active":     return qsTr("Connected")
-        case "ended":      return qsTr("Call ended")
         case "failed":     return qsTr("Call failed")
+        case "ended":      return win.endText
         default:           return ""
+        }
+    }
+
+    readonly property string endText: {
+        switch (win.reason) {
+        case "declined":  return qsTr("Declined")
+        case "busy":      return qsTr("Busy")
+        case "retracted": return qsTr("Call cancelled")
+        case "elsewhere": return qsTr("Answered on another device")
+        case "timeout":   return qsTr("No answer")
+        case "reset":     return qsTr("Connection lost")
+        default:          return qsTr("Call ended")
+        }
+    }
+
+    property string durationText: ""
+    function tick() {
+        if (win.activeSince <= 0) {
+            win.durationText = ""
+            return
+        }
+        const secs = Math.max(0, Math.floor((Date.now() * 1000 - win.activeSince) / 1e6))
+        const h = Math.floor(secs / 3600)
+        const m = Math.floor(secs / 60) % 60
+        const s = secs % 60
+        const two = (n) => (n < 10 ? "0" : "") + n
+        win.durationText = (h > 0 ? h + ":" + two(m) : m) + ":" + two(s)
+    }
+    onActiveSinceChanged: win.tick()
+    Timer {
+        running: win.activeSince > 0 && !win.terminal
+        interval: 1000
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: win.tick()
+    }
+
+    readonly property string statusLine: win.durationText !== "" && !win.terminal
+        ? win.statusText + "  ·  " + win.durationText : win.statusText
+
+    // Over video the overlays fade while the mouse is still; the audio popup
+    // holds them up.
+    property bool overlaysShown: true
+    Timer {
+        id: overlayIdle
+        interval: 4000
+        running: win.videoLook && win.overlaysShown && !devices.opened
+        onTriggered: win.overlaysShown = false
+    }
+    function poke() {
+        win.overlaysShown = true
+        overlayIdle.restart()
+    }
+    onVideoLookChanged: win.overlaysShown = true
+    readonly property bool overlaysVisible: !win.videoLook || win.overlaysShown
+
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        onPositionChanged: if (win.videoLook) win.poke()
+    }
+
+    VideoOutput {
+        id: remoteOut
+        anchors.fill: parent
+        visible: win.videoLook
+        fillMode: VideoOutput.PreserveAspectCrop
+        VideoSurface {
+            videoSink: remoteOut.videoSink
+            channel: win.remoteVideo || ({})
         }
     }
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 18
-        anchors.topMargin: 18 + SafeArea.margins.top
-        anchors.bottomMargin: 18 + SafeArea.margins.bottom
+        anchors.leftMargin: 24
+        anchors.rightMargin: 24
+        anchors.topMargin: SafeArea.margins.top
+        anchors.bottomMargin: controls.height
+        visible: !win.videoLook
         spacing: 0
 
         Item { Layout.fillHeight: true }
 
-        // Remote video when it is flowing, the avatar otherwise, with a
-        // mirrored self-view tucked bottom-right while the camera is on.
-        Item {
+        Avatar {
             Layout.alignment: Qt.AlignHCenter
-            Layout.fillWidth: win.hasRemoteVideo
-            Layout.preferredWidth: win.hasRemoteVideo ? -1 : 96
-            Layout.preferredHeight: win.hasRemoteVideo ? 260 : 96
-
-            Avatar {
-                anchors.centerIn: parent
-                width: 96; height: 96
-                visible: !win.hasRemoteVideo
-                account: win.account
-                jid: win.peer
-                label: win.peer
-                initialsPixelSize: 38
-            }
-
-            VideoOutput {
-                id: remoteOut
-                anchors.fill: parent
-                visible: win.hasRemoteVideo
-                fillMode: VideoOutput.PreserveAspectFit
-                VideoSurface {
-                    videoSink: remoteOut.videoSink
-                    channel: win.remoteVideo || ({})
-                }
-            }
-
-            VideoOutput {
-                id: previewOut
-                width: 96; height: 72
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: 6
-                visible: win.sendingVideo
-                fillMode: VideoOutput.PreserveAspectCrop
-                transform: Scale { origin.x: previewOut.width / 2; xScale: -1 }
-                VideoSurface {
-                    videoSink: previewOut.videoSink
-                    channel: win.preview || ({})
-                }
-            }
+            Layout.preferredWidth: 140
+            Layout.preferredHeight: 140
+            account: win.account
+            jid: win.peer
+            label: win.shownName
+            initialsPixelSize: 56
         }
 
         Text {
             Layout.fillWidth: true
-            Layout.topMargin: 14
-            text: win.peer
+            Layout.topMargin: 20
+            text: win.shownName
             color: Theme.textPrimary
-            font.pixelSize: 18
-            font.bold: true
+            font.pixelSize: 28
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+        }
+
+        Text {
+            Layout.fillWidth: true
+            Layout.topMargin: 2
+            visible: win.shownName !== win.peer
+            text: win.peer
+            color: Theme.textDim
+            font.pixelSize: 13
             horizontalAlignment: Text.AlignHCenter
             elide: Text.ElideMiddle
         }
 
         Text {
             Layout.fillWidth: true
-            Layout.topMargin: 4
-            text: win.statusText
-            color: win.state === "failed" ? Theme.negative : Theme.textDim
-            font.pixelSize: 14
+            Layout.topMargin: 10
+            text: win.statusLine
+            color: Theme.textDim
+            font.pixelSize: 15
             horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
         }
 
-        // <Failed> carries why; <Warning> is non-fatal and the call carries on.
         Text {
             Layout.fillWidth: true
-            Layout.topMargin: 6
-            text: win.state === "failed" ? win.reason : win.warning
-            visible: text !== ""
-            color: win.state === "failed" ? Theme.negative : Theme.warning
-            font.pixelSize: 12
+            Layout.topMargin: 8
+            visible: win.state === "failed" && win.reason !== ""
+            text: win.reason
+            color: Theme.negative
+            font.pixelSize: 13
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
         }
 
-        Item { Layout.fillHeight: true }
-
-        // Mic and speaker are machine-wide in tacky, so these knobs outlive the
-        // call and are shared with every other one that is running.
-        ColumnLayout {
+        Text {
             Layout.fillWidth: true
-            Layout.bottomMargin: 16
-            visible: !win.terminal
+            Layout.topMargin: 8
+            visible: win.ringingIn
+            text: qsTr("using account %1").arg(win.account)
+            color: Theme.textDim
+            font.pixelSize: 12
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideMiddle
+        }
+
+        Item { Layout.fillHeight: true }
+    }
+
+    Rectangle {
+        id: videoTop
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: topColumn.implicitHeight + 56 + SafeArea.margins.top
+        visible: win.videoLook && opacity > 0
+        opacity: win.overlaysVisible ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.6) }
+            GradientStop { position: 1.0; color: "transparent" }
+        }
+
+        ColumnLayout {
+            id: topColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 24
+            anchors.topMargin: 16 + SafeArea.margins.top
+            spacing: 2
+
+            Text {
+                Layout.fillWidth: true
+                text: win.shownName
+                color: "white"
+                font.pixelSize: 19
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+            Text {
+                Layout.fillWidth: true
+                text: win.statusLine
+                color: Qt.rgba(1, 1, 1, 0.85)
+                font.pixelSize: 13
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+        }
+    }
+
+    // <Warning>, until the call is up again.
+    Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: (win.videoLook ? videoTop.height - 28 : 16) + SafeArea.margins.top
+        visible: win.warning !== "" && !win.terminal
+        width: warningText.implicitWidth + 28
+        height: warningText.implicitHeight + 12
+        radius: height / 2
+        color: Qt.rgba(0.12, 0.12, 0.12, 0.8)
+        Text {
+            id: warningText
+            anchors.centerIn: parent
+            text: win.warning
+            color: "white"
+            font.pixelSize: 12
+        }
+    }
+
+    Rectangle {
+        id: controls
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: controlColumn.implicitHeight + 40 + 20 + SafeArea.margins.bottom
+        opacity: win.overlaysVisible ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
+        gradient: Gradient {
+            GradientStop { position: 0.0; color: "transparent" }
+            GradientStop { position: 1.0; color: win.videoLook ? Qt.rgba(0, 0, 0, 0.65)
+                                                               : "transparent" }
+        }
+
+        // The theme over voice, translucent white over video.
+        function fillFor(on) {
+            return win.videoLook ? (on ? "white" : Qt.rgba(1, 1, 1, 0.2))
+                                 : (on ? Theme.accent : Theme.surface)
+        }
+        function glyphFor(on) {
+            return win.videoLook ? (on ? "#202020" : "white")
+                                 : (on ? Theme.textOnAccent : Theme.textPrimary)
+        }
+        readonly property color captionColor: win.videoLook ? "white" : Theme.textDim
+
+        ColumnLayout {
+            id: controlColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 20 + SafeArea.margins.bottom
+            spacing: 0
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: win.ringingIn
+                spacing: 0
+
+                Item { Layout.fillWidth: true }
+                CallButton {
+                    diameter: 64
+                    iconPath: Icons.callEnd
+                    fill: Theme.negative
+                    glyphColor: "white"
+                    captionColor: controls.captionColor
+                    text: qsTr("Decline")
+                    onClicked: App.calls.reject(win.account, win.sid)
+                }
+                Item { Layout.preferredWidth: 80 }
+                CallButton {
+                    diameter: 64
+                    iconPath: Icons.call
+                    fill: "#43a047"
+                    glyphColor: "white"
+                    captionColor: controls.captionColor
+                    text: qsTr("Answer")
+                    onClicked: App.calls.accept(win.account, win.sid)
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                visible: !win.ringingIn && !win.terminal
+                spacing: 18
+
+                Item { Layout.fillWidth: true }
+
+                CallButton {
+                    objectName: "muteToggle"
+                    iconPath: App.audio.captureMuted ? Icons.micOff : Icons.mic
+                    fill: controls.fillFor(App.audio.captureMuted)
+                    glyphColor: controls.glyphFor(App.audio.captureMuted)
+                    captionColor: controls.captionColor
+                    text: App.audio.captureMuted ? qsTr("Unmute") : qsTr("Mute")
+                    onClicked: {
+                        App.audio.setCaptureMuted(!App.audio.captureMuted)
+                        win.poke()
+                    }
+                }
+
+                // Turning the camera off keeps the preview ring, so
+                // sendingVideo stays true.
+                CallButton {
+                    objectName: "cameraToggle"
+                    visible: win.sendingVideo
+                    iconPath: win.cameraOn ? Icons.videoCam : Icons.videoCamOff
+                    fill: controls.fillFor(!win.cameraOn)
+                    glyphColor: controls.glyphFor(!win.cameraOn)
+                    captionColor: controls.captionColor
+                    text: qsTr("Camera")
+                    onClicked: {
+                        win.cameraOn = !win.cameraOn
+                        App.calls.setVideo(win.account, win.sid, win.cameraOn)
+                        win.poke()
+                    }
+                }
+
+                // Machine-wide in tacky: shared with every other call.
+                CallButton {
+                    objectName: "audioSettings"
+                    iconPath: Icons.volumeUp
+                    fill: controls.fillFor(devices.opened)
+                    glyphColor: controls.glyphFor(devices.opened)
+                    captionColor: controls.captionColor
+                    text: qsTr("Audio")
+                    onClicked: devices.opened ? devices.close() : devices.open()
+                }
+
+                CallButton {
+                    iconPath: Icons.callEnd
+                    fill: Theme.negative
+                    glyphColor: "white"
+                    captionColor: controls.captionColor
+                    text: qsTr("End")
+                    onClicked: win.leave()
+                }
+
+                Item { Layout.fillWidth: true }
+            }
+
+            // The retried call's <Outgoing> row spawns its own window.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: win.terminal
+                spacing: 18
+
+                Item { Layout.fillWidth: true }
+                CallButton {
+                    visible: win.state === "failed"
+                    iconPath: Icons.call
+                    fill: Theme.positive
+                    glyphColor: "white"
+                    text: qsTr("Call again")
+                    onClicked: {
+                        App.calls.start(win.account, win.peer)
+                        App.calls.dismiss(win.account, win.sid)
+                    }
+                }
+                CallButton {
+                    iconPath: Icons.close
+                    fill: Theme.textDim
+                    glyphColor: "white"
+                    text: qsTr("Close")
+                    onClicked: win.leave()
+                }
+                Item { Layout.fillWidth: true }
+            }
+        }
+    }
+
+    Item {
+        id: selfTile
+        width: 132; height: 99
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 16
+        anchors.topMargin: 16 + SafeArea.margins.top
+            + (win.videoLook && win.overlaysVisible ? videoTop.height - 40 : 0)
+        visible: win.sendingVideo && win.cameraOn && !win.terminal
+        Behavior on anchors.topMargin { NumberAnimation { duration: 200 } }
+
+        VideoOutput {
+            id: previewOut
+            anchors.fill: parent
+            fillMode: VideoOutput.PreserveAspectCrop
+            transform: Scale { origin.x: previewOut.width / 2; xScale: -1 }
+            VideoSurface {
+                videoSink: previewOut.videoSink
+                channel: win.preview || ({})
+            }
+        }
+        // Rounded as Avatar does it.
+        ShaderEffectSource {
+            id: selfSource
+            anchors.fill: parent
+            sourceItem: previewOut
+            hideSource: true
+            live: true
+            visible: false
+        }
+        MultiEffect {
+            anchors.fill: parent
+            source: selfSource
+            maskEnabled: true
+            maskSource: selfMask
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 1.0
+        }
+        Item {
+            id: selfMask
+            anchors.fill: parent
+            layer.enabled: true
+            layer.smooth: true
+            layer.samples: 4
+            visible: false
+            Rectangle { anchors.fill: parent; radius: 12; antialiasing: true }
+        }
+    }
+
+    Popup {
+        id: devices
+        x: 16
+        width: win.width - 32
+        y: win.height - height - controls.height - 8
+        padding: 14
+        background: Rectangle {
+            color: Theme.surface
+            radius: 12
+            border.color: Theme.hairline
+        }
+
+        contentItem: ColumnLayout {
             spacing: 8
 
             AudioLevelRow {
@@ -214,50 +555,6 @@ ApplicationWindow {
                 onVolumePicked: (v) => App.audio.setPlaybackVolume(v)
                 onMuteToggled: (m) => App.audio.setPlaybackMuted(m)
             }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 16
-
-            Item { Layout.fillWidth: true }
-
-            // Retry after a failure, in the same window - the new call's
-            // <Outgoing> row spawns its own.
-            CallButton {
-                visible: win.state === "failed"
-                iconPath: Icons.call
-                fill: Theme.positive
-                text: qsTr("Call again")
-                onClicked: {
-                    App.calls.start(win.account, win.peer)
-                    App.calls.dismiss(win.account, win.sid)
-                }
-            }
-
-            // Camera on/off, shown once this call has video negotiated. Turning
-            // the camera off keeps the preview ring, so sendingVideo stays true.
-            CallButton {
-                objectName: "cameraToggle"
-                visible: !win.terminal && win.sendingVideo
-                iconPath: win.cameraOn ? Icons.videoCam : Icons.videoCamOff
-                fill: win.cameraOn ? Theme.positive : Theme.textDim
-                text: win.cameraOn ? qsTr("Camera off") : qsTr("Camera on")
-                onClicked: {
-                    win.cameraOn = !win.cameraOn
-                    App.calls.setVideo(win.account, win.sid, win.cameraOn)
-                }
-            }
-
-            CallButton {
-                iconPath: win.terminal ? Icons.close : Icons.callEnd
-                fill: win.terminal ? Theme.textDim : Theme.negative
-                text: win.terminal ? qsTr("Close")
-                                   : (win.ringingIn ? qsTr("Decline") : qsTr("Hang up"))
-                onClicked: win.leave()
-            }
-
-            Item { Layout.fillWidth: true }
         }
     }
 }

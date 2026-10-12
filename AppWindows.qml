@@ -59,11 +59,11 @@ QtObject {
         })
     }
 
-    // One call window at a time, as tacky's Tk GUI does it: it keeps a single
-    // toplevel and rewires it per call. Here windows follow rows, so the same
-    // effect comes from one row at a time holding the screen - "acc\nsid", or
-    // "" for none. A ringing call is not in the running; it has the dialog, and
-    // only takes the window once answered.
+    // One live call window at a time, as tacky's Tk GUI does it: it keeps a
+    // single toplevel and rewires it per call. Here windows follow rows, so the
+    // same effect comes from one row at a time holding the screen - "acc\nsid",
+    // or "" for none. A ringing call is not in the running: its window shows
+    // while it rings regardless, and takes the screen once answered.
     property string _liveCall: ""
 
     // Named rather than "not ringing and not terminal": `terminal` is a second
@@ -74,10 +74,33 @@ QtObject {
 
     function _callKey(account, sid) { return account + "\n" + sid }
 
-    property Instantiator _calls: Instantiator {
+    // Android runs calls on its native CallActivity, so no windows there: a row
+    // that ended is dismissed here, as its window would have.
+    readonly property bool _nativeCalls: Qt.platform.os === "android"
+
+    property Instantiator _nativeCallRows: Instantiator {
+        active: mgr._nativeCalls
         model: App.calls
 
-        // Both of a row's windows, told apart by which one is visible.
+        delegate: QtObject {
+            id: nativeRow
+            required property string sid
+            required property string account
+            required property bool terminal
+
+            function settle() {
+                if (nativeRow.terminal)
+                    Qt.callLater(App.calls.dismiss, nativeRow.account, nativeRow.sid)
+            }
+            onTerminalChanged: nativeRow.settle()
+            Component.onCompleted: nativeRow.settle()
+        }
+    }
+
+    property Instantiator _calls: Instantiator {
+        active: !mgr._nativeCalls
+        model: App.calls
+
         delegate: QtObject {
             id: row
 
@@ -94,11 +117,12 @@ QtObject {
             required property bool sendingVideo
             required property var remoteVideo
             required property var preview
+            required property double activeSince
 
             readonly property string key: mgr._callKey(row.account, row.sid)
 
-            // A call we placed wants the window at once; one we answered takes
-            // it off the dialog.
+            // A call we placed wants the screen at once; one rung at us, once
+            // answered.
             function claim() {
                 if (mgr._liveStates.indexOf(row.state) >= 0)
                     mgr._liveCall = row.key
@@ -106,16 +130,8 @@ QtObject {
             onStateChanged: row.claim()
             Component.onCompleted: row.claim()
 
-            property IncomingCallDialog dialog: IncomingCallDialog {
-                visible: row.state === "incoming"
-                sid: row.sid
-                account: row.account
-                peer: row.peer
-                offeredVideo: row.offeredVideo
-            }
-
             property CallWindow window: CallWindow {
-                visible: mgr._liveCall === row.key
+                visible: row.state === "incoming" || mgr._liveCall === row.key
                 sid: row.sid
                 account: row.account
                 peer: row.peer
@@ -129,6 +145,7 @@ QtObject {
                 sendingVideo: row.sendingVideo
                 remoteVideo: row.remoteVideo
                 preview: row.preview
+                activeSince: row.activeSince
             }
         }
     }
@@ -138,6 +155,7 @@ QtObject {
     // its call has a phase to show - and there is no one-at-a-time rule: two
     // rooms' calls are two walls, not two views of one call.
     property Instantiator _groupCalls: Instantiator {
+        active: !mgr._nativeCalls
         model: App.groupCalls
 
         delegate: QtObject {
@@ -151,8 +169,27 @@ QtObject {
         }
     }
 
+    // Likewise for group calls and GroupCallActivity.
+    property Instantiator _nativeGroupCalls: Instantiator {
+        active: mgr._nativeCalls
+        model: App.groupCalls
+
+        delegate: QtObject {
+            id: nativeGroup
+            required property GroupCall call
+            readonly property bool over: nativeGroup.call.phase === "ended"
+            onOverChanged: if (nativeGroup.over) Qt.callLater(nativeGroup.call.dismiss)
+        }
+    }
+
     // The banner's way back to a call's window from the chat.
     function raiseGroupCall(account, jid) {
+        if (mgr._nativeCalls) {
+            const call = App.groupCalls.callFor(account, jid)
+            if (call && call.inCall)
+                App.showGroupCallScreen(account, call.callJid)
+            return null
+        }
         const n = mgr._groupCalls.count
         for (let i = 0; i < n; ++i) {
             const row = mgr._groupCalls.objectAt(i)
@@ -165,7 +202,9 @@ QtObject {
 
     // Someone calling a chat of ours: the dialog rings, and answers the invite
     // stored in that chat. Held like any other spawned window.
+    // On Android the service rings it as a notification.
     property Connections _groupInvites: Connections {
+        enabled: !mgr._nativeCalls
         target: App.groupCalls
         function onInvited(account, chat, timestamp, room, from, video) {
             mgr._track(mgr._groupInviteComp.createObject(null, {

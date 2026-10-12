@@ -117,6 +117,9 @@ public:
     // storage nothing else can reach; elsewhere logFolder() is the way to it.
     Q_INVOKABLE void shareLog();
 
+    // Android only: calls run on a native screen there, not in a window.
+    Q_INVOKABLE void showGroupCallScreen(const QString &acc, const QString &room);
+
     // What the command line asked of the logger, applied when the backend
     // starts. Each flag owns its own setting for the run: where one is given
     // the stored preference is left alone, which is the rule the Tk client

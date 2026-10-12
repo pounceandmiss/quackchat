@@ -33,6 +33,9 @@ private slots:
     void warningIsNotTerminalAndActiveClearsIt();
     void recoveredMediaClearsTheWarning();
     void failedKeepsReason();
+    void endedKeepsWhy();
+    void activeKeepsWhenItStarted();
+    void outgoingVideoIsKnownFromTheStart();
     void terminalRowsSurviveUntilDismissed();
     void ignoresEventsForUnknownSid();
     void ignoresDuplicateSid();
@@ -48,6 +51,7 @@ private slots:
     void connEventsDoNotSwallowCallsEvents();
     void snapshotSeedsRowsAfterAReattach();
     void snapshotMapsTackysStateWords();
+    void snapshotCarriesVideoAndWhenItWentActive();
     void snapshotEndsRowsItDoesNotMention();
     void rowsBornWhileTheListWasOutSurviveTheSweep();
     void snapshotDoesNotWalkARowBackwards();
@@ -173,6 +177,40 @@ void TestCalls::failedKeepsReason() {
     QCOMPARE(m.data(m.index(0), CallsModel::ReasonRole).toString(),
              QString("media path failed (ICE/DTLS)"));
     QVERIFY(m.data(m.index(0), CallsModel::TerminalRole).toBool());
+}
+
+void TestCalls::endedKeepsWhy() {
+    CallsModel m;
+    feed(m, R"(["event","calls","Incoming",
+        {"acc":"me@host","sid":"tk-6","from":"friend@host","video":false}])");
+    feed(m, R"(["event","calls","Ended",
+        {"acc":"me@host","sid":"tk-6","reason":"elsewhere"}])");
+    QCOMPARE(state(m), QString("ended"));
+    QCOMPARE(m.data(m.index(0), CallsModel::ReasonRole).toString(), QString("elsewhere"));
+}
+
+// An <Active> after an ICE restart keeps the first one's time.
+void TestCalls::activeKeepsWhenItStarted() {
+    CallsModel m;
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-7","to":"friend@host","video":false}])");
+    QCOMPARE(m.data(m.index(0), CallsModel::ActiveSinceRole).toLongLong(), 0);
+    feed(m, R"(["event","calls","Active",
+        {"acc":"me@host","sid":"tk-7","since":1700000000000000}])");
+    QCOMPARE(m.data(m.index(0), CallsModel::ActiveSinceRole).toLongLong(),
+             1700000000000000LL);
+    feed(m, R"(["event","calls","Active",
+        {"acc":"me@host","sid":"tk-7","since":1700000000000000}])");
+    QCOMPARE(m.data(m.index(0), CallsModel::ActiveSinceRole).toLongLong(),
+             1700000000000000LL);
+}
+
+// Known before any track arrives, so the window can size for it.
+void TestCalls::outgoingVideoIsKnownFromTheStart() {
+    CallsModel m;
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-8","to":"friend@host","video":true}])");
+    QVERIFY(m.data(m.index(0), CallsModel::OfferedVideoRole).toBool());
 }
 
 // The window shows the outcome, so nothing else may prune the row.
@@ -519,6 +557,24 @@ void TestCalls::snapshotSeedsRowsAfterAReattach() {
     QCOMPARE(m.data(m.index(1), CallsModel::DirectionRole).toString(),
              QString("incoming"));
     QCOMPARE(state(m, 1), QString("incoming"));
+}
+
+void TestCalls::snapshotCarriesVideoAndWhenItWentActive() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([
+        {"sid":"tk-1","peer":"friend@host","direction":"incoming",
+         "state":"ringing","peer_ringing":false,
+         "video_local":true,"video_remote":true,"active_since":0},
+        {"sid":"tk-2","peer":"other@host","direction":"outgoing",
+         "state":"active","peer_ringing":false,
+         "video_local":false,"video_remote":false,"active_since":1700000000000000}])");
+    QVERIFY(m.data(m.index(0), CallsModel::OfferedVideoRole).toBool());
+    QVERIFY(!m.data(m.index(1), CallsModel::OfferedVideoRole).toBool());
+    QCOMPARE(m.data(m.index(1), CallsModel::ActiveSinceRole).toLongLong(),
+             1700000000000000LL);
 }
 
 // tacky's "ringing" is the callee being alerted, ours is a peer device alerting

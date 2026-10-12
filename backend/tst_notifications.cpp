@@ -139,6 +139,22 @@ private slots:
     }
 
     // The chat the user picked, split back out of the key.
+    void missedCallBecomesItsOwnAlert() {
+        feed(R"(["event","notify","MissedCall",{"acc":"me@h","jid":"ann@h",
+              "nick":"Ann","timestamp":1700000000,"video":true}])");
+        QCOMPARE(m_notifier->shown.size(), 1);
+        const auto &s = m_notifier->shown.at(0);
+        QVERIFY(s.key != key("me@h", "ann@h"));
+        QCOMPARE(s.alert.nick, QStringLiteral("Ann"));
+        QCOMPARE(s.alert.body, QStringLiteral("Missed video call"));
+
+        QSignalSpy spy(m_controller, &NotificationController::activated);
+        emit m_notifier->activated(s.key);
+        QCOMPARE(spy.size(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QStringLiteral("me@h"));
+        QCOMPARE(spy.at(0).at(1).toString(), QStringLiteral("ann@h"));
+    }
+
     void activationNamesTheChat() {
         QSignalSpy spy(m_controller, &NotificationController::activated);
         emit m_notifier->activated(key("me@h", "ann@h"));

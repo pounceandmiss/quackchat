@@ -6,11 +6,11 @@ import QtQuick.Layouts
 import Quack
 
 // A room's call: a wall of tiles, one per participant and one for us, over a
-// bar of controls. AppWindows builds one per GroupCallsModel row and shows it
-// while the row's phase is not idle, so this decides nothing about the call -
-// it reads `call` and calls back into it.
-//
-// Its own dark stage, whatever the theme: video reads best on near-black.
+// bar of controls, laid out as CallWindow and Android's GroupCallActivity are.
+// Tiles stay dark whatever the theme: they are mostly video. AppWindows builds
+// one per GroupCallsModel row and shows it while the row's phase is not idle,
+// so this decides nothing about the call - it reads `call` and calls back into
+// it.
 ApplicationWindow {
     id: win
     objectName: "groupCallWindow"
@@ -23,20 +23,27 @@ ApplicationWindow {
     readonly property bool ended: win.phase === "ended"
     readonly property int others: win.call ? win.call.participants.count : 0
 
-    // The stage's own palette.
-    readonly property color stage: "#101214"
-    readonly property color bar: "#181b1f"
-    readonly property color pill: "#2a2e35"
-    readonly property color pillHover: "#363b43"
-    readonly property color ink: "#f2f4f7"
-    readonly property color inkDim: "#9aa3ae"
+    readonly property color bar: Theme.surface
+    readonly property color pill: Theme.surface
+    readonly property color ink: Theme.textPrimary
+    readonly property color inkDim: Theme.textDim
+
+    property string displayName: ""
+    Component.onCompleted: {
+        const list = win.call ? App.chatListFor(win.call.account) : null
+        const entry = list ? list.entryFor(win.room) : ({})
+        win.displayName = entry.name ?? ""
+    }
+
+    function fillFor(on) { return on ? Theme.accent : Theme.surface }
+    function glyphFor(on) { return on ? Theme.textOnAccent : Theme.textPrimary }
 
     width: Theme.mobile ? Screen.width : 900
     height: Theme.mobile ? Screen.height : 620
     minimumWidth: Theme.mobile ? 0 : 520
     minimumHeight: Theme.mobile ? 0 : 400
     title: qsTr("Group call — %1").arg(win.room)
-    color: win.stage
+    color: Theme.background
 
     Shortcut { sequence: "Ctrl+T"; onActivated: Theme.cycle() }
     Shortcut { sequence: "Escape"; onActivated: win.leave() }
@@ -89,93 +96,65 @@ ApplicationWindow {
         anchors.bottomMargin: SafeArea.margins.bottom
         spacing: 0
 
-        // Header: the room, who is here, and how long.
-        Item {
+        // Header: the chat, who is here, and how long.
+        ColumnLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 56
+            Layout.topMargin: 18
+            Layout.bottomMargin: 12
+            Layout.leftMargin: 20
+            Layout.rightMargin: 20
+            spacing: 4
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 20
-                anchors.rightMargin: 20
-                spacing: 12
-
-                Rectangle {
-                    Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4
-                    color: win.live ? Theme.positive : win.inkDim
-                    SequentialAnimation on opacity {
-                        running: win.phase === "joining"
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.3; duration: 600 }
-                        NumberAnimation { to: 1; duration: 600 }
-                    }
+            Text {
+                Layout.fillWidth: true
+                text: win.displayName !== "" ? win.displayName : win.room
+                color: win.ink
+                font.pixelSize: 20
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+            }
+            Row {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 6
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !win.live
+                    text: win.phase === "joining" ? qsTr("Joining…")
+                        : win.ended ? qsTr("Call ended") : ""
+                    color: win.inkDim
+                    font.pixelSize: 14
+                }
+                Glyph {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: win.live
+                    path: Icons.group
+                    color: win.inkDim
+                    size: 16
                 }
                 Text {
-                    Layout.fillWidth: true
-                    text: win.room
-                    color: win.ink
-                    font.pixelSize: 15
-                    font.bold: true
-                    elide: Text.ElideMiddle
+                    objectName: "groupCallCount"
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: win.live
+                    text: win.call ? Math.max(win.call.count,
+                                              win.others + (win.live ? 1 : 0)) : 0
+                    color: win.inkDim
+                    font.pixelSize: 14
+                }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: win.live
+                    text: "·"
+                    color: win.inkDim
+                    font.pixelSize: 14
                 }
                 Text {
                     objectName: "groupCallClock"
+                    anchors.verticalCenter: parent.verticalCenter
                     visible: win.live
                     text: win.clock(win.now - (win.call ? win.call.startedAt : 0))
                     color: win.inkDim
                     font.pixelSize: 14
-                    font.family: "monospace"
                 }
-                Rectangle {
-                    Layout.preferredWidth: peopleRow.implicitWidth + 20
-                    Layout.preferredHeight: 28
-                    radius: 14
-                    color: win.pill
-                    Row {
-                        id: peopleRow
-                        anchors.centerIn: parent
-                        spacing: 6
-                        Glyph {
-                            anchors.verticalCenter: parent.verticalCenter
-                            path: Icons.group
-                            color: win.inkDim
-                            size: 16
-                        }
-                        Text {
-                            objectName: "groupCallCount"
-                            anchors.verticalCenter: parent.verticalCenter
-                            // Everyone announcing the call, us included once
-                            // we are in; until then what the room says.
-                            text: win.call ? Math.max(win.call.count,
-                                                      win.others + (win.live ? 1 : 0)) : 0
-                            color: win.ink
-                            font.pixelSize: 13
-                            font.bold: true
-                        }
-                    }
-                }
-            }
-        }
-
-        // <Warning> is informational: the call goes on around it.
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.leftMargin: 20
-            Layout.rightMargin: 20
-            Layout.bottomMargin: 8
-            visible: win.call && win.call.warning !== ""
-            Layout.preferredHeight: warnText.implicitHeight + 14
-            radius: 8
-            color: Qt.rgba(Theme.warning.r, Theme.warning.g, Theme.warning.b, 0.16)
-            Text {
-                id: warnText
-                anchors.fill: parent
-                anchors.margins: 7
-                anchors.leftMargin: 12
-                text: win.call ? win.call.warning : ""
-                color: Theme.warning
-                font.pixelSize: 12
-                wrapMode: Text.WordWrap
             }
         }
 
@@ -336,10 +315,9 @@ ApplicationWindow {
         }
 
         // Controls: what you send, who is here, and the way out on the right.
-        Rectangle {
+        Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 96
-            color: win.bar
+            Layout.preferredHeight: 104
 
             RowLayout {
                 anchors.centerIn: parent
@@ -348,19 +326,17 @@ ApplicationWindow {
                 CallButton {
                     objectName: "groupCallMic"
                     iconPath: App.audio.captureMuted ? Icons.micOff : Icons.mic
-                    fill: App.audio.captureMuted ? Theme.negative : win.pill
-                    glyphColor: win.ink
+                    fill: win.fillFor(App.audio.captureMuted)
+                    glyphColor: win.glyphFor(App.audio.captureMuted)
                     captionColor: win.inkDim
-                    diameter: 48
                     text: App.audio.captureMuted ? qsTr("Unmute") : qsTr("Mute")
                     onClicked: App.audio.setCaptureMuted(!App.audio.captureMuted)
                 }
                 CallButton {
                     iconPath: App.audio.playbackMuted ? Icons.volumeOff : Icons.volumeUp
-                    fill: App.audio.playbackMuted ? Theme.negative : win.pill
-                    glyphColor: win.ink
+                    fill: win.fillFor(App.audio.playbackMuted)
+                    glyphColor: win.glyphFor(App.audio.playbackMuted)
                     captionColor: win.inkDim
-                    diameter: 48
                     text: qsTr("Speaker")
                     onClicked: App.audio.setPlaybackMuted(!App.audio.playbackMuted)
                 }
@@ -370,20 +346,18 @@ ApplicationWindow {
                     objectName: "groupCallCamera"
                     visible: win.call ? win.call.video : false
                     iconPath: win.call && win.call.cameraOn ? Icons.videoCam : Icons.videoCamOff
-                    fill: win.call && win.call.cameraOn ? win.pill : Theme.negative
-                    glyphColor: win.ink
+                    fill: win.fillFor(!(win.call && win.call.cameraOn))
+                    glyphColor: win.glyphFor(!(win.call && win.call.cameraOn))
                     captionColor: win.inkDim
-                    diameter: 48
-                    text: win.call && win.call.cameraOn ? qsTr("Stop video") : qsTr("Start video")
+                    text: qsTr("Camera")
                     onClicked: win.call.setVideo(!win.call.cameraOn)
                 }
                 CallButton {
                     objectName: "groupCallInvite"
                     iconPath: Icons.personAdd
-                    fill: win.pill
-                    glyphColor: win.ink
+                    fill: win.fillFor(false)
+                    glyphColor: win.glyphFor(false)
                     captionColor: win.inkDim
-                    diameter: 48
                     enabled: win.live
                     opacity: enabled ? 1 : 0.5
                     text: qsTr("Invite")
@@ -395,14 +369,34 @@ ApplicationWindow {
                 CallButton {
                     objectName: "groupCallLeave"
                     iconPath: win.ended ? Icons.close : Icons.callEnd
-                    fill: win.ended ? win.pill : Theme.negative
-                    glyphColor: win.ink
+                    fill: win.ended ? Theme.textDim : Theme.negative
+                    glyphColor: "white"
                     captionColor: win.inkDim
-                    diameter: 48
                     text: win.ended ? qsTr("Close") : qsTr("Leave")
                     onClicked: win.leave()
                 }
             }
+        }
+    }
+
+    // The call's current trouble, gone when it is.
+    Rectangle {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: 76 + SafeArea.margins.top
+        visible: win.call !== null && win.call.warning !== "" && !win.ended
+        width: Math.min(warnText.implicitWidth + 28, win.width - 40)
+        height: warnText.implicitHeight + 12
+        radius: height / 2
+        color: Qt.rgba(0.12, 0.12, 0.12, 0.8)
+        Text {
+            id: warnText
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, win.width - 68)
+            text: win.call ? win.call.warning : ""
+            color: "white"
+            font.pixelSize: 12
+            elide: Text.ElideRight
         }
     }
 

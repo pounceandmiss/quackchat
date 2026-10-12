@@ -14,6 +14,11 @@ QString keyFor(const QString &acc, const QString &jid) {
     return acc + kKeySep + jid;
 }
 
+// Apart from the chat's alert, so reading the chat leaves it up.
+QString missedKeyFor(const QString &acc, const QString &jid) {
+    return keyFor(acc, jid) + kKeySep + QStringLiteral("call");
+}
+
 } // namespace
 
 NotificationController::NotificationController(QObject *parent)
@@ -49,7 +54,8 @@ void NotificationController::setNotifier(Notifier *notifier) {
         const int sep = key.indexOf(kKeySep);
         if (sep < 0)
             return;
-        emit activated(key.left(sep), key.mid(sep + 1));
+        // A missed call's key carries a suffix.
+        emit activated(key.left(sep), key.mid(sep + 1).section(kKeySep, 0, 0));
     });
 }
 
@@ -63,7 +69,9 @@ void NotificationController::handleEvent(const QString &module,
                           && name == QLatin1String("Notify");
     const bool isOwnRead = module == QLatin1String("message")
                            && name == QLatin1String("OwnRead");
-    if (!isNotify && !isOwnRead)
+    const bool isMissedCall = module == QLatin1String("notify")
+                              && name == QLatin1String("MissedCall");
+    if (!isNotify && !isOwnRead && !isMissedCall)
         return;
 
     const QVariantMap a = args.toMap();
@@ -85,6 +93,13 @@ void NotificationController::handleEvent(const QString &module,
     alert.nick = a.value(QStringLiteral("nick")).toString();
     if (alert.nick.isEmpty())
         alert.nick = jid;
+
+    if (isMissedCall) {
+        alert.body = a.value(QStringLiteral("video")).toBool() ? tr("Missed video call")
+                                                               : tr("Missed call");
+        m_notifier->show(missedKeyFor(acc, jid), alert);
+        return;
+    }
     alert.body = a.value(QStringLiteral("body")).toString();
     alert.unread = a.value(QStringLiteral("unread")).toInt();
     alert.mention = a.value(QStringLiteral("mention")).toBool();

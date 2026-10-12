@@ -211,6 +211,20 @@ void AppController::shareLog() {
 #endif
 }
 
+void AppController::showGroupCallScreen(const QString &acc, const QString &room) {
+#ifdef Q_OS_ANDROID
+    QJniObject::callStaticMethod<void>(
+        "org/qtproject/example/quackchat/GroupCallActivity", "show",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+        QNativeInterface::QAndroidApplication::context().object(),
+        QJniObject::fromString(acc).object<jstring>(),
+        QJniObject::fromString(room).object<jstring>());
+#else
+    Q_UNUSED(acc)
+    Q_UNUSED(room)
+#endif
+}
+
 void AppController::forget(const QString &acc) {
     // deleteLater rather than delete: a view bound to one of these is still
     // holding it while the removal is being announced.

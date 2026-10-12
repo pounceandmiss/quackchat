@@ -307,9 +307,8 @@ private slots:
     // that no C++ test can reach, so drive canned events through the real
     // singleton and look at what is actually on screen.
     //
-    // A ringing call is the dialog's, not the call window's - the window only
-    // appears once there is a call in it, as tacky's Tk GUI does it.
-    void ringingCallShowsTheDialogUntilItIsAnswered() {
+    // A call keeps one window from the ring on.
+    void ringingCallsWindowIsTheCallOnceAnswered() {
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
@@ -323,19 +322,17 @@ private slots:
                         {"from", "friend@example.com"}});
         QCoreApplication::processEvents();
 
-        QVERIFY2(visibleWindowTitled("Incoming Call"),
-                 "no dialog appeared for the ringing call");
-        QVERIFY2(!visibleWindowTitled("Call —"),
-                 "a call window appeared for a call still ringing");
+        QWindow *ringing = visibleWindowTitled("Incoming call from friend@example.com");
+        QVERIFY2(ringing, "no window appeared for the ringing call");
+        QVERIFY(!visibleWindowTitled("Call —"));
         QCOMPARE(visibleWindows().size(), before + 1);
 
-        // Answering swaps one for the other: the dialog has nothing left to
-        // ask, and the call is now a call.
         app->calls()->accept("me@example.com", "tk-qml");
         QCoreApplication::processEvents();
-        QVERIFY(!visibleWindowTitled("Incoming Call"));
-        QWindow *call = visibleWindowTitled("friend@example.com");
-        QVERIFY2(call, "answering did not raise the call window");
+        QVERIFY(!visibleWindowTitled("Incoming call"));
+        QWindow *call = visibleWindowTitled("Call — friend@example.com");
+        QVERIFY2(call, "answering did not make the window the call's");
+        QCOMPARE(call, ringing);
         QCOMPARE(visibleWindows().size(), before + 1);
 
         // Dismissing the row is what closes it - the window owns no lifetime
@@ -347,8 +344,8 @@ private slots:
         e.assertNoErrors();
     }
 
-    // Declining never shows a call window, so nothing is left holding the row
-    // open: it has to clear itself or it sits in the model unseen forever.
+    // A declined call's window goes at once, so the row has to clear itself
+    // or it sits in the model unseen forever.
     void decliningARingingCallClearsTheRow() {
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -362,7 +359,7 @@ private slots:
                                        {"sid", "tk-decline"},
                                        {"from", "friend@example.com"}});
         QCoreApplication::processEvents();
-        QVERIFY(visibleWindowTitled("Incoming Call"));
+        QVERIFY(visibleWindowTitled("Incoming call"));
 
         calls->reject("me@example.com", "tk-decline");
         QCoreApplication::processEvents();
@@ -467,12 +464,10 @@ QtObject {
     }
 
     // Calling one of your own accounts from another is one session but two
-    // calls, and this app is on both ends of it. What is on screen is one call
-    // window and one ringing dialog - never two call windows on the same spot,
-    // which is unreadable - and, the bug this pins, one end finishing says
-    // nothing about the other: a sibling device answering ends the callee end
-    // while the caller end is up and audible.
-    void bothEndsOfACallBetweenOwnAccountsShowOneWindowAndOneDialog() {
+    // calls, and this app is on both ends of it: a window per end. The bug this
+    // pins: a sibling device answering ends the callee end while the caller end
+    // is up and audible.
+    void bothEndsOfACallBetweenOwnAccountsShowAWindowEach() {
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
@@ -488,14 +483,13 @@ QtObject {
             QVariantMap{{"acc", "b@host"}, {"sid", "tk-s"}, {"from", "a@host"}});
         QCoreApplication::processEvents();
 
-        // One sid, two rows. The end that placed the call holds the window; the
-        // end being rung holds the dialog.
+        // One sid, two rows, a window each.
         QCOMPARE(calls->rowCount(), 2);
         QWindow *window = visibleWindowTitled("Call —");
         QVERIFY2(window, "no call window for the calling end");
         QCOMPARE(window->title(), QStringLiteral("Call — b@host"));
-        QVERIFY2(visibleWindowTitled("Incoming Call"),
-                 "no dialog for the end being rung");
+        QVERIFY2(visibleWindowTitled("Incoming call from a@host"),
+                 "no window for the end being rung");
         QCOMPARE(visibleWindows().size(), before + 2);
 
         // The answering end goes away (another device took it). The calling end
@@ -510,7 +504,7 @@ QtObject {
                  QString("active"));
         QVERIFY2(visibleWindowTitled("Call — b@host"),
                  "the live call's window was closed");
-        QVERIFY(!visibleWindowTitled("Incoming Call"));
+        QVERIFY(!visibleWindowTitled("Incoming call"));
 
         calls->dismiss("a@host", "tk-s");
         QCoreApplication::processEvents();
@@ -554,25 +548,22 @@ QtObject {
         QVERIFY(self);
         QCOMPARE(findItems(win->contentItem(), "groupCallTile").size(), 0);
         QVERIFY(self->width() > 0 && self->height() > 0);
+        // Tiles animate into place as the window settles.
+        QTRY_VERIFY(itemRect(wall, win->contentItem())
+                        .contains(itemRect(self, win->contentItem())));
         const QRectF wallRect = itemRect(wall, win->contentItem());
-        QVERIFY(wallRect.contains(itemRect(self, win->contentItem())));
 
         GroupCallsModel *gc = app->groupCalls();
-        gc->handleEvent("groupcall", "Joined",
-                        QVariantMap{{"acc", "me@example.com"},
-                                    {"jid", "room@muc.example.com"}});
-        gc->handleEvent("groupcall", "Session",
+        gc->handleEvent("groupcall", "State",
                         QVariantMap{{"acc", "me@example.com"},
                                     {"jid", "room@muc.example.com"},
-                                    {"peer", "bob@example.com/x"},
-                                    {"sid", "tk-b"}, {"video", false}});
-        gc->handleEvent("groupcall", "Session",
-                        QVariantMap{{"acc", "me@example.com"},
-                                    {"jid", "room@muc.example.com"},
-                                    {"peer", "cat@example.com/x"},
-                                    {"sid", "tk-c"}, {"video", false}});
-        gc->handleEvent("calls", "Active",
-                        QVariantMap{{"acc", "me@example.com"}, {"sid", "tk-b"}});
+                                    {"chat", "room@muc.example.com"},
+                                    {"phase", "live"}, {"count", 3},
+                                    {"participants", QVariantList{
+                                        QVariantMap{{"nick", "bob"}, {"jid", "bob@example.com"},
+                                                    {"joined", true}, {"leg", "active"}},
+                                        QVariantMap{{"nick", "cat"}, {"jid", "cat@example.com"},
+                                                    {"joined", true}, {"leg", "connecting"}}}}});
         QCoreApplication::processEvents();
 
         // Three tiles, all inside the wall, none on top of another, and all of
@@ -590,21 +581,27 @@ QtObject {
             QTRY_VERIFY2(wallRect.contains(itemRect(t, win->contentItem())),
                          "a tile lies outside the wall");
         }
-        for (int i = 0; i < tiles.size(); ++i)
-            for (int j = i + 1; j < tiles.size(); ++j)
-                QVERIFY2(!itemRect(tiles.at(i), win->contentItem())
-                              .intersects(itemRect(tiles.at(j), win->contentItem())),
-                         "two tiles overlap");
+        const auto apart = [&] {
+            for (int i = 0; i < tiles.size(); ++i)
+                for (int j = i + 1; j < tiles.size(); ++j)
+                    if (itemRect(tiles.at(i), win->contentItem())
+                            .intersects(itemRect(tiles.at(j), win->contentItem())))
+                        return false;
+            return true;
+        };
+        QTRY_VERIFY2(apart(), "two tiles overlap");
 
         QQuickItem *count = findItem(win->contentItem(), "groupCallCount");
         QVERIFY(count);
         QCOMPARE(count->property("text").toString(), QString("3"));
 
         // The call ending on us keeps the window up with the reason.
-        gc->handleEvent("groupcall", "Left",
+        gc->handleEvent("groupcall", "State",
                         QVariantMap{{"acc", "me@example.com"},
                                     {"jid", "room@muc.example.com"},
-                                    {"reason", "left the room"}});
+                                    {"chat", "room@muc.example.com"},
+                                    {"phase", "ended"}, {"reason", "left the room"},
+                                    {"count", 0}, {"participants", QVariantList{}}});
         QCoreApplication::processEvents();
         QCOMPARE(call->phase(), QString("ended"));
         QVERIFY(visibleWindowTitled("Group call — room@muc.example.com"));
@@ -635,9 +632,12 @@ QtObject {
         GroupCall *call = app->groupCalls()->callFor("me@example.com",
                                                      "room@muc.example.com");
         call->join(true);
-        app->groupCalls()->handleEvent("groupcall", "Joined",
+        app->groupCalls()->handleEvent("groupcall", "State",
                                        QVariantMap{{"acc", "me@example.com"},
-                                                   {"jid", "room@muc.example.com"}});
+                                                   {"jid", "room@muc.example.com"},
+                                                   {"chat", "room@muc.example.com"},
+                                                   {"phase", "live"}, {"count", 1}});
+        QCOMPARE(call->phase(), QString("live"));
         QCoreApplication::processEvents();
         QWindow *win = visibleWindowTitled("Group call — room@muc.example.com");
         QVERIFY(win);

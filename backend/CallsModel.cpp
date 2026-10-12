@@ -41,6 +41,7 @@ QVariant CallsModel::data(const QModelIndex &index, int role) const {
     case SendingVideoRole:    return c.sendingVideo;
     case RemoteVideoRole:     return c.remoteVideo;
     case PreviewRole:         return c.preview;
+    case ActiveSinceRole:     return c.activeSince;
     default:            return {};
     }
 }
@@ -58,7 +59,8 @@ QHash<int, QByteArray> CallsModel::roleNames() const {
             {HasRemoteVideoRole, "hasRemoteVideo"},
             {SendingVideoRole, "sendingVideo"},
             {RemoteVideoRole, "remoteVideo"},
-            {PreviewRole, "preview"}};
+            {PreviewRole, "preview"},
+            {ActiveSinceRole, "activeSince"}};
 }
 
 bool CallsModel::isTerminal(const QString &state) {
@@ -160,8 +162,10 @@ void CallsModel::handleEvent(const QString &module, const QString &name,
     qCDebug(lcCalls).noquote() << "event" << name << acc << sid << a;
 
     if (name == QLatin1String("Outgoing")) {
-        insertCall({sid, acc, a.value(QStringLiteral("to")).toString(), kOutgoing,
-                    QStringLiteral("calling"), {}, {}});
+        Call c{sid, acc, a.value(QStringLiteral("to")).toString(), kOutgoing,
+               QStringLiteral("calling"), {}, {}};
+        c.offeredVideo = a.value(QStringLiteral("video")).toBool();
+        insertCall(std::move(c));
     } else if (name == QLatin1String("Incoming")) {
         Call c{sid, acc, a.value(QStringLiteral("from")).toString(), kIncoming,
                QStringLiteral("incoming"), {}, {}};
@@ -205,8 +209,17 @@ void CallsModel::handleEvent(const QString &module, const QString &name,
         // mid-call warns and leaves the call up, so the <Active> that follows
         // recovery is the only signal that the warning is stale.
         setField(acc, sid, WarningRole, {});
+        const int i = indexOf(acc, sid);
+        if (i >= 0 && m_calls.at(i).activeSince == 0) {
+            m_calls[i].activeSince = a.value(QStringLiteral("since")).toLongLong();
+            const QModelIndex mi = index(i);
+            emit dataChanged(mi, mi, {ActiveSinceRole});
+        }
         setState(acc, sid, QStringLiteral("active"));
     } else if (name == QLatin1String("Ended")) {
+        // Before the state, so a window reacting to "ended" has it.
+        setField(acc, sid, ReasonRole,
+                 a.value(QStringLiteral("reason")).toString());
         setState(acc, sid, QStringLiteral("ended"));
     } else if (name == QLatin1String("Failed")) {
         setField(acc, sid, ReasonRole,
@@ -314,8 +327,13 @@ void CallsModel::applySnapshot(const QString &acc, const QVariantList &rows,
 
         const int i = indexOf(acc, sid);
         if (i < 0) {
-            insertCall({sid, acc, r.value(QStringLiteral("peer")).toString(),
-                        direction, state, {}, {}, 0});
+            Call c{sid, acc, r.value(QStringLiteral("peer")).toString(),
+                   direction, state, {}, {}};
+            c.offeredVideo = r.value(direction == kIncoming ? QStringLiteral("video_remote")
+                                                            : QStringLiteral("video_local"))
+                                 .toBool();
+            c.activeSince = r.value(QStringLiteral("active_since")).toLongLong();
+            insertCall(std::move(c));
             continue;
         }
         // Forward only. A local move made since the request went out - an

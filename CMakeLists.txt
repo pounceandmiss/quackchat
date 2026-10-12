@@ -289,7 +289,6 @@ qt_add_qml_module(quack
         Avatar.qml
         IconButton.qml
         CallWindow.qml
-        IncomingCallDialog.qml
         GroupCallWindow.qml
         GroupCallTile.qml
         GroupCallInviteDialog.qml

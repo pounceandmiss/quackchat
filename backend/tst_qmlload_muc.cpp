@@ -1046,8 +1046,7 @@ private slots:
         page->setParentItem(win.contentItem());
         QCoreApplication::processEvents();
 
-        // Opening the chat asked after the room's occupants, and there is
-        // nothing to show until they say there is.
+        // Nothing to show until a state says there is.
         GroupCall *call = app->groupCalls()->find("me@example.com",
                                                   "room@muc.example.com");
         QVERIFY2(call, "the page did not ask after the room's call");
@@ -1059,14 +1058,12 @@ private slots:
         QVERIFY(feed);
         const qreal feedTop = itemRect(feed, win.contentItem()).top();
 
-        // Two of the room's occupants announce a call held in it.
-        const QVariantMap inCall{{"state", "announced"}};
-        call->applyOccupants(
-            QVariantList{QVariantMap{{"nick", "bob"}, {"jid", "bob@example.com/x"},
-                                     {"call", inCall}},
-                         QVariantMap{{"nick", "cat"}, {"jid", "cat@example.com/x"},
-                                     {"call", inCall}}},
-            "me");
+        call->applyState(QVariantMap{
+            {"jid", "room@muc.example.com"}, {"chat", "room@muc.example.com"},
+            {"phase", "idle"}, {"count", 2},
+            {"participants", QVariantList{
+                QVariantMap{{"nick", "bob"}, {"jid", "bob@example.com"}, {"leg", "expected"}},
+                QVariantMap{{"nick", "cat"}, {"jid", "cat@example.com"}, {"leg", "expected"}}}}});
         QCoreApplication::processEvents();
         QTRY_VERIFY(banner->isVisible());
         QTRY_VERIFY(banner->height() > 40);

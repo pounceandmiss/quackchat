@@ -77,7 +77,6 @@ GroupCall *GroupCallsModel::callFor(const QString &acc, const QString &jid) {
     m_calls.append(c);
     endInsertRows();
     emit countChanged();
-    c->refresh();
     return c;
 }
 
@@ -87,12 +86,21 @@ void GroupCallsModel::refreshFor(const QString &acc) {
     for (auto it = m_listTokens.begin(); it != m_listTokens.end();)
         it = it->acc == acc ? m_listTokens.erase(it) : std::next(it);
     const int token = m_backend->request(
-        QStringLiteral("groupcall"), QStringLiteral("list"),
+        QStringLiteral("groupcall"), QStringLiteral("get"),
         QVariantMap{{QStringLiteral("acc"), acc}});
     m_listTokens.insert(token, {acc});
-    for (GroupCall *c : std::as_const(m_calls))
-        if (c->account() == acc)
-            c->refresh();
+}
+
+// The chat a state names; else the chat whose call is in that room; else the
+// room itself. Made if need be, so a page opened later finds its banner state.
+GroupCall *GroupCallsModel::callOf(const QString &acc, const QVariantMap &state) {
+    const QString room = state.value(QStringLiteral("jid")).toString();
+    const QString chat = state.value(QStringLiteral("chat")).toString();
+    if (!chat.isEmpty())
+        return callFor(acc, chat);
+    if (GroupCall *c = findByCall(acc, room))
+        return c;
+    return callFor(acc, room);
 }
 
 void GroupCallsModel::handleEvent(const QString &module, const QString &name,
@@ -104,74 +112,45 @@ void GroupCallsModel::handleEvent(const QString &module, const QString &name,
         refreshFor(acc);
         return;
     }
-    if (module == QLatin1String("calls")) {
-        if (a.value(QStringLiteral("sid")).toString().isEmpty())
-            return;
-        for (GroupCall *c : std::as_const(m_calls))
-            if (c->account() == acc && c->handleLegEvent(name, a))
-                return;
-        return;
-    }
-    if (module == QLatin1String("muc")) {
-        // A call's participants and a chat's banner are both read off a
-        // room's occupants, so whichever call reads this room reads it again.
-        const QString room = roomJid(a.value(QStringLiteral("jid")).toString());
-        for (GroupCall *c : std::as_const(m_calls))
-            if (c->account() == acc && c->statusRoom() == room)
-                c->handleRoomEvent(name, a);
-        return;
-    }
     if (module != QLatin1String("groupcall"))
         return;
 
-    const QString room = a.value(QStringLiteral("jid")).toString();
-    const QString chat = a.value(QStringLiteral("chat")).toString();
-    if (name == QLatin1String("Invited")) {
+    if (name == QLatin1String("State")) {
+        if (GroupCall *c = callOf(acc, a))
+            c->applyState(a);
+    } else if (name == QLatin1String("Invited")) {
+        const QString chat = a.value(QStringLiteral("chat")).toString();
         // A row for the chat, so the answer finds its call.
         callFor(acc, chat);
         emit invited(acc, chat, a.value(QStringLiteral("timestamp")).toLongLong(),
-                     room, a.value(QStringLiteral("from")).toString(),
+                     a.value(QStringLiteral("jid")).toString(),
+                     a.value(QStringLiteral("from")).toString(),
                      a.value(QStringLiteral("video")).toBool());
-        return;
+    } else if (name == QLatin1String("StartFailed")) {
+        if (GroupCall *c = callFor(acc, a.value(QStringLiteral("chat")).toString()))
+            c->startFailed(a.value(QStringLiteral("reason")).toString());
     }
-    // The chat the event names; else the chat whose call is in that room;
-    // else the room itself, an in-room call's chat. Either way a chat the
-    // backend speaks of gets a row, so a page opened on it later finds its
-    // banner state already here.
-    GroupCall *c = !chat.isEmpty() ? callFor(acc, chat) : findByCall(acc, room);
-    if (!c)
-        c = callFor(acc, room);
-    if (c)
-        c->handleEvent(name, a);
 }
 
 void GroupCallsModel::handleResult(int token, const QVariant &data) {
-    if (const auto it = m_listTokens.constFind(token); it != m_listTokens.cend()) {
-        const QString acc = it->acc;
-        m_listTokens.erase(it);
-        const QVariantList rows = data.toList();
-        QSet<GroupCall *> listed;
-        for (const QVariant &v : rows) {
-            const QVariantMap r = v.toMap();
-            const QString room = r.value(QStringLiteral("jid")).toString();
-            const QString chat = r.value(QStringLiteral("chat")).toString();
-            if (GroupCall *c = callFor(acc, chat.isEmpty() ? room : chat)) {
-                c->setCallJid(room);
-                c->applyListed(r.value(QStringLiteral("video")).toBool(),
-                               r.value(QStringLiteral("preview")).toMap(),
-                               r.value(QStringLiteral("sessions")).toMap());
-                listed.insert(c);
-            }
-        }
-        // A live call the list omits ended while no UI was attached. A joining one
-        // may postdate the list, so it is left alone.
-        const QList<GroupCall *> calls = m_calls;
-        for (GroupCall *c : calls)
-            if (c->account() == acc && c->phase() == QLatin1String("live")
-                    && !listed.contains(c))
-                c->handleEvent(QStringLiteral("Left"), {});
+    const auto it = m_listTokens.constFind(token);
+    if (it == m_listTokens.cend())
         return;
+    const QString acc = it->acc;
+    m_listTokens.erase(it);
+    QSet<GroupCall *> named;
+    for (const QVariant &v : data.toList()) {
+        const QVariantMap st = v.toMap();
+        if (GroupCall *c = callOf(acc, st)) {
+            c->applyState(st);
+            named.insert(c);
+        }
     }
+    // Left out: ended, or emptied, while no UI was here.
+    const QList<GroupCall *> calls = m_calls;
+    for (GroupCall *c : calls)
+        if (c->account() == acc && !named.contains(c))
+            c->forget();
 }
 
 void GroupCallsModel::handleError(int token, const QString &message) {
