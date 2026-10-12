@@ -7,9 +7,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Rational;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -105,9 +108,16 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
     private Invite invite;
     private boolean leaving;
 
+    private static final Rational PIP_ASPECT = new Rational(3, 4);
+    private boolean inPip;
+    private Boolean pipOn;
+    /** Out of the floating window, either back to full screen or closed. */
+    private boolean leftPip;
+    private boolean stopped;
+
     private TextView title, status, failure, warning;
     private View inviteRow, callRow, cameraControl, flipControl;
-    private ImageButton mute, speaker, camera, flip;
+    private ImageButton mute, speaker, camera, flip, toChat;
     private View speakerControl;
     private TextView muteLabel;
     private TileGrid grid;
@@ -123,6 +133,7 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
         setShowWhenLocked(true);
         setTurnScreenOn(true);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        inPip = isInPictureInPictureMode(); // recreated while floating
         setContentView(R.layout.group_call_activity);
         bindViews();
         GroupCallRegistry.get().addListener(this);
@@ -150,10 +161,83 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
         super.onDestroy();
     }
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        stopped = false;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        leftPip = false;
+    }
+
+    // The floating window swiped away ends the screen, not the call. Android
+    // reports that as leaving picture-in-picture while already stopped, or
+    // (older releases) the other way round; expanding it resumes in between.
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopped = true;
+        if (leftPip) {
+            finish();
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean pip, Configuration config) {
+        super.onPictureInPictureModeChanged(pip, config);
+        if (!pip && stopped) {
+            finish();
+            return;
+        }
+        inPip = pip;
+        leftPip = !pip;
+        render();
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && pipWanted()) {
+            CallScreens.enterPip(this);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        final GroupCallRegistry.Call c = live();
+        if (c != null) {
+            backToChat(c);
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    /** The call we are in, not one only ringing here. */
+    private GroupCallRegistry.Call live() {
+        final GroupCallRegistry.Call c = GroupCallRegistry.get().find(acc, room);
+        return invite == null && c != null && c.live() ? c : null;
+    }
+
+    private boolean pipWanted() {
+        final GroupCallRegistry.Call c = live();
+        return c != null && c.video;
+    }
+
+    /** A video call keeps floating over the chat; a voice call needs no screen. */
+    private void backToChat(GroupCallRegistry.Call c) {
+        final boolean floating = pipWanted() && CallScreens.enterPip(this);
+        CallScreens.openChat(this, acc, c.chat.isEmpty() ? room : c.chat,
+                floating ? () -> {} : this::finish);
+    }
+
     private void take(Intent intent) {
         acc = intent.getStringExtra(Notifications.EXTRA_ACC);
         room = intent.getStringExtra(EXTRA_ROOM);
         leaving = false;
+        pipOn = null;
         invite = null;
         if (intent.hasExtra(EXTRA_CHAT) && GroupCallRegistry.get().find(acc, room) == null) {
             invite = new Invite(acc, room, intent.getStringExtra(EXTRA_CHAT),
@@ -267,6 +351,7 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
         speaker = findViewById(R.id.speaker);
         camera = findViewById(R.id.camera);
         flip = findViewById(R.id.flip);
+        toChat = findViewById(R.id.to_chat);
         speakerControl = findViewById(R.id.speaker_control);
         grid = new TileGrid(this);
         ((FrameLayout) findViewById(R.id.grid_frame)).addView(grid,
@@ -296,11 +381,18 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
             }
         });
         flip.setOnClickListener(v -> CallControls.flipCamera());
+        toChat.setOnClickListener(v -> {
+            final GroupCallRegistry.Call c = live();
+            if (c != null) {
+                backToChat(c);
+            }
+        });
 
         final View content = findViewById(R.id.content);
         final int padTop = content.getPaddingTop();
         final int padBottom = content.getPaddingBottom();
         final int warnTop = ((FrameLayout.LayoutParams) warning.getLayoutParams()).topMargin;
+        final int toChatTop = ((FrameLayout.LayoutParams) toChat.getLayoutParams()).topMargin;
         findViewById(R.id.root).setOnApplyWindowInsetsListener((v, insets) -> {
             final android.graphics.Insets bars = insets.getInsets(
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
@@ -309,12 +401,16 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
             final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) warning.getLayoutParams();
             lp.topMargin = warnTop + bars.top;
             warning.setLayoutParams(lp);
+            final FrameLayout.LayoutParams back = (FrameLayout.LayoutParams) toChat.getLayoutParams();
+            back.topMargin = toChatTop + bars.top;
+            toChat.setLayoutParams(back);
             return insets;
         });
     }
 
     private void render() {
         final GroupCallRegistry.Call c = GroupCallRegistry.get().find(acc, room);
+        updatePip();
         if (invite != null && (c == null || !c.live())) {
             renderInvite();
             return;
@@ -329,8 +425,12 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
         failure.setVisibility("ended".equals(c.phase) && !c.reason.isEmpty()
                 ? View.VISIBLE : View.GONE);
         warning.setText(c.warning);
-        warning.setVisibility(c.warning.isEmpty() || !c.live() ? View.GONE : View.VISIBLE);
-        callRow.setVisibility(c.live() ? View.VISIBLE : View.INVISIBLE);
+        warning.setVisibility(c.warning.isEmpty() || !c.live() || inPip ? View.GONE : View.VISIBLE);
+        // The floating window is the grid alone.
+        title.setVisibility(inPip ? View.GONE : View.VISIBLE);
+        status.setVisibility(inPip ? View.GONE : View.VISIBLE);
+        callRow.setVisibility(inPip ? View.GONE : c.live() ? View.VISIBLE : View.INVISIBLE);
+        toChat.setVisibility(c.live() && !inPip ? View.VISIBLE : View.GONE);
         // Video is on the speaker anyway; hiding it keeps the row on a phone.
         speakerControl.setVisibility(c.video ? View.GONE : View.VISIBLE);
         cameraControl.setVisibility(c.video ? View.VISIBLE : View.GONE);
@@ -378,7 +478,17 @@ public final class GroupCallActivity extends Activity implements GroupCallRegist
         warning.setVisibility(View.GONE);
         inviteRow.setVisibility(View.VISIBLE);
         callRow.setVisibility(View.GONE);
+        toChat.setVisibility(View.GONE);
         grid.setTiles(new ArrayList<>());
+    }
+
+    private void updatePip() {
+        final boolean pip = pipWanted();
+        if (pipOn == null || pipOn != pip) {
+            pipOn = pip;
+            CallScreens.setPip(this, pip, PIP_ASPECT,
+                    CallNotifications.leavePending(this, acc, room), R.string.group_call_leave);
+        }
     }
 
     /** The clock's tick redraws only this. */

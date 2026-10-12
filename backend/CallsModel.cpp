@@ -42,6 +42,8 @@ QVariant CallsModel::data(const QModelIndex &index, int role) const {
     case RemoteVideoRole:     return c.remoteVideo;
     case PreviewRole:         return c.preview;
     case ActiveSinceRole:     return c.activeSince;
+    case VerifiedRole:        return c.verified;
+    case FingerprintRole:     return c.fingerprint;
     default:            return {};
     }
 }
@@ -60,7 +62,9 @@ QHash<int, QByteArray> CallsModel::roleNames() const {
             {SendingVideoRole, "sendingVideo"},
             {RemoteVideoRole, "remoteVideo"},
             {PreviewRole, "preview"},
-            {ActiveSinceRole, "activeSince"}};
+            {ActiveSinceRole, "activeSince"},
+            {VerifiedRole, "verified"},
+            {FingerprintRole, "fingerprint"}};
 }
 
 bool CallsModel::isTerminal(const QString &state) {
@@ -133,6 +137,20 @@ void CallsModel::setField(const QString &acc, const QString &sid, Role role,
         return;
     const QModelIndex idx = index(i);
     emit dataChanged(idx, idx, {role});
+}
+
+void CallsModel::setVerification(const QString &acc, const QString &sid,
+                                 bool verified, const QString &fingerprint) {
+    const int i = indexOf(acc, sid);
+    if (i < 0)
+        return;
+    Call &c = m_calls[i];
+    if (c.verified == verified && c.fingerprint == fingerprint)
+        return;
+    c.verified = verified;
+    c.fingerprint = fingerprint;
+    const QModelIndex idx = index(i);
+    emit dataChanged(idx, idx, {VerifiedRole, FingerprintRole});
 }
 
 void CallsModel::handleEvent(const QString &module, const QString &name,
@@ -225,6 +243,10 @@ void CallsModel::handleEvent(const QString &module, const QString &name,
         setField(acc, sid, ReasonRole,
                  a.value(QStringLiteral("reason")).toString());
         setState(acc, sid, QStringLiteral("failed"));
+    } else if (name == QLatin1String("Verified")) {
+        // Re-sent whenever trust in the peer's key moves mid-call.
+        setVerification(acc, sid, a.value(QStringLiteral("verified")).toBool(),
+                        a.value(QStringLiteral("fingerprint")).toString());
     } else if (name == QLatin1String("Warning")) {
         const int i = indexOf(acc, sid);
         if (i >= 0 && !isTerminal(m_calls.at(i).state))
@@ -333,9 +355,16 @@ void CallsModel::applySnapshot(const QString &acc, const QVariantList &rows,
                                                             : QStringLiteral("video_local"))
                                  .toBool();
             c.activeSince = r.value(QStringLiteral("active_since")).toLongLong();
+            c.verified = r.value(QStringLiteral("verified")).toBool();
+            c.fingerprint = r.value(QStringLiteral("fingerprint")).toString();
             insertCall(std::move(c));
             continue;
         }
+        // Not a state, so not held to forward-only: the snapshot's is the
+        // backend's latest word, and a <Verified> missed while detached is
+        // only caught here.
+        setVerification(acc, sid, r.value(QStringLiteral("verified")).toBool(),
+                        r.value(QStringLiteral("fingerprint")).toString());
         // Forward only. A local move made since the request went out - an
         // accept() that set connecting, a hangup() that set ended - is newer
         // than this. It also holds an active row through the connecting that

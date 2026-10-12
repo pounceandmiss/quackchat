@@ -168,12 +168,16 @@ final class Notifications {
 
     /** Also used by missed-call notifications. */
     static PendingIntent openChat(Context ctx, String acc, String jid) {
-        final Intent i = new Intent(ctx, QtActivity.class)
+        return PendingIntent.getActivity(ctx, tag(acc, jid).hashCode(), chatIntent(ctx, acc, jid),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** Also the call screens' way back to the chat. */
+    static Intent chatIntent(Context ctx, String acc, String jid) {
+        return new Intent(ctx, QtActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .putExtra(EXTRA_ACC, acc)
                 .putExtra(EXTRA_JID, jid);
-        return PendingIntent.getActivity(ctx, tag(acc, jid).hashCode(), i,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /**

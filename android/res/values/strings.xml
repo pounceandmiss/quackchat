@@ -19,6 +19,7 @@
     <string name="call_answer">Answer</string>
     <string name="call_decline">Decline</string>
     <string name="call_hang_up">Hang up</string>
+    <string name="call_back_to_chat">Back to chat</string>
     <string name="call_using_account">using account %1$s</string>
     <string name="call_state_calling">Calling…</string>
     <string name="call_state_ringing">Ringing…</string>
@@ -39,6 +40,12 @@
     <string name="call_camera_on">Camera on</string>
     <string name="call_switch_camera">Switch camera</string>
     <string name="call_verified">Verified with OMEMO</string>
+    <string name="call_unverified">Not verified</string>
+    <string name="call_unverified_hint">This key is not trusted yet. Compare it with the one on %1$s\'s device.</string>
+    <string name="call_fingerprint">OMEMO fingerprint</string>
+    <string name="call_fingerprint_copied">Fingerprint copied</string>
+    <string name="call_copy">Copy</string>
+    <string name="call_close">Close</string>
     <string name="call_camera">Camera</string>
     <string name="call_flip">Flip</string>
     <string name="call_end">End</string>

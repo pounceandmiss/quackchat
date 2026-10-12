@@ -8,8 +8,6 @@ import android.app.Person;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Icon;
-import android.media.AudioAttributes;
-import android.media.RingtoneManager;
 import android.os.Build;
 import android.util.Log;
 
@@ -23,15 +21,15 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Ringing, ongoing and missed call notifications. As in Conversations, the
- * ring is the incoming notification's own channel sound, repeated by
- * FLAG_INSISTENT, so the system applies ringer mode and DND.
+ * Ringing, ongoing and missed call notifications. The incoming channel is
+ * silent: CallRinger plays the ring, so it ends with the notification.
  */
 final class CallNotifications {
     private static final String TAG = "quack.callnotify";
 
     /** Versioned: a channel's sound can't change once created. */
-    private static final String CHANNEL_INCOMING = "calls_incoming_1";
+    private static final String CHANNEL_INCOMING = "calls_incoming_2";
+    private static final String CHANNEL_INCOMING_OLD = "calls_incoming_1";
     static final String CHANNEL_ONGOING = "calls_ongoing";
     private static final String CHANNEL_MISSED = "calls_missed";
 
@@ -42,32 +40,26 @@ final class CallNotifications {
     /** A group invite has no "ring over" event, so it times out. */
     private static final long GROUP_RING_MS = 45_000;
 
-    /** Conversations' pattern. */
-    private static final long[] VIBRATION = {0, 500, 300, 600, 3000};
-
     private final Context ctx;
     private final NotificationManager nm;
+    private final CallRinger ringer;
     /** Rings the volume keys silenced. */
     private final Set<String> silenced = new HashSet<>();
 
     CallNotifications(Context ctx) {
         this.ctx = ctx;
         this.nm = ctx.getSystemService(NotificationManager.class);
+        this.ringer = new CallRinger(ctx);
 
         final NotificationChannel incoming = new NotificationChannel(
                 CHANNEL_INCOMING, ctx.getString(R.string.calls_incoming_channel_name),
                 NotificationManager.IMPORTANCE_HIGH);
-        incoming.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build());
-        incoming.enableVibration(true);
-        incoming.setVibrationPattern(VIBRATION);
-        incoming.setBypassDnd(true);
+        incoming.setSound(null, null);
+        incoming.enableVibration(false);
         incoming.setShowBadge(false);
         incoming.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(incoming);
+        nm.deleteNotificationChannel(CHANNEL_INCOMING_OLD);
 
         final NotificationChannel ongoing = new NotificationChannel(
                 CHANNEL_ONGOING, ctx.getString(R.string.calls_ongoing_channel_name),
@@ -93,10 +85,7 @@ final class CallNotifications {
         final PendingIntent decline = servicePending(QuackBackendService.ACTION_CALL_DECLINE, c);
         final Person caller = person(c);
 
-        // A silenced ring moves to the quiet channel.
-        final boolean quiet = silenced.contains(tag(c.acc, c.sid));
-        final Notification.Builder b = new Notification.Builder(ctx,
-                        quiet ? CHANNEL_ONGOING : CHANNEL_INCOMING)
+        final Notification.Builder b = new Notification.Builder(ctx, CHANNEL_INCOMING)
                 .setSmallIcon(R.drawable.ic_call)
                 .setContentTitle(c.displayName())
                 .setContentText(ctx.getString(c.video ? R.string.call_incoming_video
@@ -117,24 +106,25 @@ final class CallNotifications {
             b.addAction(action(R.drawable.ic_call_end, R.string.call_decline, decline))
              .addAction(action(R.drawable.ic_call, R.string.call_answer, answer));
         }
-        final Notification n = b.build();
-        if (!quiet) {
-            n.flags |= Notification.FLAG_INSISTENT;
+        post(tag(c.acc, c.sid), INCOMING_ID, b.build());
+        if (!silenced.contains(tag(c.acc, c.sid))) {
+            ringer.ring(tag(c.acc, c.sid), 0);
         }
-        post(tag(c.acc, c.sid), INCOMING_ID, n);
     }
 
     void silence(CallRegistry.Call c) {
-        if (!silenced.add(tag(c.acc, c.sid))) {
-            return;
-        }
-        nm.cancel(tag(c.acc, c.sid), INCOMING_ID);
-        showIncoming(c);
+        silenced.add(tag(c.acc, c.sid));
+        ringer.stop(tag(c.acc, c.sid));
     }
 
     void cancelIncoming(CallRegistry.Call c) {
         silenced.remove(tag(c.acc, c.sid));
+        ringer.stop(tag(c.acc, c.sid));
         nm.cancel(tag(c.acc, c.sid), INCOMING_ID);
+    }
+
+    void stopRinging() {
+        ringer.stopAll();
     }
 
     /** Posted by the service as its foreground notification, as CallStyle requires. */
@@ -219,24 +209,29 @@ final class CallNotifications {
             b.addAction(action(R.drawable.ic_call_end, R.string.call_decline, decline))
              .addAction(action(R.drawable.ic_call, R.string.group_call_join, join));
         }
-        final Notification n = b.build();
-        n.flags |= Notification.FLAG_INSISTENT;
-        post(tag(inv.acc, inv.room), GROUP_INVITE_ID, n);
+        post(tag(inv.acc, inv.room), GROUP_INVITE_ID, b.build());
+        ringer.ring(tag(inv.acc, inv.room), GROUP_RING_MS);
     }
 
     void cancelGroupInvite(String acc, String room) {
+        ringer.stop(tag(acc, room));
         nm.cancel(tag(acc, room), GROUP_INVITE_ID);
+    }
+
+    /** Also the picture-in-picture window's leave. */
+    static PendingIntent leavePending(Context ctx, String acc, String room) {
+        final Intent out = new Intent(ctx, QuackBackendService.class)
+                .setAction(QuackBackendService.ACTION_GROUP_LEAVE)
+                .putExtra(Notifications.EXTRA_ACC, acc)
+                .putExtra(GroupCallActivity.EXTRA_ROOM, room);
+        return PendingIntent.getService(ctx,
+                (QuackBackendService.ACTION_GROUP_LEAVE + acc + room).hashCode(), out,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     Notification ongoingGroup(GroupCallRegistry.Call c) {
         final PendingIntent screen = GroupCallActivity.pending(ctx, c.acc, c.room);
-        final Intent out = new Intent(ctx, QuackBackendService.class)
-                .setAction(QuackBackendService.ACTION_GROUP_LEAVE)
-                .putExtra(Notifications.EXTRA_ACC, c.acc)
-                .putExtra(GroupCallActivity.EXTRA_ROOM, c.room);
-        final PendingIntent leave = PendingIntent.getService(ctx,
-                (QuackBackendService.ACTION_GROUP_LEAVE + c.acc + c.room).hashCode(), out,
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        final PendingIntent leave = leavePending(ctx, c.acc, c.room);
         final Person group = new Person.Builder().setName(c.title()).setKey(c.room)
                 .setImportant(true).build();
         final Notification.Builder b = new Notification.Builder(ctx, CHANNEL_ONGOING)
@@ -314,6 +309,11 @@ final class CallNotifications {
     }
 
     private PendingIntent servicePending(String action, CallRegistry.Call c) {
+        return servicePending(ctx, action, c);
+    }
+
+    /** Also the picture-in-picture window's hang-up. */
+    static PendingIntent servicePending(Context ctx, String action, CallRegistry.Call c) {
         final Intent i = new Intent(ctx, QuackBackendService.class)
                 .setAction(action)
                 .putExtra(Notifications.EXTRA_ACC, c.acc)

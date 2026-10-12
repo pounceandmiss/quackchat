@@ -70,6 +70,8 @@ public:
         RemoteVideoRole,    // <VideoTrack> arg map (name + geometry + channel)
         PreviewRole,        // <VideoPreview> arg map
         ActiveSinceRole,    // <Active>'s since, microseconds; 0 before it
+        VerifiedRole,       // <Verified>: the peer's key is one we encrypt to
+        FingerprintRole,    // <Verified>: that key, hex; "" for a plain call
     };
     Q_ENUM(Role)
 
@@ -150,6 +152,8 @@ private:
         QVariantMap remoteVideo; // <VideoTrack> args
         QVariantMap preview;     // <VideoPreview> args
         qint64 activeSince = 0;
+        bool verified = false;
+        QString fingerprint;
         // Insert order, so a reconcile can tell a row older than the request it
         // answers from one that arrived while that request was out.
         quint64 seq = 0;
@@ -178,6 +182,8 @@ private:
     void setState(const QString &acc, const QString &sid, const QString &state);
     void setField(const QString &acc, const QString &sid, Role role,
                   const QString &value);
+    void setVerification(const QString &acc, const QString &sid, bool verified,
+                         const QString &fingerprint);
     // Fire-and-forget, or nothing if the row is gone.
     void sendFor(const QString &acc, const QString &sid, const QString &method,
                  QVariantMap args = {});

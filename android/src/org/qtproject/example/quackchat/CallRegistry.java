@@ -40,6 +40,8 @@ final class CallRegistry {
         String reason = "";
         String warning = "";
         boolean verified;
+        /** The peer device's OMEMO key the call was checked against; "" for a plain call. */
+        String fingerprint = "";
         /** Frame stream names, null when none. */
         String remoteStream;
         String previewStream;
@@ -196,6 +198,7 @@ final class CallRegistry {
                 break;
             case "Verified":
                 c.verified = a.optBoolean("verified");
+                c.fingerprint = a.optString("fingerprint");
                 break;
             case "VideoTrack":
                 c.video = true;

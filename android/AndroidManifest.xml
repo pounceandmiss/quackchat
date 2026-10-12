@@ -86,10 +86,12 @@
 
         <!-- In the backend process, so it needs no Qt and shows over the lock
              screen without exposing the rest of the app. Its own task, so
-             finishing it never lands in the chats. -->
+             it can float in picture-in-picture over the chats, and finishing
+             it lands there only when the user asks. -->
         <activity
             android:name="org.qtproject.example.quackchat.CallActivity"
             android:process=":backend"
+            android:supportsPictureInPicture="true"
             android:exported="false"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.call"
@@ -103,6 +105,7 @@
         <activity
             android:name="org.qtproject.example.quackchat.GroupCallActivity"
             android:process=":backend"
+            android:supportsPictureInPicture="true"
             android:exported="false"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.groupcall"

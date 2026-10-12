@@ -47,9 +47,18 @@ AppWindow {
     // there is somewhere to go. Desktop close (the X) is never intercepted.
     onClosing: (close) => close.accepted = !(Theme.mobile && shell.handleBack())
 
+    // Android's way back to a call; nothing on desktop.
+    OngoingCallBar {
+        id: callBar
+        anchors.top: parent.top
+        width: parent.width
+    }
+
     AppShell {
         id: shell
-        anchors.fill: parent
+        anchors.top: callBar.bottom
+        anchors.bottom: parent.bottom
+        width: parent.width
     }
 
     // Covers the shell until local storage is unlocked or a requested migration

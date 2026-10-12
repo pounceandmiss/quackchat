@@ -211,6 +211,20 @@ void AppController::shareLog() {
 #endif
 }
 
+void AppController::showCallScreen(const QString &acc, const QString &sid) {
+#ifdef Q_OS_ANDROID
+    QJniObject::callStaticMethod<void>(
+        "org/qtproject/example/quackchat/CallActivity", "show",
+        "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)V",
+        QNativeInterface::QAndroidApplication::context().object(),
+        QJniObject::fromString(acc).object<jstring>(),
+        QJniObject::fromString(sid).object<jstring>());
+#else
+    Q_UNUSED(acc)
+    Q_UNUSED(sid)
+#endif
+}
+
 void AppController::showGroupCallScreen(const QString &acc, const QString &room) {
 #ifdef Q_OS_ANDROID
     QJniObject::callStaticMethod<void>(

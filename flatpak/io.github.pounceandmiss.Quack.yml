@@ -62,7 +62,7 @@ modules:
       # the submodule's HEAD here after the pin moves.
       - type: git
         url: https://github.com/pounceandmiss/tacky.git
-        commit: bdab6fd5a7696fc39215a7a1f9c5d1de825c5984
+        commit: ca3a6ff8e9a2deeb7687463b2d928e6ad5b9f879
 
       # The webrtc media backend, built outside this manifest: it wants
       # Chromium's clang and a prebuilt libwebrtc, neither of which belongs in

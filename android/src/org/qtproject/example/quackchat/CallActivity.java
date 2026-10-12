@@ -2,18 +2,27 @@ package org.qtproject.example.quackchat;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.PendingIntent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Outline;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.TypefaceSpan;
 import android.util.Log;
+import android.util.Rational;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewOutlineProvider;
@@ -56,6 +65,15 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
                 .putExtra(EXTRA_SID, c.sid);
     }
 
+    /** The Qt app's way back to the call. */
+    public static void show(Context ctx, String acc, String sid) {
+        ctx.startActivity(new Intent(ctx, CallActivity.class)
+                .setAction(ACTION_SHOW)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(Notifications.EXTRA_ACC, acc)
+                .putExtra(EXTRA_SID, sid));
+    }
+
     static PendingIntent pending(Context ctx, CallRegistry.Call c, String action) {
         return PendingIntent.getActivity(ctx, (action + c.acc + c.sid).hashCode(),
                 intent(ctx, c, action),
@@ -65,13 +83,13 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
     private final Handler main = new Handler(Looper.getMainLooper());
     private CallRegistry.Call call;
 
-    private TextView status, name, jid, failure, warning, initial, account;
+    private TextView status, name, jid, failure, warning, initial, account, pipLabel;
     private TextView videoName, videoStatus;
     private Chronometer duration, videoDuration;
     private ImageView avatar, verified, videoVerified;
     private View voiceContent, videoTop, controls, incomingRow, callRow;
     private View speakerControl, cameraControl, flipControl;
-    private ImageButton mute, speaker, camera, flip;
+    private ImageButton mute, speaker, camera, flip, toChat;
     private TextView[] labels;
     private FrameStreamView remoteVideo, previewVideo;
 
@@ -83,7 +101,16 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
     private boolean muted;
     private boolean cameraOn = true;
     private PowerManager.WakeLock proximity;
+    /** The key behind the badge, while it is up. */
+    private AlertDialog keyDialog;
     private boolean leaving;
+
+    private static final Rational PIP_ASPECT = new Rational(9, 16);
+    private boolean inPip;
+    private Boolean pipOn;
+    /** Out of the floating window, either back to full screen or closed. */
+    private boolean leftPip;
+    private boolean stopped;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -91,6 +118,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         setShowWhenLocked(true);
         setTurnScreenOn(true);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        inPip = isInPictureInPictureMode(); // recreated while floating
         setContentView(R.layout.call_activity);
         bindViews();
         CallRegistry.get().addListener(this);
@@ -110,7 +138,64 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         CallRegistry.get().removeListener(this);
         main.removeCallbacksAndMessages(null);
         holdProximity(false);
+        if (keyDialog != null) {
+            keyDialog.dismiss();
+        }
         super.onDestroy();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        stopped = false;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        leftPip = false;
+    }
+
+    // The floating window swiped away ends the screen, not the call. Android
+    // reports that as leaving picture-in-picture while already stopped, or
+    // (older releases) the other way round; expanding it resumes in between.
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopped = true;
+        if (leftPip) {
+            finish();
+        }
+    }
+
+    @Override
+    public void onPictureInPictureModeChanged(boolean pip, Configuration config) {
+        super.onPictureInPictureModeChanged(pip, config);
+        if (!pip && stopped) {
+            finish();
+            return;
+        }
+        inPip = pip;
+        leftPip = !pip;
+        overlaysShown = true;
+        render();
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && pipWanted()) {
+            CallScreens.enterPip(this);
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (call != null && !call.ringingHere() && !call.terminal()) {
+            backToChat();
+            return;
+        }
+        super.onBackPressed();
     }
 
     private void take(Intent intent) {
@@ -123,6 +208,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         }
         call = c;
         leaving = false;
+        pipOn = null;
         render();
         if (ACTION_ANSWER.equals(intent.getAction()) && c.ringingHere()) {
             answer();
@@ -168,6 +254,16 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
 
     private void decline() {
         send("calls", "reject", args());
+    }
+
+    /** A video call keeps floating over the chat; a voice call needs no screen. */
+    private void backToChat() {
+        final boolean floating = pipWanted() && CallScreens.enterPip(this);
+        CallScreens.openChat(this, call.acc, call.peer, floating ? () -> {} : this::finish);
+    }
+
+    private boolean pipWanted() {
+        return videoLook() && "active".equals(call.state);
     }
 
     private void hangUp() {
@@ -278,6 +374,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         avatar = findViewById(R.id.avatar);
         initial = findViewById(R.id.initial);
         account = findViewById(R.id.account);
+        pipLabel = findViewById(R.id.pip_label);
         videoTop = findViewById(R.id.video_top);
         videoName = findViewById(R.id.video_name);
         videoStatus = findViewById(R.id.video_status);
@@ -290,6 +387,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         speaker = findViewById(R.id.speaker);
         camera = findViewById(R.id.camera);
         flip = findViewById(R.id.flip);
+        toChat = findViewById(R.id.to_chat);
         speakerControl = findViewById(R.id.speaker_control);
         cameraControl = findViewById(R.id.camera_control);
         flipControl = findViewById(R.id.flip_control);
@@ -319,6 +417,9 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         speaker.setOnClickListener(v -> { toggleSpeaker(); poke(); });
         camera.setOnClickListener(v -> { toggleCamera(); poke(); });
         flip.setOnClickListener(v -> { CallControls.flipCamera(); poke(); });
+        toChat.setOnClickListener(v -> backToChat());
+        verified.setOnClickListener(v -> showKey());
+        videoVerified.setOnClickListener(v -> { showKey(); poke(); });
 
         final View root = findViewById(R.id.root);
         root.setOnClickListener(v -> {
@@ -333,6 +434,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         final int controlsPad = controls.getPaddingBottom();
         final int warningMargin = ((FrameLayout.LayoutParams) warning.getLayoutParams()).topMargin;
         final int previewMargin = ((FrameLayout.LayoutParams) previewVideo.getLayoutParams()).topMargin;
+        final int toChatMargin = ((FrameLayout.LayoutParams) toChat.getLayoutParams()).topMargin;
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             final android.graphics.Insets bars = insets.getInsets(
                     WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
@@ -344,6 +446,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
                     controls.getPaddingRight(), controlsPad + bars.bottom);
             setTopMargin(warning, warningMargin + bars.top);
             setTopMargin(previewVideo, previewMargin + bars.top);
+            setTopMargin(toChat, toChatMargin + bars.top);
             return insets;
         });
     }
@@ -359,6 +462,66 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
                 && !call.ringingHere();
     }
 
+    /** The shield ahead of the status: trusted or not, either opens the key. */
+    private void showBadge(ImageView badge, CallRegistry.Call c, boolean shown, int tint) {
+        badge.setVisibility(shown ? View.VISIBLE : View.GONE);
+        badge.setImageResource(c.verified ? R.drawable.ic_verified : R.drawable.ic_unverified);
+        badge.setImageTintList(ColorStateList.valueOf(tint));
+        badge.setContentDescription(
+                getString(c.verified ? R.string.call_verified : R.string.call_unverified));
+    }
+
+    /** The peer's key in the 8-character groups keys are compared in. */
+    private void showKey() {
+        final CallRegistry.Call c = call;
+        if (c == null || c.fingerprint.isEmpty()) {
+            return;
+        }
+        final String clean = c.fingerprint.replaceAll("\\s+", "");
+        final StringBuilder spaced = new StringBuilder();
+        for (int i = 0; i < clean.length(); i += 8) {
+            if (i > 0) {
+                spaced.append(i % 32 == 0 ? '\n' : ' ');
+            }
+            spaced.append(clean, i, Math.min(i + 8, clean.length()));
+        }
+        final SpannableStringBuilder message = new SpannableStringBuilder();
+        if (!c.verified) {
+            message.append(getString(R.string.call_unverified_hint, c.displayName()))
+                    .append("\n\n");
+        }
+        final int start = message.length();
+        message.append(spaced);
+        message.setSpan(new TypefaceSpan("monospace"), start, message.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        message.append("\n").append(getString(R.string.call_fingerprint));
+
+        if (keyDialog != null) {
+            keyDialog.dismiss();
+        }
+        final String copy = spaced.toString().replace('\n', ' ');
+        keyDialog = new AlertDialog.Builder(this)
+                .setTitle(c.verified ? R.string.call_verified : R.string.call_unverified)
+                .setMessage(message)
+                .setPositiveButton(R.string.call_copy, (d, w) -> {
+                    final ClipboardManager clip = getSystemService(ClipboardManager.class);
+                    if (clip != null) {
+                        clip.setPrimaryClip(ClipData.newPlainText(
+                                getString(R.string.call_fingerprint), copy));
+                        Toast.makeText(this, R.string.call_fingerprint_copied,
+                                Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(R.string.call_close, null)
+                .create();
+        keyDialog.setOnDismissListener(d -> {
+            if (keyDialog == d) {
+                keyDialog = null;
+            }
+        });
+        keyDialog.show();
+    }
+
     private void render() {
         final CallRegistry.Call c = call;
         if (c == null) {
@@ -368,7 +531,10 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         final String statusLine = statusText(c);
         final boolean showJid = !c.displayName().equals(c.peer);
 
-        voiceContent.setVisibility(video ? View.GONE : View.VISIBLE);
+        // The floating window is the picture alone, or the name without one.
+        voiceContent.setVisibility(video || inPip ? View.GONE : View.VISIBLE);
+        pipLabel.setText(c.displayName());
+        pipLabel.setVisibility(inPip && !video ? View.VISIBLE : View.GONE);
         status.setText(statusLine);
         name.setText(c.displayName());
         jid.setText(c.peer);
@@ -378,7 +544,12 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         failure.setText(c.reason);
         failure.setVisibility("failed".equals(c.state) && !c.reason.isEmpty()
                 ? View.VISIBLE : View.GONE);
-        verified.setVisibility(c.verified && !c.terminal() ? View.VISIBLE : View.GONE);
+        final boolean keyShown = !c.fingerprint.isEmpty() && !c.terminal();
+        showBadge(verified, c, keyShown,
+                getColor(c.verified ? R.color.call_accent : R.color.call_text_dim));
+        if (!keyShown && keyDialog != null) {
+            keyDialog.dismiss();
+        }
 
         final String letter = c.displayName().isEmpty() ? "?"
                 : c.displayName().substring(0, c.displayName().offsetByCodePoints(0, 1))
@@ -387,12 +558,16 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         avatar.setImageBitmap(c.avatar);
         avatar.setVisibility(c.avatar != null ? View.VISIBLE : View.GONE);
 
-        videoTop.setVisibility(video && overlaysShown ? View.VISIBLE : View.GONE);
+        videoTop.setVisibility(video && overlaysShown && !inPip ? View.VISIBLE : View.GONE);
         videoName.setText(c.displayName());
         videoStatus.setText(statusLine);
-        videoVerified.setVisibility(c.verified ? View.VISIBLE : View.GONE);
+        showBadge(videoVerified, c, keyShown, 0xffffffff);
         controls.setBackgroundResource(video ? R.drawable.call_scrim_bottom : 0);
-        controls.setVisibility(!video || overlaysShown ? View.VISIBLE : View.GONE);
+        controls.setVisibility((!video || overlaysShown) && !inPip ? View.VISIBLE : View.GONE);
+        toChat.setVisibility(!c.ringingHere() && !c.terminal() && !inPip
+                && (!video || overlaysShown) ? View.VISIBLE : View.GONE);
+        toChat.setImageTintList(ColorStateList.valueOf(
+                video ? 0xffffffff : getColor(R.color.call_text)));
         for (TextView label : labels) {
             label.setTextColor(video ? 0xffffffff : getColor(R.color.call_text_dim));
         }
@@ -402,12 +577,12 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
 
         final boolean warn = !c.warning.isEmpty() && !c.terminal();
         warning.setText(c.warning);
-        warning.setVisibility(warn ? View.VISIBLE : View.GONE);
+        warning.setVisibility(warn && !inPip ? View.VISIBLE : View.GONE);
 
         final boolean remote = c.remoteStream != null && !c.terminal();
         remoteVideo.setVisibility(remote ? View.VISIBLE : View.GONE);
         remoteVideo.show(remote ? c.remoteStream : null);
-        final boolean preview = c.previewStream != null && cameraOn && !c.terminal();
+        final boolean preview = c.previewStream != null && cameraOn && !c.terminal() && !inPip;
         previewVideo.setVisibility(preview ? View.VISIBLE : View.GONE);
         previewVideo.show(preview ? c.previewStream : null);
 
@@ -426,7 +601,7 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
                 cameraOn ? R.string.call_camera_off : R.string.call_camera_on, video);
         toggle(flip, false, R.drawable.ic_flip_camera, R.string.call_switch_camera, video);
 
-        if (video && overlaysShown) {
+        if (video && overlaysShown && !inPip) {
             main.removeCallbacks(hideOverlays);
             main.postDelayed(hideOverlays, OVERLAY_HIDE_MS);
         } else if (!video) {
@@ -435,6 +610,14 @@ public final class CallActivity extends Activity implements CallRegistry.Listene
         }
 
         holdProximity("active".equals(c.state) && !c.video && audio != null && audio.atEar());
+
+        final boolean pip = pipWanted();
+        if (pipOn == null || pipOn != pip) {
+            pipOn = pip;
+            CallScreens.setPip(this, pip, PIP_ASPECT,
+                    CallNotifications.servicePending(this, QuackBackendService.ACTION_CALL_HANG_UP, c),
+                    R.string.call_hang_up);
+        }
     }
 
     private void showDuration(Chronometer timer, CallRegistry.Call c) {

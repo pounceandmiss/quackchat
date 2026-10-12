@@ -118,6 +118,7 @@ public:
     Q_INVOKABLE void shareLog();
 
     // Android only: calls run on a native screen there, not in a window.
+    Q_INVOKABLE void showCallScreen(const QString &acc, const QString &sid);
     Q_INVOKABLE void showGroupCallScreen(const QString &acc, const QString &room);
 
     // What the command line asked of the logger, applied when the backend

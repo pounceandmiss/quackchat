@@ -515,6 +515,9 @@ public final class QuackBackendService extends Service {
         liveRouter = null;
         liveAudio = null;
         liveCallNotifications = null;
+        if (callNotifications != null) {
+            callNotifications.stopRinging();
+        }
         if (callAudio != null) {
             callAudio.stop();
         }

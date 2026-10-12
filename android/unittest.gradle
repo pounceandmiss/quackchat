@@ -1,0 +1,62 @@
+// Robolectric unit tests for the Java half, added to the Gradle project that
+// androiddeployqt generates. An init script, so Qt's template stays Qt's to
+// update; in-image.sh applies it under android/build.sh --test.
+//
+// Robolectric would download its runtime jar into ~/.m2, which the container's
+// HOME (/tmp) loses between runs. Gradle fetches it instead, caching in
+// build-android/gradle-home, and Robolectric runs offline against that copy.
+
+// Read from the checkout, not the staged package dir: a test edit should not
+// repackage the apk.
+def testsDir = new File(buildscript.sourceFile.parentFile, 'unittest')
+
+def robolectricVersion = '4.17'
+// What Robolectric 4.17 runs API 36 on: DefaultSdkProvider's table.
+def androidAll = 'org.robolectric:android-all-instrumented:16-robolectric-13921718-i7'
+
+allprojects {
+    pluginManager.withPlugin('com.android.application') {
+        android {
+            sourceSets {
+                test {
+                    java.srcDirs = [new File(testsDir, 'java')]
+                    resources.srcDirs = [new File(testsDir, 'resources')]
+                }
+            }
+            testOptions {
+                unitTests {
+                    // Layouts, strings and drawables, as the activities inflate them.
+                    includeAndroidResources = true
+                }
+            }
+        }
+
+        configurations {
+            robolectricRuntime
+        }
+        dependencies {
+            testImplementation 'junit:junit:4.13.2'
+            testImplementation "org.robolectric:robolectric:${robolectricVersion}"
+            robolectricRuntime androidAll
+        }
+
+        def jarDir = layout.buildDirectory.dir('robolectric-jars')
+        def stage = tasks.register('stageRobolectricRuntime', Copy) {
+            from configurations.robolectricRuntime
+            into jarDir
+        }
+        tasks.withType(Test).configureEach {
+            dependsOn stage
+            // Robolectric reaches into FileDescriptor's internals, which a
+            // modern JDK keeps closed unless asked.
+            jvmArgs '--add-exports', 'java.base/jdk.internal.access=ALL-UNNAMED',
+                    '--add-opens', 'java.base/java.io=ALL-UNNAMED'
+            systemProperty 'robolectric.offline', 'true'
+            systemProperty 'robolectric.dependency.dir', jarDir.get().asFile.absolutePath
+            testLogging {
+                events 'failed'
+                exceptionFormat 'full'
+            }
+        }
+    }
+}

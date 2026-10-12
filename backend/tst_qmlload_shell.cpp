@@ -402,6 +402,56 @@ private slots:
         e.assertNoErrors();
     }
 
+    // The shield ahead of the status opens the key the call was checked
+    // against, trusted or not; a plain call has no shield.
+    void theCallBadgeOpensTheKey() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QVERIFY(loadMain(e));
+
+        CallsModel *calls = app->calls();
+        calls->handleEvent("calls", "Outgoing",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"sid", "tk-key"},
+                                       {"to", "friend@example.com"}});
+        QCoreApplication::processEvents();
+        auto *call = qobject_cast<QQuickWindow *>(
+            visibleWindowTitled("friend@example.com"));
+        QVERIFY(call);
+        auto *badge = call->findChild<QQuickItem *>("callKeyBadge");
+        QVERIFY(badge);
+        QVERIFY(!badge->isVisible());
+
+        calls->handleEvent("calls", "Verified",
+                           QVariantMap{{"acc", "me@example.com"},
+                                       {"sid", "tk-key"},
+                                       {"verified", false},
+                                       {"fingerprint", QString(64, 'a')}});
+        QTRY_VERIFY(badge->isVisible() && badge->width() > 0);
+
+        QTest::mouseClick(call, Qt::LeftButton, {},
+                          badge->mapToScene(QPointF(badge->width() / 2,
+                                                    badge->height() / 2))
+                              .toPoint());
+        auto *popup = call->findChild<QObject *>("callKeyPopup");
+        QVERIFY(popup);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        auto *content = popup->property("contentItem").value<QQuickItem *>();
+        QVERIFY(content);
+        QQuickItem *grid = findItem(content, "fingerprintGroups");
+        QVERIFY(grid);
+        int groups = 0;
+        for (QQuickItem *cell : grid->childItems())
+            groups += cell->objectName() == "fingerprintGroup";
+        QCOMPARE(groups, 8);
+
+        calls->hangup("me@example.com", "tk-key");
+        QTRY_VERIFY(!popup->property("visible").toBool());
+        QTRY_COMPARE_WITH_TIMEOUT(calls->rowCount(), 0, 4000);
+        e.assertNoErrors();
+    }
+
     // A back press on Android is a refused close: it must not unregister the shell.
     void aRefusedCloseKeepsTheShellForNotifications() {
         AppEngine e;

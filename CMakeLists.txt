@@ -293,6 +293,7 @@ qt_add_qml_module(quack
         GroupCallTile.qml
         GroupCallInviteDialog.qml
         GroupCallBanner.qml
+        OngoingCallBar.qml
         CallButton.qml
         AudioLevelRow.qml
         AppWindows.qml
@@ -478,6 +479,9 @@ if(ANDROID)
     # the manifest or an icon restages as surely as relinking the interpreter.
     file(GLOB_RECURSE _android_pkg_src CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/android/*")
+    # The unit tests run from the checkout (android/unittest.gradle); editing
+    # one is no reason to repackage.
+    list(FILTER _android_pkg_src EXCLUDE REGEX "/android/(unittest/|unittest\\.gradle$)")
     # Keyed to tackyjni and the sources rather than hung off quackchat's link:
     # a new libtacky.a relinks the interpreter alone, and a POST_BUILD there
     # would leave the stale copy staged and package it without a word.

@@ -35,12 +35,22 @@ ApplicationWindow {
     required property var remoteVideo
     required property var preview
     required property double activeSince
+    // The peer device's OMEMO key the call was checked against, "" for a
+    // plain call, and whether that key is one we trust.
+    required property bool verified
+    required property string fingerprint
 
     // Local intent to send camera. Starts true whenever this call has a
     // preview ring (i.e. video was negotiated); the toggle drives setVideo.
     property bool cameraOn: sendingVideo
 
     readonly property bool ringingIn: state === "incoming"
+
+    readonly property bool keyShown: win.fingerprint !== "" && !win.terminal
+    // Once the call ends the badge goes, and the key it opened with it.
+    onKeyShownChanged: if (!win.keyShown) keyPopup.close()
+    readonly property string keyTitle: win.verified ? qsTr("Verified with OMEMO")
+                                                    : qsTr("Not verified")
 
     readonly property bool videoLook: win.hasRemoteVideo && !win.terminal && !win.ringingIn
 
@@ -149,6 +159,7 @@ ApplicationWindow {
         id: overlayIdle
         interval: 4000
         running: win.videoLook && win.overlaysShown && !devices.opened
+                 && !keyPopup.opened
         onTriggered: win.overlaysShown = false
     }
     function poke() {
@@ -218,14 +229,26 @@ ApplicationWindow {
             elide: Text.ElideMiddle
         }
 
-        Text {
-            Layout.fillWidth: true
+        RowLayout {
+            // Its own width, not the column's, or the pair sits left in it.
+            Layout.fillWidth: false
+            Layout.alignment: Qt.AlignHCenter
+            Layout.maximumWidth: parent.width
             Layout.topMargin: 10
-            text: win.statusLine
-            color: Theme.textDim
-            font.pixelSize: 15
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
+            spacing: 6
+            KeyBadge {
+                objectName: "callKeyBadge"
+                size: 16
+                color: win.verified ? Theme.accent : Theme.textDim
+            }
+            Text {
+                Layout.fillWidth: true
+                Layout.maximumWidth: implicitWidth
+                text: win.statusLine
+                color: Theme.textDim
+                font.pixelSize: 15
+                elide: Text.ElideRight
+            }
         }
 
         Text {
@@ -284,13 +307,23 @@ ApplicationWindow {
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
             }
-            Text {
-                Layout.fillWidth: true
-                text: win.statusLine
-                color: Qt.rgba(1, 1, 1, 0.85)
-                font.pixelSize: 13
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideRight
+            RowLayout {
+                Layout.fillWidth: false
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: parent.width
+                spacing: 6
+                KeyBadge {
+                    size: 14
+                    color: "white"
+                }
+                Text {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: implicitWidth
+                    text: win.statusLine
+                    color: Qt.rgba(1, 1, 1, 0.85)
+                    font.pixelSize: 13
+                    elide: Text.ElideRight
+                }
             }
         }
     }
@@ -556,5 +589,67 @@ ApplicationWindow {
                 onMuteToggled: (m) => App.audio.setPlaybackMuted(m)
             }
         }
+    }
+
+    // Ahead of the status line, in both looks: the shield says whether the
+    // peer's key is trusted, and either one opens the key to compare.
+    component KeyBadge: Glyph {
+        visible: win.keyShown
+        path: win.verified ? Icons.verifiedUser : Icons.gppMaybe
+        Accessible.role: Accessible.Button
+        Accessible.name: win.keyTitle
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: keyPopup.open() }
+    }
+
+    Popup {
+        id: keyPopup
+        objectName: "callKeyPopup"
+        anchors.centerIn: parent
+        width: Math.min(win.width - 32, 360)
+        padding: 16
+        background: Rectangle {
+            color: Theme.surface
+            radius: 12
+            border.color: Theme.hairline
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            Text {
+                Layout.fillWidth: true
+                text: win.keyTitle
+                color: Theme.textPrimary
+                font.pixelSize: 15
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                visible: !win.verified
+                text: qsTr("This key is not trusted yet. Compare it with the one on %1's device.")
+                      .arg(win.shownName)
+                color: Theme.textDim
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+            Fingerprint {
+                Layout.fillWidth: true
+                hex: win.fingerprint
+                onCopyRequested: (spaced) => {
+                    Clipboard.setText(spaced)
+                    copiedNotice.show()
+                }
+            }
+        }
+    }
+
+    CopiedNotice {
+        id: copiedNotice
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: controls.height + 16
+        text: qsTr("Fingerprint copied")
     }
 }

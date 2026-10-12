@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Android apk.
 #
-#   android/build.sh [--clean] [--debug]
+#   android/build.sh [--clean] [--debug] [--test]
 #
 # Runs entirely in the Android toolchain image (docker/android.Dockerfile), so
 # docker is all the host needs - no SDK, no NDK r29, no JDK 21, no Qt kit.
@@ -12,6 +12,8 @@
 # the debug-signed apk instead, which gradle signs with the throwaway key in the
 # image and which does install - for testing only, since nothing that key signed
 # can ever be published.
+#
+# --test also runs the Robolectric tests in android/unittest after the build.
 #
 # build-android/ holds the build tree and persists, so a rebuild is incremental.
 # --clean drops it. tacky's Android dependency tree stays inside it rather than
@@ -25,11 +27,13 @@ project=$(cd "$here/.." && pwd)
 
 clean=
 debug=
+tests=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --clean) clean=1 ;;
         --debug) debug=1 ;;
-        *) echo "usage: android/build.sh [--clean] [--debug]" >&2; exit 2 ;;
+        --test) tests=1 ;;
+        *) echo "usage: android/build.sh [--clean] [--debug] [--test]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -49,6 +53,7 @@ export SOURCE_DATE_EPOCH
 
 export QUACK_ANDROID_CLEAN=$clean
 export QUACK_ANDROID_DEBUG=$debug
+export QUACK_ANDROID_TESTS=$tests
 
 # The signing key, if there is one. It is mounted read-only rather than copied
 # anywhere: it must not end up in the checkout, in a layer, or in an image. The

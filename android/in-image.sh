@@ -119,6 +119,14 @@ fi
 }
 cp -f "$src" "$out"
 
+# Run on the generated Gradle project, so the tests see what the apk was built from.
+if [ -n "${QUACK_ANDROID_TESTS-}" ]; then
+    echo "==> unit tests"
+    (cd "$build/cmake/android-build" &&
+        ./gradlew --no-daemon --init-script /src/android/unittest.gradle \
+            "test${deployment}UnitTest")
+fi
+
 # Signing, when a key was named. Android takes nothing unsigned, so a release
 # apk is not installable until this happens - and it has to be the same key for
 # every version ever published, since Android ties an app's identity to its

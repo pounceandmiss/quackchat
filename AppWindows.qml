@@ -118,6 +118,8 @@ QtObject {
             required property var remoteVideo
             required property var preview
             required property double activeSince
+            required property bool verified
+            required property string fingerprint
 
             readonly property string key: mgr._callKey(row.account, row.sid)
 
@@ -146,6 +148,8 @@ QtObject {
                 remoteVideo: row.remoteVideo
                 preview: row.preview
                 activeSince: row.activeSince
+                verified: row.verified
+                fingerprint: row.fingerprint
             }
         }
     }

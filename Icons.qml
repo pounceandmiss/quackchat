@@ -90,6 +90,13 @@ QtObject {
         "M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6" +
         "h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2" +
         "h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z"
+    // Material's verified_user and gpp_maybe: a call's key, trusted or not yet.
+    readonly property string verifiedUser:
+        "M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" +
+        "m-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"
+    readonly property string gppMaybe:
+        "M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" +
+        "m1 13h-2v-2h2v2zm0-4h-2V7h2v4z"
     readonly property string image:
         "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2z" +
         "M8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"

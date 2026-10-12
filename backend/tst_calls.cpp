@@ -46,12 +46,14 @@ private slots:
     void sendsTheAccountAndSidTheRowHolds();
     void videoComesAndGoesWithItsRings();
     void perCallDeviceOverrideNamesBothEndpoints();
+    void verifiedCarriesTheKeyAndFollowsTrust();
     // Re-seeding from `calls list`:
     void listsOnConnectedAndNoOtherState();
     void connEventsDoNotSwallowCallsEvents();
     void snapshotSeedsRowsAfterAReattach();
     void snapshotMapsTackysStateWords();
     void snapshotCarriesVideoAndWhenItWentActive();
+    void snapshotCarriesTheKeyAndRefreshesIt();
     void snapshotEndsRowsItDoesNotMention();
     void rowsBornWhileTheListWasOutSurviveTheSweep();
     void snapshotDoesNotWalkARowBackwards();
@@ -420,6 +422,32 @@ void TestCalls::perCallDeviceOverrideNamesBothEndpoints() {
 // `calls start` emits <Outgoing> before it writes the propose, so this works
 // against an account that exists but was never connected - and it pins the
 // argument names (acc/to), which the reference's signature leaves out.
+// <Verified> before <Active>, and again as trust in the key moves. A plain call
+// never gets one and keeps an empty fingerprint.
+void TestCalls::verifiedCarriesTheKeyAndFollowsTrust() {
+    CallsModel m;
+    feed(m, R"(["event","calls","Outgoing",
+        {"acc":"me@host","sid":"tk-1","to":"friend@host"}])");
+    QVERIFY(!m.data(m.index(0), CallsModel::VerifiedRole).toBool());
+    QVERIFY(m.data(m.index(0), CallsModel::FingerprintRole).toString().isEmpty());
+
+    feed(m, R"(["event","calls","Verified",
+        {"acc":"me@host","sid":"tk-1","verified":false,"fingerprint":"0a1b2c3d"}])");
+    QVERIFY(!m.data(m.index(0), CallsModel::VerifiedRole).toBool());
+    QCOMPARE(m.data(m.index(0), CallsModel::FingerprintRole).toString(),
+             QString("0a1b2c3d"));
+
+    QSignalSpy changed(&m, &QAbstractItemModel::dataChanged);
+    feed(m, R"(["event","calls","Verified",
+        {"acc":"me@host","sid":"tk-1","verified":true,"fingerprint":"0a1b2c3d"}])");
+    QVERIFY(m.data(m.index(0), CallsModel::VerifiedRole).toBool());
+    QCOMPARE(changed.count(), 1);
+    // The same word twice is no change.
+    feed(m, R"(["event","calls","Verified",
+        {"acc":"me@host","sid":"tk-1","verified":true,"fingerprint":"0a1b2c3d"}])");
+    QCOMPARE(changed.count(), 1);
+}
+
 void TestCalls::startEmitsOutgoingWithRealSid() {
     TackyBackend backend;
     QVERIFY(backend.start());
@@ -575,6 +603,33 @@ void TestCalls::snapshotCarriesVideoAndWhenItWentActive() {
     QVERIFY(!m.data(m.index(1), CallsModel::OfferedVideoRole).toBool());
     QCOMPARE(m.data(m.index(1), CallsModel::ActiveSinceRole).toLongLong(),
              1700000000000000LL);
+}
+
+// What a missed <Verified> left behind is caught up by the next list, state or
+// no state: trust is not held to the forward-only rule.
+void TestCalls::snapshotCarriesTheKeyAndRefreshesIt() {
+    TackyBackend backend;
+    CallsModel m;
+    m.setBackend(&backend);
+    m.refreshFor(QStringLiteral("me@host")); // token 1
+    snapshot(m, 1, R"([
+        {"sid":"tk-1","peer":"friend@host","direction":"outgoing",
+         "state":"active","peer_ringing":false,
+         "video_local":false,"video_remote":false,"active_since":1,
+         "verified":false,"fingerprint":"0a1b2c3d"}])");
+    QVERIFY(!m.data(m.index(0), CallsModel::VerifiedRole).toBool());
+    QCOMPARE(m.data(m.index(0), CallsModel::FingerprintRole).toString(),
+             QString("0a1b2c3d"));
+
+    QSignalSpy changed(&m, &QAbstractItemModel::dataChanged);
+    m.refreshFor(QStringLiteral("me@host")); // token 2
+    snapshot(m, 2, R"([
+        {"sid":"tk-1","peer":"friend@host","direction":"outgoing",
+         "state":"active","peer_ringing":false,
+         "video_local":false,"video_remote":false,"active_since":1,
+         "verified":true,"fingerprint":"0a1b2c3d"}])");
+    QVERIFY(m.data(m.index(0), CallsModel::VerifiedRole).toBool());
+    QCOMPARE(changed.count(), 1);
 }
 
 // tacky's "ringing" is the callee being alerted, ours is a peer device alerting
