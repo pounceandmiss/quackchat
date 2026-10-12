@@ -253,6 +253,10 @@ QtObject {
     // Active palette object; everything below re-reads it when `name` changes.
     readonly property var p: palettes[name]
 
+    // Whether the palette is a dark one, read off its wallpaper rather than
+    // kept as one more key every block has to carry.
+    readonly property bool dark: Qt.color(p.background).hslLightness < 0.5
+
     readonly property color background:  p.background
     readonly property color background2: p.background2
     readonly property color surface:     p.surface

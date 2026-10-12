@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Material
 import Quack
 
 // What every one of this app's windows carries: the palette, the shortcut that
@@ -52,6 +53,14 @@ ApplicationWindow {
             buttonText: Theme.textDim
         }
     }
+
+    // Material's half of the above. Left at its defaults it is the Light
+    // theme, and a field with no colour of its own - the search entries - draws
+    // near-black text on a dark palette's header. Attached properties propagate
+    // the way a palette does, and Fusion never reads them.
+    Material.theme: Theme.dark ? Material.Dark : Material.Light
+    Material.foreground: Theme.textPrimary
+    Material.accent: Theme.accent
 
     contentData: [
         Item {
