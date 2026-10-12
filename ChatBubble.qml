@@ -970,11 +970,6 @@ Item {
                         // composer's keyboard with it.
                         gesturePolicy: root.nativeWords ? TapHandler.DragThreshold
                                                         : TapHandler.WithinBounds
-                        // Under Android's own half second, so a press held
-                        // long enough to pick words out has already stood the
-                        // release down - it would otherwise tick the message
-                        // off from under them.
-                        longPressThreshold: 0.4
                         // Latched on the press, for the reason bubbleTap is.
                         property bool dismissing: false
                         onPressedChanged: if (bodyTap.pressed)

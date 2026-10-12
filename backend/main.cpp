@@ -12,6 +12,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFontDatabase>
+#include <QJniObject>
+#include <QStyleHints>
 
 #include <algorithm>
 #include <utility>
@@ -107,6 +109,16 @@ int main(int argc, char *argv[]) {
               [](const QFileInfo &a, const QFileInfo &b) { return a.size() < b.size(); });
     for (const QFileInfo &font : std::as_const(symbolFonts))
         QFontDatabase::addApplicationFont(font.absoluteFilePath());
+
+    // How long a press is held before it is a long press, for every button and
+    // handler in the app: the system's, which the phone's accessibility settings
+    // can change. Qt's Android theme does not ask, and leaves its own 800 ms -
+    // twice the usual 400, so a row held as long as other apps want did nothing.
+    // Nothing sets its own threshold; this is the one place.
+    const int longPress = QJniObject::callStaticMethod<jint>(
+        "android/view/ViewConfiguration", "getLongPressTimeout");
+    if (longPress > 0)
+        app.styleHints()->setMousePressAndHoldInterval(longPress);
 #endif
 
     // Rasters, not icons/quack.svg: the SVG would need the svg icon engine
