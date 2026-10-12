@@ -114,7 +114,7 @@ final class Notifications {
                 .setSmallIcon(android.R.drawable.stat_notify_chat)
                 .setWhen(ts / 1000)
                 .setAutoCancel(true)
-                .setContentIntent(openChat(acc, jid))
+                .setContentIntent(openChat(ctx, acc, jid))
                 .addAction(replyAction(acc, jid))
                 .addAction(markReadAction(acc, jid, ts));
         // Empty for an attachment that came without a caption; leave the line
@@ -166,7 +166,8 @@ final class Notifications {
         }
     }
 
-    private PendingIntent openChat(String acc, String jid) {
+    /** Also used by missed-call notifications. */
+    static PendingIntent openChat(Context ctx, String acc, String jid) {
         final Intent i = new Intent(ctx, QtActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 .putExtra(EXTRA_ACC, acc)

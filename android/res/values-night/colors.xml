@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="call_background">#0e1621</color>
+    <color name="call_surface">#17212b</color>
+    <color name="call_text">#e9eef2</color>
+    <color name="call_text_dim">#8fa5b0</color>
+    <color name="call_accent">#5eb5f7</color>
+    <color name="call_accent_light">#7cc4fb</color>
+    <color name="call_on_accent">#ffffff</color>
+    <color name="call_negative">#e5533d</color>
+    <color name="call_warning">#ffb74d</color>
+    <color name="call_answer">#43a047</color>
+</resources>

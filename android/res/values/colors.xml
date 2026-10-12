@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Theme.qml's "conversations"; values-night has "midnight". -->
+<resources>
+    <color name="call_background">#eceff1</color>
+    <color name="call_surface">#ffffff</color>
+    <color name="call_text">#263238</color>
+    <color name="call_text_dim">#90a4ae</color>
+    <color name="call_accent">#43a047</color>
+    <color name="call_accent_light">#66bb6a</color>
+    <color name="call_on_accent">#ffffff</color>
+    <color name="call_negative">#e53935</color>
+    <color name="call_warning">#f57c00</color>
+    <color name="call_answer">#43a047</color>
+</resources>

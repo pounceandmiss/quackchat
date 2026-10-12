@@ -1,5 +1,6 @@
 package org.qtproject.example.quackchat;
 
+import android.Manifest;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,10 +11,14 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.util.Base64;
 import android.util.Log;
 
 import io.github.pounceandmiss.quack.R;
@@ -44,8 +49,37 @@ public final class QuackBackendService extends Service {
     private static final String CHANNEL = "backend";
     private static final int NOTIF_ID = 1;
 
+    static final String ACTION_CALL_DECLINE = "org.qtproject.example.quackchat.CALL_DECLINE";
+    static final String ACTION_CALL_HANG_UP = "org.qtproject.example.quackchat.CALL_HANG_UP";
+    static final String ACTION_GROUP_DECLINE = "org.qtproject.example.quackchat.GROUP_DECLINE";
+    static final String ACTION_GROUP_LEAVE = "org.qtproject.example.quackchat.GROUP_LEAVE";
+
+    /** For the call screens, which run in this process. Null while down. */
+    private static volatile FrameRouter liveRouter;
+    private static volatile CallAudio liveAudio;
+    private static volatile CallNotifications liveCallNotifications;
+
+    static FrameRouter router() {
+        return liveRouter;
+    }
+
+    static CallAudio audio() {
+        return liveAudio;
+    }
+
+    static CallNotifications callNotifications() {
+        return liveCallNotifications;
+    }
+
     private FrameRouter router;
     private Notifications notifications;
+    private CallNotifications callNotifications;
+    private CallAudio callAudio;
+    /** A CallRegistry.Call or GroupCallRegistry.Call, or null. */
+    private Object foregroundCall;
+    private final CallRegistry.Listener callListener = this::onCallChanged;
+    private final GroupCallRegistry.Listener groupListener = this::onGroupCallChanged;
+    private final java.util.Set<String> groupScreensShown = new java.util.HashSet<>();
 
     /**
      * Brings the service up from the UI process. Called through JNI so the
@@ -91,14 +125,29 @@ public final class QuackBackendService extends Service {
         }
 
         notifications = new Notifications(this);
+        callNotifications = new CallNotifications(this);
+        callAudio = new CallAudio(this);
+        liveAudio = callAudio;
+        liveCallNotifications = callNotifications;
+        CallRegistry.get().addListener(callListener);
+        GroupCallRegistry.get().addListener(groupListener);
         router = new FrameRouter(SOCKET_NAME, (module, name, frame) -> {
             // tacky decides what deserves an alert; this only presents it.
             if ("notify".equals(module) && "Notify".equals(name)) {
                 notifications.onNotify(frame);
+            } else if ("notify".equals(module) && "MissedCall".equals(name)) {
+                callNotifications.onMissedCall(frame);
             } else if ("message".equals(module) && "OwnRead".equals(name)) {
                 notifications.onOwnRead(frame);
+            } else if ("calls".equals(module)) {
+                CallRegistry.get().onEvent(name, frame);
+            } else if ("groupcall".equals(module) && "State".equals(name)) {
+                GroupCallRegistry.get().onState(frame);
+            } else if ("groupcall".equals(module) && "Invited".equals(name)) {
+                callNotifications.onGroupInvite(frame);
             }
         });
+        liveRouter = router;
 
         // tacky_create returns once requests can be queued, but it still opens
         // a database on the way; keep it off the thread holding the FGS clock.
@@ -154,6 +203,7 @@ public final class QuackBackendService extends Service {
     }
 
     private void goForeground() {
+        foregroundCall = null;
         final NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(
                 CHANNEL, getString(R.string.backend_channel_name),
@@ -186,6 +236,174 @@ public final class QuackBackendService extends Service {
         return START_STICKY;
     }
 
+    // --- calls -------------------------------------------------------------
+
+    private void onCallChanged(CallRegistry.Call c) {
+        if (c.ringingHere()) {
+            if (c.name == null) {
+                lookUp(c);
+            }
+            callNotifications.showIncoming(c);
+            return;
+        }
+        callNotifications.cancelIncoming(c);
+        if (c.outgoing && "calling".equals(c.state) && c.name == null) {
+            // Placed from the app, which is on screen, so we may start an
+            // activity and claim the microphone.
+            lookUp(c);
+            startActivity(CallActivity.intent(this, c, CallActivity.ACTION_SHOW));
+        }
+        refreshForeground();
+    }
+
+    /** Joins begin in the app, on screen, as outgoing 1:1 calls do. */
+    private void onGroupCallChanged(GroupCallRegistry.Call g) {
+        final String key = GroupCallRegistry.key(g.acc, g.room);
+        if (g.live()) {
+            callNotifications.cancelGroupInvite(g.acc, g.room);
+            if (groupScreensShown.add(key)) {
+                startActivity(GroupCallActivity.intent(this, g.acc, g.room));
+            }
+        } else {
+            groupScreensShown.remove(key);
+        }
+        refreshForeground();
+    }
+
+    /** The foreground notification: a 1:1 call, else a group call, else the connection. */
+    private void refreshForeground() {
+        Object want = null;
+        boolean video = false;
+        for (CallRegistry.Call c : CallRegistry.get().current()) {
+            if (c.live()) {
+                want = c;
+                video = c.video;
+                break;
+            }
+        }
+        if (want == null) {
+            for (GroupCallRegistry.Call g : GroupCallRegistry.get().current()) {
+                want = g;
+                video = g.video;
+                break;
+            }
+        }
+        if (want == null) {
+            if (foregroundCall != null) {
+                foregroundCall = null;
+                callAudio.stop();
+                demote();
+            }
+            return;
+        }
+        final Notification n = want instanceof CallRegistry.Call
+                ? callNotifications.ongoing((CallRegistry.Call) want)
+                : callNotifications.ongoingGroup((GroupCallRegistry.Call) want);
+        if (want == foregroundCall) {
+            getSystemService(NotificationManager.class).notify(NOTIF_ID, n);
+            return;
+        }
+        callAudio.start(video);
+        promote(want, n, video);
+    }
+
+    /**
+     * Without the microphone type Android silences the mic once the app is off
+     * screen, and the type can only be claimed while the app is visible.
+     */
+    private void promote(Object call, Notification n, boolean video) {
+        foregroundCall = call;
+        // specialUse only exists from 14; before it, the service had no type.
+        final int base = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                ? ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE : 0;
+        int types = base;
+        if (granted(Manifest.permission.RECORD_AUDIO)) {
+            types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        }
+        if (video && granted(Manifest.permission.CAMERA)) {
+            types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+        }
+        try {
+            startForeground(NOTIF_ID, n, types);
+        } catch (RuntimeException e) {
+            // Not visible after all: the mic goes when the screen does.
+            Log.w(TAG, "could not claim the microphone for the call", e);
+            startForeground(NOTIF_ID, n, base);
+        }
+    }
+
+    private void demote() {
+        try {
+            goForeground();
+        } catch (RuntimeException e) {
+            Log.e(TAG, "could not return to the plain foreground", e);
+        }
+    }
+
+    private boolean granted(String permission) {
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** The peer's name and avatar, best effort. */
+    private void lookUp(CallRegistry.Call c) {
+        c.name = "";
+        try {
+            router.request("author", "get",
+                    new JSONObject().put("acc", c.acc).put("chat", c.peer),
+                    (result, error) -> {
+                        if (result instanceof JSONObject) {
+                            final String name = ((JSONObject) result).optString(c.peer);
+                            if (!name.isEmpty()) {
+                                c.name = name;
+                                main(() -> CallRegistry.get().changed(c));
+                            }
+                        }
+                    });
+            router.request("avatar", "metadata",
+                    new JSONObject().put("acc", c.acc).put("jid", c.peer),
+                    (meta, error) -> {
+                        if (!(meta instanceof JSONObject)) {
+                            return;
+                        }
+                        final String hash = ((JSONObject) meta).optString("hash");
+                        if (hash.isEmpty()) {
+                            return;
+                        }
+                        try {
+                            router.request("avatar", "data",
+                                    new JSONObject().put("acc", c.acc).put("hash", hash),
+                                    (data, err) -> {
+                                        final Bitmap bmp = decodeAvatar(data);
+                                        if (bmp != null) {
+                                            c.avatar = bmp;
+                                            main(() -> CallRegistry.get().changed(c));
+                                        }
+                                    });
+                        } catch (JSONException e) {
+                            Log.w(TAG, "avatar request", e);
+                        }
+                    });
+        } catch (JSONException e) {
+            Log.w(TAG, "call lookups", e);
+        }
+    }
+
+    private static Bitmap decodeAvatar(Object data) {
+        if (!(data instanceof String) || ((String) data).isEmpty()) {
+            return null;
+        }
+        try {
+            final byte[] bytes = Base64.decode((String) data, Base64.DEFAULT);
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private void main(Runnable r) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).post(r);
+    }
+
     /**
      * Notification buttons arrive here rather than at an activity, so they work
      * with no UI process alive. Each becomes one tokenless notify frame: tacky
@@ -196,6 +414,41 @@ public final class QuackBackendService extends Service {
             return;
         }
         final String acc = intent.getStringExtra(Notifications.EXTRA_ACC);
+        final String room = intent.getStringExtra(GroupCallActivity.EXTRA_ROOM);
+        if (acc != null && room != null) {
+            try {
+                switch (intent.getAction()) {
+                    case ACTION_GROUP_DECLINE:
+                        callNotifications.cancelGroupInvite(acc, room);
+                        router.inject("groupcall", "decline", new JSONObject().put("acc", acc)
+                                .put("chat", intent.getStringExtra(GroupCallActivity.EXTRA_CHAT))
+                                .put("timestamp", intent.getLongExtra(GroupCallActivity.EXTRA_TS, 0)));
+                        return;
+                    case ACTION_GROUP_LEAVE:
+                        router.inject("groupcall", "leave",
+                                new JSONObject().put("acc", acc).put("jid", room));
+                        return;
+                    default:
+                        break;
+                }
+            } catch (JSONException e) {
+                Log.w(TAG, "groupcall action", e);
+                return;
+            }
+        }
+        final String sid = intent.getStringExtra(CallActivity.EXTRA_SID);
+        if (acc != null && sid != null) {
+            switch (intent.getAction()) {
+                case ACTION_CALL_DECLINE:
+                    callFrame("reject", acc, sid);
+                    return;
+                case ACTION_CALL_HANG_UP:
+                    callFrame("hangup", acc, sid);
+                    return;
+                default:
+                    break;
+            }
+        }
         final String jid = intent.getStringExtra(Notifications.EXTRA_JID);
         if (acc == null || jid == null) {
             return;
@@ -242,6 +495,14 @@ public final class QuackBackendService extends Service {
         }
     }
 
+    private void callFrame(String method, String acc, String sid) {
+        try {
+            router.inject("calls", method, new JSONObject().put("acc", acc).put("sid", sid));
+        } catch (JSONException e) {
+            Log.w(TAG, "calls " + method, e);
+        }
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
         return null; // the UI attaches over the socket, not through a binder
@@ -249,6 +510,14 @@ public final class QuackBackendService extends Service {
 
     @Override
     public void onDestroy() {
+        CallRegistry.get().removeListener(callListener);
+        GroupCallRegistry.get().removeListener(groupListener);
+        liveRouter = null;
+        liveAudio = null;
+        liveCallNotifications = null;
+        if (callAudio != null) {
+            callAudio.stop();
+        }
         if (router != null) {
             router.stop();
         }

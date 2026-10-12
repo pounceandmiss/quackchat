@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One layout for every state: voice/ringing centred in the palette, video
+     edge to edge with white overlays on scrims. CallActivity picks the parts. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/call_background">
+
+    <org.qtproject.example.quackchat.FrameStreamView
+        android:id="@+id/remote_video"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/voice_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp">
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <FrameLayout
+            android:id="@+id/avatar_frame"
+            android:layout_width="168dp"
+            android:layout_height="168dp">
+
+            <TextView
+                android:id="@+id/initial"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/call_button"
+                android:backgroundTint="@color/call_accent"
+                android:gravity="center"
+                android:textColor="@color/call_on_accent"
+                android:textSize="76sp" />
+
+            <ImageView
+                android:id="@+id/avatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:textColor="@color/call_text"
+            android:textSize="30sp" />
+
+        <TextView
+            android:id="@+id/jid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="middle"
+            android:gravity="center"
+            android:singleLine="true"
+            android:textColor="@color/call_text_dim"
+            android:textSize="14sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/verified"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="@string/call_verified"
+                android:src="@drawable/ic_verified"
+                android:tint="@color/call_accent"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/call_text_dim"
+                android:textSize="16sp" />
+
+            <Chronometer
+                android:id="@+id/duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textColor="@color/call_text_dim"
+                android:textSize="16sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/failure"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:textColor="@color/call_negative"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/account"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:ellipsize="middle"
+            android:gravity="center"
+            android:singleLine="true"
+            android:textColor="@color/call_text_dim"
+            android:textSize="13sp" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="0dp"
+            android:layout_weight="1.6" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/video_top"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="@drawable/call_scrim_top"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="40dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/video_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:singleLine="true"
+            android:textColor="#ffffff"
+            android:textSize="20sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/video_verified"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginEnd="6dp"
+                android:contentDescription="@string/call_verified"
+                android:src="@drawable/ic_verified"
+                android:tint="#ffffff"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/video_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#d9ffffff"
+                android:textSize="14sp" />
+
+            <Chronometer
+                android:id="@+id/video_duration"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textColor="#d9ffffff"
+                android:textSize="14sp"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:paddingTop="40dp"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:id="@+id/incoming_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageButton
+                    android:id="@+id/decline"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/call_button"
+                    android:backgroundTint="@color/call_negative"
+                    android:contentDescription="@string/call_decline"
+                    android:src="@drawable/ic_call_end"
+                    android:tint="#ffffff" />
+
+                <TextView
+                    android:id="@+id/decline_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_decline" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="96dp"
+                android:layout_height="1dp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageButton
+                    android:id="@+id/answer"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/call_button"
+                    android:backgroundTint="@color/call_answer"
+                    android:contentDescription="@string/call_answer"
+                    android:src="@drawable/ic_call"
+                    android:tint="#ffffff" />
+
+                <TextView
+                    android:id="@+id/answer_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_answer" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/call_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center|top"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <LinearLayout
+                style="@style/CallControl">
+
+                <ImageButton
+                    android:id="@+id/mute"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_mute"
+                    android:src="@drawable/ic_mic" />
+
+                <TextView
+                    android:id="@+id/mute_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_mute" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/speaker_control"
+                style="@style/CallControl">
+
+                <ImageButton
+                    android:id="@+id/speaker"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_speaker"
+                    android:src="@drawable/ic_speaker" />
+
+                <TextView
+                    android:id="@+id/speaker_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_speaker" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/camera_control"
+                style="@style/CallControl"
+                android:visibility="gone">
+
+                <ImageButton
+                    android:id="@+id/camera"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_camera_off"
+                    android:src="@drawable/ic_videocam" />
+
+                <TextView
+                    android:id="@+id/camera_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_camera" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/flip_control"
+                style="@style/CallControl"
+                android:visibility="gone">
+
+                <ImageButton
+                    android:id="@+id/flip"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_switch_camera"
+                    android:src="@drawable/ic_flip_camera" />
+
+                <TextView
+                    android:id="@+id/flip_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_flip" />
+            </LinearLayout>
+
+            <LinearLayout
+                style="@style/CallControl">
+
+                <ImageButton
+                    android:id="@+id/hang_up"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:background="@drawable/call_button"
+                    android:backgroundTint="@color/call_negative"
+                    android:contentDescription="@string/call_hang_up"
+                    android:src="@drawable/ic_call_end"
+                    android:tint="#ffffff" />
+
+                <TextView
+                    android:id="@+id/hang_up_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_end" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/warning"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/call_pill"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:textColor="#ffffff"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <org.qtproject.example.quackchat.FrameStreamView
+        android:id="@+id/preview_video"
+        android:layout_width="100dp"
+        android:layout_height="140dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="16dp"
+        android:visibility="gone" />
+</FrameLayout>

@@ -8,9 +8,18 @@ import android.util.Log;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -24,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li><b>forward</b> - the default, both directions</li>
  *   <li><b>observe</b> - notify events drive notifications, UI attached or not</li>
  *   <li><b>inject</b> - notification actions write tokenless notify frames</li>
+ *   <li><b>ask</b> - the call screen's own requests, answered here</li>
  *   <li><b>renumber</b> - request tokens, through {@link TokenMap}</li>
  * </ul>
  *
@@ -39,6 +49,20 @@ final class FrameRouter implements TackyNative.FrameSink {
         /** An inbound event frame, already split into module and bare name. */
         void onEvent(String module, String name, byte[] frame);
     }
+
+    interface Reply {
+        /** {@code error} is null on success. */
+        void onReply(Object result, String error);
+    }
+
+    /** The connection number of this process's own requests: UIs count from 1. */
+    private static final int SELF = 0;
+
+    private final Map<Long, Reply> replies = new ConcurrentHashMap<>();
+    private final AtomicLong nextReply = new AtomicLong(1);
+    /** Off tacky's thread, so a reply handler may send again. */
+    private final ExecutorService replyThread =
+            Executors.newSingleThreadExecutor(r -> new Thread(r, "quack-reply"));
 
     private final String socketName;
     private final TackyNative tacky;
@@ -107,6 +131,7 @@ final class FrameRouter implements TackyNative.FrameSink {
         }
         outbound.clear();
         tacky.stop();
+        replyThread.shutdownNow();
     }
 
     /**
@@ -115,6 +140,46 @@ final class FrameRouter implements TackyNative.FrameSink {
      */
     void inject(byte[] tokenlessFrame) {
         tacky.send(tokenlessFrame);
+    }
+
+    void inject(String module, String method, JSONObject args) {
+        tacky.send(new JSONArray().put(module).put(method).put(args).toString()
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A request of this process's own, such as the call screen's name and
+     * avatar lookups. Its token goes through {@link TokenMap}, so it cannot
+     * collide with a UI's.
+     */
+    void request(String module, String method, JSONObject args, Reply reply) {
+        final long local = nextReply.getAndIncrement();
+        replies.put(local, reply);
+        final byte[] frame = new JSONArray().put(module).put(method).put(args)
+                .put(local).toString().getBytes(StandardCharsets.UTF_8);
+        tacky.send(tokens.outbound(frame, SELF));
+    }
+
+    private void answer(byte[] frame) {
+        replyThread.execute(() -> {
+            final JSONArray arr;
+            try {
+                arr = new JSONArray(new String(frame, StandardCharsets.UTF_8));
+            } catch (JSONException e) {
+                Log.w(TAG, "unparseable reply", e);
+                return;
+            }
+            final Reply reply = replies.remove(arr.optLong(1));
+            if (reply == null) {
+                return;
+            }
+            final boolean ok = "result".equals(arr.optString(0));
+            try {
+                reply.onReply(ok ? arr.opt(2) : null, ok ? null : arr.optString(2));
+            } catch (RuntimeException e) {
+                Log.e(TAG, "reply handler threw", e);
+            }
+        });
     }
 
     // --- tacky -> here -------------------------------------------------------
@@ -129,6 +194,10 @@ final class FrameRouter implements TackyNative.FrameSink {
         final TokenMap.Routed routed = tokens.inbound(json);
         if (routed == null) {
             return; // a reply owed to a UI that has gone
+        }
+        if (routed.gen == SELF) {
+            answer(routed.frame);
+            return;
         }
         if (!outbound.offer(new Outgoing(routed.frame, routed.gen))) {
             // A UI that has stopped reading must not stall tacky's thread. The

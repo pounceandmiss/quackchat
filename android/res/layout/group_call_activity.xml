@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/call_background">
+
+    <LinearLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="24dp">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:singleLine="true"
+            android:textColor="@color/call_text"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center"
+            android:textColor="@color/call_text_dim"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/failure"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:gravity="center"
+            android:textColor="@color/call_negative"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/grid_frame"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="12dp"
+            android:layout_weight="1" />
+
+        <LinearLayout
+            android:id="@+id/invite_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageButton
+                    android:id="@+id/decline"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/call_button"
+                    android:backgroundTint="@color/call_negative"
+                    android:contentDescription="@string/call_decline"
+                    android:src="@drawable/ic_call_end"
+                    android:tint="#ffffff" />
+
+                <TextView
+                    style="@style/CallLabel"
+                    android:text="@string/call_decline" />
+            </LinearLayout>
+
+            <Space
+                android:layout_width="96dp"
+                android:layout_height="1dp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical">
+
+                <ImageButton
+                    android:id="@+id/join"
+                    android:layout_width="72dp"
+                    android:layout_height="72dp"
+                    android:background="@drawable/call_button"
+                    android:backgroundTint="@color/call_answer"
+                    android:contentDescription="@string/group_call_join"
+                    android:src="@drawable/ic_call"
+                    android:tint="#ffffff" />
+
+                <TextView
+                    style="@style/CallLabel"
+                    android:text="@string/group_call_join" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/call_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center|top"
+            android:orientation="horizontal">
+
+            <LinearLayout style="@style/CallControl">
+
+                <ImageButton
+                    android:id="@+id/mute"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_mute"
+                    android:src="@drawable/ic_mic" />
+
+                <TextView
+                    android:id="@+id/mute_label"
+                    style="@style/CallLabel"
+                    android:text="@string/call_mute" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/speaker_control"
+                style="@style/CallControl">
+
+                <ImageButton
+                    android:id="@+id/speaker"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_speaker"
+                    android:src="@drawable/ic_speaker" />
+
+                <TextView
+                    style="@style/CallLabel"
+                    android:text="@string/call_speaker" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/camera_control"
+                style="@style/CallControl"
+                android:visibility="gone">
+
+                <ImageButton
+                    android:id="@+id/camera"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_camera_off"
+                    android:src="@drawable/ic_videocam" />
+
+                <TextView
+                    style="@style/CallLabel"
+                    android:text="@string/call_camera" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/flip_control"
+                style="@style/CallControl"
+                android:visibility="gone">
+
+                <ImageButton
+                    android:id="@+id/flip"
+                    style="@style/CallToggle"
+                    android:contentDescription="@string/call_switch_camera"
+                    android:src="@drawable/ic_flip_camera" />
+
+                <TextView
+                    style="@style/CallLabel"
+                    android:text="@string/call_flip" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/CallControl">
+
+                <ImageButton
+                    android:id="@+id/leave"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:background="@drawable/call_button"
+                    android:backgroundTint="@color/call_negative"
+                    android:contentDescription="@string/group_call_leave"
+                    android:src="@drawable/ic_call_end"
+                    android:tint="#ffffff" />
+
+                <TextView
+                    style="@style/CallLabel"
+                    android:text="@string/group_call_leave" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/warning"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="72dp"
+        android:background="@drawable/call_pill"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:textColor="#ffffff"
+        android:textSize="13sp"
+        android:visibility="gone" />
+</FrameLayout>
