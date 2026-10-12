@@ -37,6 +37,9 @@ Page {
 
     readonly property string roomTitle: name !== "" ? name : room.roomJid
     readonly property bool omemoKnown: page.omemo !== null && page.omemo.known
+    // tacky's `offered`: the room qualifies, or encryption is on in it. A room
+    // that is neither gets a line saying so rather than a card about it.
+    readonly property bool encryptionOffered: page.omemoKnown && page.omemo.available
 
     background: Rectangle { color: Theme.background }
 
@@ -122,15 +125,16 @@ Page {
         return keys.trusted === keys.keys ? qsTr("%n key(s), trusted", "", keys.keys)
                                           : qsTr("%n key(s)", "", keys.keys)
     }
-    // Why a room cannot be encrypted, in tacky's words for it.
+    // Why a room cannot be encrypted, in tacky's words for it - short enough to
+    // follow "Not encrypted" on one line.
     function reasonText(reason) {
         switch (reason) {
         case "unknown":
-            return qsTr("Whether this room can be encrypted is found out on joining it.")
+            return qsTr("found out on joining")
         case "not_members_only":
-            return qsTr("Only a members-only room can be encrypted.")
+            return qsTr("only members-only rooms can be")
         case "anonymous":
-            return qsTr("Only a room that shows its members' addresses can be encrypted.")
+            return qsTr("only rooms that show addresses can be")
         default:
             return reason
         }
@@ -537,6 +541,26 @@ Page {
         model: room
         ScrollBar.vertical: ThinScrollBar {}
 
+        // A header that grows pushes up rather than down: the view holds its
+        // first row still, and moves its origin to make room. The cards turn
+        // up after the page opens, which left it opening scrolled down past
+        // them; a view that was at the top stays there instead. Unfolding the
+        // legend would likewise carry the button that asked for it off the
+        // top, so until the list is next scrolled by hand, that button is
+        // held where it was and the legend opens and closes beneath it.
+        property bool atTop: true
+        property Item held: null
+        property real heldAt: 0
+        onContentYChanged: atTop = contentY <= originY
+        onHeldChanged: if (held) heldAt = held.mapToItem(list, 0, 0).y
+        onOriginYChanged: {
+            if (held)
+                contentY += held.mapToItem(list, 0, 0).y - heldAt
+            else if (atTop)
+                contentY = originY
+        }
+        onMovementStarted: held = null
+
         // Inline rather than pinned to the top of the view: a pinned label would
         // float over the room card while the list is still at the top.
         section.property: "group"
@@ -741,13 +765,47 @@ Page {
 
                 // Whether what is written here is encrypted, and whether every
                 // member can read it. Who needs attention is marked on their
-                // own row below.
+                // own row below. A room that cannot be encrypted gets one line
+                // saying so, and why, instead.
                 Card {
                     objectName: "encryptionCard"
                     visible: !page.filterMode && page.omemoKnown
 
                     RowLayout {
+                        objectName: "encryptionUnavailable"
                         Layout.fillWidth: true
+                        visible: !page.encryptionOffered
+                        spacing: 8
+                        Glyph {
+                            Layout.alignment: Qt.AlignTop
+                            path: Icons.lockOpen
+                            color: Theme.textDim
+                            size: 18
+                        }
+                        Text {
+                            Layout.alignment: Qt.AlignTop
+                            text: qsTr("Not encrypted")
+                            color: Theme.textPrimary
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+                        Text {
+                            objectName: "encryptionReason"
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignTop
+                            text: !page.omemoKnown ? ""
+                                  : "·  " + page.omemo.reasons.map(r => page.reasonText(r)).join(", ")
+                            color: Theme.textDim
+                            font.pixelSize: 12
+                            topPadding: 2
+                            wrapMode: Text.WordWrap
+                            visible: page.omemoKnown && page.omemo.reasons.length > 0
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: page.encryptionOffered
                         spacing: 10
                         Glyph {
                             path: page.omemoKnown && page.omemo.enabled
@@ -766,18 +824,19 @@ Page {
                         Switch {
                             objectName: "encryptionSwitch"
                             Accessible.name: qsTr("Encrypt messages")
-                            visible: page.omemoKnown && page.omemo.available
+                            visible: page.encryptionOffered
                             checked: page.omemoKnown && page.omemo.enabled
                             onToggled: page.omemo.enabled = checked
                         }
                     }
+                    // Left out once the room stopped qualifying: the line
+                    // below says what that means for what is written here.
                     Caption {
                         objectName: "encryptionState"
                         Layout.fillWidth: true
+                        visible: page.encryptionOffered && page.omemo.eligible
                         wrapMode: Text.WordWrap
                         text: !page.omemoKnown ? ""
-                              : !page.omemo.eligible
-                              ? page.omemo.reasons.map(r => page.reasonText(r)).join(" ")
                               : !page.omemo.enabled
                               ? qsTr("Messages go out unencrypted.")
                               : page.omemo.attention > 0
@@ -820,6 +879,81 @@ Page {
                         ? qsTr("People")
                         : qsTr("People matching “%1”").arg(room.filter)
                     shown: room.total > 0
+
+                    // What participantlegend.tcl is a whole toplevel for,
+                    // asked for beside the list it explains rather than below
+                    // it, where a big room would put it out of reach.
+                    IconButton {
+                        id: legendToggle
+                        objectName: "legendToggle"
+                        checkable: true
+                        iconPath: Icons.helpOutline
+                        iconSize: 16
+                        implicitWidth: 26
+                        implicitHeight: 26
+                        glyphColor: checked ? Theme.accent : Theme.textDim
+                        Accessible.name: qsTr("What do these mean?")
+                        focusPolicy: Qt.TabFocus
+                        // The list header follows, keeping this button put.
+                        onCheckedChanged: list.held = legendToggle
+                    }
+                }
+
+                // Folded away, because it is read once and then never again.
+                Card {
+                    objectName: "legendBody"
+                    visible: legendToggle.checked && room.total > 0
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+
+                        LegendHeading { text: qsTr("Roles, granted for this visit") }
+                        LegendRow {
+                            term: qsTr("Moderator")
+                            meaning: qsTr("Can kick, mute and manage the room")
+                        }
+                        LegendRow {
+                            term: qsTr("Participant")
+                            meaning: qsTr("Can speak")
+                        }
+                        LegendRow {
+                            term: qsTr("Visitor")
+                            meaning: qsTr("Can read, but not speak in a moderated room")
+                        }
+
+                        LegendHeading { text: qsTr("Affiliations, kept between visits") }
+                        LegendRow {
+                            term: qsTr("Owner")
+                            meaning: qsTr("Full control, down to destroying the room")
+                        }
+                        LegendRow {
+                            term: qsTr("Admin")
+                            meaning: qsTr("Can ban people and grant membership")
+                        }
+                        LegendRow {
+                            term: qsTr("Member")
+                            meaning: qsTr("Recognised by the room, and let into a members-only one")
+                        }
+
+                        LegendHeading { text: qsTr("The dot on a picture") }
+                        LegendRow {
+                            term: qsTr("Filled green")
+                            meaning: qsTr("Available")
+                        }
+                        LegendRow {
+                            term: qsTr("Filled amber")
+                            meaning: qsTr("Away")
+                        }
+                        LegendRow {
+                            term: qsTr("Hollow amber")
+                            meaning: qsTr("Away for a while")
+                        }
+                        LegendRow {
+                            term: qsTr("Filled red")
+                            meaning: qsTr("Does not want to be disturbed")
+                        }
+                    }
                 }
             }
         }
@@ -1050,100 +1184,6 @@ Page {
                         if (room.total === 0)
                             return qsTr("Nobody is here yet.")
                         return qsTr("Nobody in this room matches that.")
-                    }
-                }
-
-                // What participantlegend.tcl is a whole toplevel for, folded in
-                // beside the words it explains - and folded away, because it is
-                // read once and then never again.
-                Card {
-                    id: legendCard
-                    objectName: "legendCard"
-                    readonly property bool open: legendToggle.checked
-
-                    AbstractButton {
-                        id: legendToggle
-                        objectName: "legendToggle"
-                        Layout.fillWidth: true
-                        checkable: true
-                        text: qsTr("What do these mean?")
-                        focusPolicy: Qt.TabFocus
-                        background: Rectangle {
-                            radius: 6
-                            color: "transparent"
-                            border.width: legendToggle.visualFocus ? 2 : 0
-                            border.color: Theme.accent
-                        }
-                        contentItem: RowLayout {
-                            spacing: 8
-                            Text {
-                                Layout.fillWidth: true
-                                text: legendToggle.text
-                                color: Theme.textPrimary
-                                font.pixelSize: 14
-                                font.bold: true
-                            }
-                            Glyph {
-                                path: legendToggle.checked ? Icons.keyboardArrowUp
-                                                           : Icons.keyboardArrowDown
-                                color: Theme.textDim
-                                size: 20
-                            }
-                        }
-                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    }
-
-                    ColumnLayout {
-                        objectName: "legendBody"
-                        Layout.fillWidth: true
-                        visible: legendCard.open
-                        spacing: 4
-
-                        LegendHeading { text: qsTr("Roles, granted for this visit") }
-                        LegendRow {
-                            term: qsTr("Moderator")
-                            meaning: qsTr("Can kick, mute and manage the room")
-                        }
-                        LegendRow {
-                            term: qsTr("Participant")
-                            meaning: qsTr("Can speak")
-                        }
-                        LegendRow {
-                            term: qsTr("Visitor")
-                            meaning: qsTr("Can read, but not speak in a moderated room")
-                        }
-
-                        LegendHeading { text: qsTr("Affiliations, kept between visits") }
-                        LegendRow {
-                            term: qsTr("Owner")
-                            meaning: qsTr("Full control, down to destroying the room")
-                        }
-                        LegendRow {
-                            term: qsTr("Admin")
-                            meaning: qsTr("Can ban people and grant membership")
-                        }
-                        LegendRow {
-                            term: qsTr("Member")
-                            meaning: qsTr("Recognised by the room, and let into a members-only one")
-                        }
-
-                        LegendHeading { text: qsTr("The dot on a picture") }
-                        LegendRow {
-                            term: qsTr("Filled green")
-                            meaning: qsTr("Available")
-                        }
-                        LegendRow {
-                            term: qsTr("Filled amber")
-                            meaning: qsTr("Away")
-                        }
-                        LegendRow {
-                            term: qsTr("Hollow amber")
-                            meaning: qsTr("Away for a while")
-                        }
-                        LegendRow {
-                            term: qsTr("Filled red")
-                            meaning: qsTr("Does not want to be disturbed")
-                        }
                     }
                 }
             }

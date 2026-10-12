@@ -136,13 +136,45 @@ private slots:
         e.assertNoErrors();
     }
 
-    // The legend stays folded until asked for.
+    // Cards that turn up after the page opens - the room's people, its
+    // encryption - grow the list's header. The view starts at the room card,
+    // and stays there while they do.
+    void thePageStaysAtTheTopAsItFillsIn() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QObject *list = w->findChild<QObject *>("occupantList");
+        QVERIFY(list);
+        QVERIFY(list->property("atYBeginning").toBool());
+
+        QVERIFY(joinedRoom(w));
+        const QString room = "room@muc.example.com?join";
+        const qreal origin = list->property("originY").toReal();
+        emit app->backend()->event(
+            "omemo", "RoomStatus",
+            QVariantMap{{"acc", "me@example.com"}, {"jid", room},
+                        {"status", QVariantMap{
+                            {"jid", room}, {"eligible", true}, {"enabled", true},
+                            {"offered", true}, {"reasons", QVariantList{}},
+                            {"member_list", "complete"}, {"members", QVariantList{}},
+                            {"attention", 0}, {"unreachable", QVariantList{}}}}});
+        QTRY_VERIFY(list->property("originY").toReal() < origin);
+        QVERIFY(list->property("atYBeginning").toBool());
+        e.assertNoErrors();
+    }
+
+    // The legend stays folded until asked for, from beside the people it
+    // explains.
     void theLegendOpensAndFoldsAgain() {
         Engine e;
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
         QScopedPointer<QObject> holder;
         QQuickWindow *w = openMucDetails(e, holder);
         QVERIFY(w);
+        QVERIFY(joinedRoom(w));
 
         QObject *toggle = w->findChild<QObject *>("legendToggle");
         QObject *body = w->findChild<QObject *>("legendBody");
@@ -151,6 +183,18 @@ private slots:
         QVERIFY(!body->property("visible").toBool());
         QVERIFY(QMetaObject::invokeMethod(toggle, "toggle"));
         QVERIFY(body->property("visible").toBool());
+
+        // It unfolds beneath the button rather than pushing the button up
+        // and away, which is what a list's growing header does by itself.
+        // The view makes room by moving its origin, which is when to look.
+        auto *button = qobject_cast<QQuickItem *>(toggle);
+        QObject *list = w->findChild<QObject *>("occupantList");
+        QVERIFY(list);
+        const qreal at = button->mapToScene(QPointF()).y();
+        const qreal origin = list->property("originY").toReal();
+        QTRY_VERIFY(list->property("originY").toReal() < origin - 100);
+        QCOMPARE(button->mapToScene(QPointF()).y(), at);
+
         QVERIFY(QMetaObject::invokeMethod(toggle, "toggle"));
         QVERIFY(!body->property("visible").toBool());
 
@@ -541,6 +585,27 @@ private slots:
         QVERIFY(toggle->property("checked").toBool());
         QCOMPARE(findItem(w->contentItem(), "encryptionState")->property("text").toString(),
                  QString("2 member(s) need attention."));
+        QQuickItem *unavailable = findItem(w->contentItem(), "encryptionUnavailable");
+        QVERIFY(unavailable);
+        QVERIFY(!unavailable->isVisible());
+
+        // A room that cannot be encrypted keeps a line saying so, and why,
+        // but no switch.
+        emit app->backend()->event(
+            "omemo", "RoomStatus",
+            QVariantMap{{"acc", "me@example.com"}, {"jid", room},
+                        {"status", QVariantMap{
+                            {"jid", room}, {"eligible", false}, {"enabled", false},
+                            {"offered", false},
+                            {"reasons", QVariantList{"not_members_only"}},
+                            {"member_list", "complete"}, {"members", QVariantList{}},
+                            {"attention", 0}, {"unreachable", QVariantList{}}}}});
+        QTRY_VERIFY(unavailable->isVisible());
+        QVERIFY(card->isVisible());
+        QVERIFY(!toggle->isVisible());
+        QVERIFY(!findItem(w->contentItem(), "encryptionState")->isVisible());
+        QCOMPARE(findItem(w->contentItem(), "encryptionReason")->property("text").toString(),
+                 QString("·  only members-only rooms can be"));
         e.assertNoErrors();
     }
 

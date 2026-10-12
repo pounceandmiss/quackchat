@@ -9,6 +9,9 @@ Item {
     id: label
     property alias text: caption.text
     property bool shown: true
+    // Anything put inside sits just after the words, centred on them - a
+    // button that explains what the strip names, say.
+    default property alias trailing: trailingRow.data
 
     implicitHeight: shown ? 28 : 0
 
@@ -25,6 +28,14 @@ Item {
             color: Theme.textDim
             font.pixelSize: 12
             font.bold: true
+        }
+
+        Row {
+            id: trailingRow
+            anchors.left: caption.right
+            anchors.leftMargin: 4
+            anchors.verticalCenter: caption.verticalCenter
+            spacing: 4
         }
 
         Rectangle {
