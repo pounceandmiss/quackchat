@@ -47,22 +47,22 @@ class TestTransfers : public QObject {
 
         // Width up front: the bubble sizes itself off its parent, and one built
         // parentless would fall back to measuring its own content instead.
-        QQuickItem *with(const QVariantMap &att) {
+        QQuickItem *with(const QVariantMap &att, const QString &text = {}) {
             auto *item = qobject_cast<QQuickItem *>(m_comp.createWithInitialProperties(
                 {{"attachments", QVariantList{att}},
-                 {"text", ""},
+                 {"text", text},
                  {"width", m_win.width()}}));
             if (item)
                 item->setParentItem(m_win.contentItem());
             return item;
         }
 
-        void tap(QQuickItem *target) {
+        void tap(QQuickItem *target, Qt::MouseButton button = Qt::LeftButton) {
             const QPoint p = m_win.contentItem()
                                  ->mapFromItem(target, QPointF(target->width() / 2,
                                                                target->height() / 2))
                                  .toPoint();
-            QTest::mouseClick(&m_win, Qt::LeftButton, Qt::NoModifier, p);
+            QTest::mouseClick(&m_win, button, Qt::NoModifier, p);
         }
 
     private:
@@ -313,6 +313,62 @@ private slots:
             menu->findChild<QObject *>("attachmentSaveEntry"), "triggered"));
         QCOMPARE(save.count(), 1);
         QCOMPARE(save.first().at(0).toInt(), 0);
+
+        e.assertNoErrors();
+    }
+
+    // The row's own right-click covers the whole bubble, attachments included,
+    // and a press on a file is asking about the file: Save as… lives in its
+    // menu and nowhere else. The rest of the bubble still gets the message's.
+    void aRightClickOnAnAttachmentOpensItsOwnMenu() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(bubbles.with(
+            attachment("file", "doc.pdf", "", "done"), "see attached"));
+        QVERIFY(!b.isNull());
+        QObject *attMenu = b->findChild<QObject *>("attachmentMenu");
+        QObject *msgMenu = b->findChild<QObject *>("bubbleMenu");
+        QVERIFY(attMenu && msgMenu);
+        QQuickItem *chip = findItem(b.data(), "attachmentChip");
+        QVERIFY(chip);
+        QTRY_VERIFY(chip->width() > 0);
+
+        bubbles.tap(chip, Qt::RightButton);
+        QTRY_VERIFY(attMenu->property("opened").toBool());
+        QVERIFY(!msgMenu->property("opened").toBool());
+        QVERIFY(QMetaObject::invokeMethod(attMenu, "close"));
+        QTRY_VERIFY(!attMenu->property("visible").toBool());
+
+        QQuickItem *body = findItem(b.data(), "bubbleText");
+        QVERIFY(body);
+        bubbles.tap(body, Qt::RightButton);
+        QTRY_VERIFY(msgMenu->property("opened").toBool());
+        QVERIFY(!attMenu->property("opened").toBool());
+
+        e.assertNoErrors();
+    }
+
+    // The picture too, which draws in place of the chip.
+    void aRightClickOnAThumbnailOpensTheAttachmentMenu() {
+        Engine e;
+        Bubbles bubbles(e);
+        QVERIFY2(bubbles.error().isEmpty(), qPrintable(bubbles.error()));
+
+        QScopedPointer<QQuickItem> b(bubbles.with(
+            attachment("image", "a.png", bubbles.thumbPath(), "done")));
+        QVERIFY(!b.isNull());
+        QObject *attMenu = b->findChild<QObject *>("attachmentMenu");
+        QObject *msgMenu = b->findChild<QObject *>("bubbleMenu");
+        QVERIFY(attMenu && msgMenu);
+        QQuickItem *thumb = findItem(b.data(), "attachmentThumb");
+        QVERIFY(thumb);
+        QTRY_VERIFY(thumb->isVisible() && thumb->width() > 0);
+
+        bubbles.tap(thumb, Qt::RightButton);
+        QTRY_VERIFY(attMenu->property("opened").toBool());
+        QVERIFY(!msgMenu->property("opened").toBool());
 
         e.assertNoErrors();
     }

@@ -743,6 +743,7 @@ Item {
                 // what is not; this wires that answer to the right signal, and
                 // hands the message's own menu the attachment it was asked about.
                 Repeater {
+                    id: attachmentRepeater
                     model: root.attachments
                     delegate: MessageAttachment {
                         id: att
@@ -1142,10 +1143,26 @@ Item {
     }
 
     // RightButton only, so the left button stays free for the swipe DragHandler.
+    //
+    // It sits over the whole row, so a right-click on an attachment is turned
+    // down here and left to the attachment's own menu underneath - unless
+    // selecting, where that menu is off and the row's is the only one.
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
+        onPressed: (mouse) => mouse.accepted = root.selectionMode
+                                               || !root.attachmentAt(mouse.x, mouse.y)
         onClicked: function(mouse) { root.openMenu(Qt.point(mouse.x, mouse.y), true) }
+    }
+
+    // Whether `x`,`y` in the row lands on one of the attachments.
+    function attachmentAt(x, y) {
+        for (let i = 0; i < attachmentRepeater.count; i++) {
+            const att = attachmentRepeater.itemAt(i)
+            if (att && att.visible && att.contains(att.mapFromItem(root, x, y)))
+                return true
+        }
+        return false
     }
 
     // The mouse's way into the selection the touch long press starts. The mouse
