@@ -79,6 +79,11 @@ private slots:
     void markupEscapesAndKeepsWhitespace();
     void markupRoleReadsTheContentUnion();
     void markupRoleFollowsTheQuoteColor();
+    void markupWrapsLinks();
+    void markupEscapesLinkHref();
+    void markupDropsUnopenableLinks();
+    void markupNestsLinks();
+    void markupRoleFollowsTheLinkColor();
     void replyRolesAreAlwaysStrings();
     void encryptionRolesAreAlwaysStrings();
     void statusCarriesTheFailureReason();
@@ -687,6 +692,73 @@ void TestChatModel::markupRoleFollowsTheQuoteColor() {
 
     QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
     m.setQuoteColor("#222222");
+    QCOMPARE(chg.count(), 1);
+    QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
+    QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));
+}
+
+// A link span becomes an anchor to the text it covers, in the link color -
+// or in Qt's own when none is given.
+void TestChatModel::markupWrapsLinks() {
+    const QVariantList link = spans(R"([{"type":"link","offset":5,"length":21}])");
+    QCOMPARE(messageMarkup("news https://example.com/a", link, kQuote, {}, "#00f"),
+             QString("news <a href=\"https://example.com/a\" style=\"color:#00f\">"
+                     "https://example.com/a</a>"));
+    QCOMPARE(messageMarkup("news https://example.com/a", link, kQuote),
+             QString("news <a href=\"https://example.com/a\">https://example.com/a</a>"));
+}
+
+// The href is the sender's text inside an attribute, so a quote can't end it
+// early.
+void TestChatModel::markupEscapesLinkHref() {
+    QCOMPARE(messageMarkup("https://x/?a=\"b\"&c<d",
+                           spans(R"([{"type":"link","offset":0,"length":21}])"), kQuote),
+             QString("<a href=\"https://x/?a=&quot;b&quot;&amp;c&lt;d\">"
+                     "https://x/?a=\"b\"&amp;c&lt;d</a>"));
+}
+
+// tacky picks what counts as a link; what quack hands to the system to open is
+// still checked here, and anything else draws as plain text.
+void TestChatModel::markupDropsUnopenableLinks() {
+    QCOMPARE(messageMarkup("javascript:alert(1)",
+                           spans(R"([{"type":"link","offset":0,"length":19}])"), kQuote),
+             QString());
+    QCOMPARE(messageMarkup("https://", spans(R"([{"type":"link","offset":0,"length":8}])"),
+                           kQuote),
+             QString());
+    QVERIFY(isOpenableLink("HTTPS://example.com"));
+    QVERIFY(isOpenableLink("mailto:a@example.com"));
+    QVERIFY(isOpenableLink("geo:1,2"));
+    QVERIFY(!isOpenableLink("file:///etc/passwd"));
+    QVERIFY(!isOpenableLink("xmpp:room@example.com?join"));
+}
+
+// The shape of a headline post: a quote line with the link set off at its end.
+// The anchor sits inside the quote's color, and a bold run splitting the link
+// leaves two anchors to the same place rather than crossed tags.
+void TestChatModel::markupNestsLinks() {
+    QCOMPARE(messageMarkup("> headline < https://example.com/a >", spans(R"([
+        {"type":"quote","offset":0,"length":36},
+        {"type":"link","offset":13,"length":21}])"), kQuote),
+             QString("<span style=\"color:#0a0\">&gt; headline &lt; "
+                     "<a href=\"https://example.com/a\">https://example.com/a</a>"
+                     " &gt;</span>"));
+    QCOMPARE(messageMarkup("go https://x.io now", spans(R"([
+        {"type":"bold","offset":0,"length":8},
+        {"type":"link","offset":3,"length":12}])"), kQuote),
+             QString("<b>go <a href=\"https://x.io\">https</a></b>"
+                     "<a href=\"https://x.io\">://x.io</a> now"));
+}
+
+void TestChatModel::markupRoleFollowsTheLinkColor() {
+    ChatModel m;
+    m.setLinkColor("#111111");
+    m.applyBatch(msgs(R"([{"timestamp":100,"content":{"type":"text","body":"https://example.com",
+        "formatting":[{"type":"link","offset":0,"length":19}]}}])"));
+    QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#111111"));
+
+    QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
+    m.setLinkColor("#222222");
     QCOMPARE(chg.count(), 1);
     QCOMPARE(chg.first().at(2).value<QList<int>>(), QList<int>{ChatModel::MarkupRole});
     QVERIFY(m.data(m.index(0), ChatModel::MarkupRole).toString().contains("#222222"));

@@ -13,6 +13,7 @@ struct Span {
     // inside it rather than breaking into one block per styled stretch.
     int rank = 0;
     bool literalWhitespace = false;
+    bool link = false; // openTag waits on the covered text
     QString openTag;
     QString closeTag;
 };
@@ -23,13 +24,23 @@ struct Span {
 // A quote is colored rather than indented: tacky leaves the "> " markers in the
 // body, so <blockquote> would stack Qt's own indent and block break on top of
 // markers that already set the run apart.
+//
+// A link's anchor needs the text it covers, which only the caller has, so its
+// open tag is left for the caller to fill in.
 std::optional<Span> spanFor(const QString &type, const QString &quoteColor,
                             const QString &matchColor) {
     Span s;
-    if (type == QLatin1String("match")) {
+    if (type == QLatin1String("link")) {
+        // Inside everything but a search wash, so a styled link keeps its
+        // style and an anchor split by an overlapping span just becomes two
+        // anchors to the same place.
+        s.rank = 6;
+        s.link = true;
+        s.closeTag = QStringLiteral("</a>");
+    } else if (type == QLatin1String("match")) {
         // Innermost, so the run keeps whatever styling it was written with and
         // only gains the wash behind it.
-        s.rank = 6;
+        s.rank = 7;
         s.openTag = QStringLiteral("<span style=\"background-color:%1\">").arg(matchColor);
         s.closeTag = QStringLiteral("</span>");
     } else if (type == QLatin1String("quote")) {
@@ -110,10 +121,33 @@ QString escapedPlain(const QString &s) {
     return out;
 }
 
+// The anchor for a link span, or nothing when its text is not a link quack
+// opens - which then draws as plain text, the way an unknown span does.
+std::optional<QString> anchorFor(const QString &url, const QString &linkColor) {
+    if (!isOpenableLink(url))
+        return {};
+    QString href = escapedPlain(url);
+    href.replace(u'"', QLatin1String("&quot;"));
+    if (linkColor.isEmpty())
+        return QStringLiteral("<a href=\"%1\">").arg(href);
+    return QStringLiteral("<a href=\"%1\" style=\"color:%2\">").arg(href, linkColor);
+}
+
 } // namespace
 
+bool isOpenableLink(const QString &url) {
+    static const char *const schemes[] = {"http://", "https://", "mailto:", "geo:"};
+    for (const char *scheme : schemes) {
+        const QLatin1String s(scheme);
+        if (url.size() > s.size() && url.startsWith(s, Qt::CaseInsensitive))
+            return true;
+    }
+    return false;
+}
+
 QString messageMarkup(const QString &body, const QVariantList &spans,
-                      const QString &quoteColor, const QString &matchColor) {
+                      const QString &quoteColor, const QString &matchColor,
+                      const QString &linkColor) {
     if (body.isEmpty() || spans.isEmpty())
         return {};
 
@@ -131,8 +165,19 @@ QString messageMarkup(const QString &body, const QVariantList &spans,
             continue;
         s->start = qBound(0, m.value(QStringLiteral("offset")).toInt(), n);
         s->end = qBound(s->start, s->start + m.value(QStringLiteral("length")).toInt(), n);
-        if (s->end > s->start)
-            ordered.append(*s);
+        if (s->end <= s->start)
+            continue;
+        if (s->link) {
+            const std::optional<QString> anchor = anchorFor(
+                QString::fromUcs4(reinterpret_cast<const char32_t *>(cps.constData())
+                                      + s->start,
+                                  s->end - s->start),
+                linkColor);
+            if (!anchor)
+                continue;
+            s->openTag = *anchor;
+        }
+        ordered.append(*s);
     }
     if (ordered.isEmpty())
         return {};

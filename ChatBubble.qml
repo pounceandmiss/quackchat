@@ -166,6 +166,8 @@ Item {
     signal viewXmlRequested()
     // Tapping the quote jumps to the message it previews.
     signal quoteTapped()
+    // A link in the words, clicked or tapped outside selection.
+    signal linkOpenRequested(string link)
 
     // Briefly tinted after a jump lands on this row.
     property bool highlighted: false
@@ -264,13 +266,30 @@ Item {
     // began, which is all it can mean - Qt closes that menu on the press, but
     // the press carries on to whatever it landed on, and landing on a message
     // used to open that message's menu in the same breath.
+    //
+    // A tap on a link follows it instead of opening the menu. Asked here
+    // rather than of the words themselves, since on Android the words are
+    // turned deaf and the row's handler is the one that sees the tap.
     function tapped(pos, dismissing) {
         if (dismissing)
             root.menuDismissRequested()
         else if (root.selectionMode)
             root.toggleRequested()
-        else
-            root.openMenu(pos, false)
+        else {
+            const link = root.linkAt(pos)
+            if (link !== "")
+                root.linkOpenRequested(link)
+            else
+                root.openMenu(pos, false)
+        }
+    }
+
+    // The link under `pos`, in the row's coordinates; "" where there is none.
+    function linkAt(pos) {
+        if (!bodyText.visible || !bodyText.rich)
+            return ""
+        const p = root.mapToItem(bodyText, pos.x, pos.y)
+        return bodyText.linkAt(p.x, p.y)
     }
 
     // The long press selects the message and stops there. Nothing comes up over
@@ -925,6 +944,14 @@ Item {
                     // Fires for the mouse drag and for the hand-over alike.
                     onSelectedTextChanged: if (bodyText.selectedText !== "")
                         root.wordsTaken()
+                    // The mouse's way in; a touch goes through tapped(). Qt
+                    // selects the anchor it was clicked on, which would leave
+                    // the link highlighted and the words held after it opens.
+                    onLinkActivated: (link) => {
+                        bodyText.deselect()
+                        if (!root.selectionMode)
+                            root.linkOpenRequested(link)
+                    }
                     Layout.maximumWidth: root.maxBubbleWidth
 
                     // The TextEdit takes the press for itself, so a touch on the

@@ -443,6 +443,77 @@ QtObject { function when(us) { return Stamp.when(us) } })",
 
         e.assertNoErrors();
     }
+
+    // A link in the words opens on a click and on a tap alike - on Android
+    // too, where the words are deaf and the row's own handler sees the tap -
+    // but not while messages are being picked, where a tap means the message.
+    void aLinkInTheWordsOpensOnClickAndTap() {
+        Engine e;
+        QQuickWindow win;
+        win.resize(500, 400);
+        win.show();
+        QVERIFY2(QTest::qWaitForWindowExposed(&win), "the window never appeared");
+
+        const QString body = QStringLiteral("go https://example.com/a now");
+        const QVariantList spans{
+            QVariantMap{{"type", "link"}, {"offset", 3}, {"length", 21}}};
+
+        QQmlComponent comp(&e, "Quack", "ChatBubble");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QQuickItem> bubble(qobject_cast<QQuickItem *>(
+            comp.createWithInitialProperties(
+                {{"text", body},
+                 {"markup", messageMarkup(body, spans, "#0a0", {}, "#00f")},
+                 {"width", win.width()}})));
+        QVERIFY(!bubble.isNull());
+        bubble->setParentItem(win.contentItem());
+        QSignalSpy opened(bubble.data(), SIGNAL(linkOpenRequested(QString)));
+        QSignalSpy toggled(bubble.data(), SIGNAL(toggleRequested()));
+
+        QQuickItem *text = findItem(bubble.data(), "bubbleText");
+        QVERIFY(text);
+        QTRY_VERIFY(text->width() > 0);
+        QRectF at;
+        QVERIFY(QMetaObject::invokeMethod(text, "positionToRectangle",
+                                          Q_RETURN_ARG(QRectF, at), Q_ARG(int, 10)));
+        const QPoint on = text->mapToScene(at.center()).toPoint();
+        QString under;
+        QVERIFY(QMetaObject::invokeMethod(text, "linkAt", Q_RETURN_ARG(QString, under),
+                                          Q_ARG(qreal, at.center().x()),
+                                          Q_ARG(qreal, at.center().y())));
+        QCOMPARE(under, QStringLiteral("https://example.com/a"));
+
+        QTest::mouseClick(&win, Qt::LeftButton, {}, on);
+        QTRY_COMPARE(opened.count(), 1);
+        QTest::qWait(300); // and only once
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.last().at(0).toString(), QStringLiteral("https://example.com/a"));
+        // Opened, not picked out: nothing left highlighted or held.
+        QCOMPARE(text->property("selectedText").toString(), QString());
+
+        static QPointingDevice *finger = QTest::createTouchDevice();
+        const auto tap = [&] {
+            QTest::touchEvent(&win, finger).press(0, on);
+            QTest::touchEvent(&win, finger).release(0, on);
+        };
+        tap();
+        QTRY_COMPARE(opened.count(), 2);
+        QTest::qWait(300); // and only once
+        QCOMPARE(opened.count(), 2);
+
+        bubble->setProperty("nativeWords", true);
+        tap();
+        QTRY_COMPARE(opened.count(), 3);
+        QTest::qWait(300); // and only once
+        QCOMPARE(opened.count(), 3);
+
+        bubble->setProperty("selectionMode", true);
+        tap();
+        QTRY_COMPARE(toggled.count(), 1);
+        QCOMPARE(opened.count(), 3);
+
+        e.assertNoErrors();
+    }
 };
 
 QTEST_MAIN(TestComponents)

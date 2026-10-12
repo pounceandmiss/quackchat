@@ -359,6 +359,11 @@ Page {
         property: "matchColor"
         value: Theme.p.selection
     }
+    Binding {
+        target: page.chatModel
+        property: "linkColor"
+        value: Theme.p.link
+    }
 
     // ChatModel has no "selected" role, so selection lives here, keyed by each
     // message's timestamp id. Every change swaps in a fresh object so the `var`
@@ -1686,6 +1691,7 @@ Page {
                     replyAuthor: page.selfOrAuthorName(wrap.replyAuthor)
                     highlighted: page.highlightTs === wrap.timestamp
                     onQuoteTapped: page.chatModel.gotoReplyTarget(wrap.timestamp)
+                    onLinkOpenRequested: (link) => Qt.openUrlExternally(link)
                     outgoing: wrap.outgoing
                     time: Stamp.when(wrap.timestamp)
                     status: page.fmtStatus(wrap.serverStatus, wrap.remoteStatus)

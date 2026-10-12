@@ -62,7 +62,7 @@ static QVariantMap callInviteOf(const QVariantMap &m) {
 // A search mark is one more span over the same string, in the same units, so it
 // joins the styling rather than competing with it.
 static QString markupOf(const QVariantMap &m, const QString &quoteColor,
-                        const QString &matchColor,
+                        const QString &matchColor, const QString &linkColor,
                         const QVariantList &matches) {
     QVariantList spans = m.value(QStringLiteral("content"))
                              .toMap()
@@ -73,7 +73,7 @@ static QString markupOf(const QVariantMap &m, const QString &quoteColor,
         span.insert(QStringLiteral("type"), QStringLiteral("match"));
         spans.append(span);
     }
-    return messageMarkup(bodyOf(m), spans, quoteColor, matchColor);
+    return messageMarkup(bodyOf(m), spans, quoteColor, matchColor, linkColor);
 }
 
 // An attachment nothing has happened to yet. Spelled out rather than left
@@ -178,7 +178,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     switch (role) {
     case TimestampRole:    return m.value(QStringLiteral("timestamp"));
     case BodyRole:         return bodyOf(m);
-    case MarkupRole:       return markupOf(m, m_quoteColor, m_matchColor, marksOn(m));
+    case MarkupRole:       return markupOf(m, m_quoteColor, m_matchColor, m_linkColor,
+                                           marksOn(m));
     case AttachmentsRole:  return attachmentsOf(m);
     case OutgoingRole:     return m.value(QStringLiteral("is_outgoing"));
     case ServerStatusRole:
@@ -327,6 +328,16 @@ void ChatModel::setQuoteColor(const QString &css) {
         return;
     m_quoteColor = css;
     emit quoteColorChanged();
+    if (!m_msgs.isEmpty())
+        emit dataChanged(index(0), index(m_msgs.size() - 1), {MarkupRole});
+}
+
+// Baked in like the quote's.
+void ChatModel::setLinkColor(const QString &css) {
+    if (m_linkColor == css)
+        return;
+    m_linkColor = css;
+    emit linkColorChanged();
     if (!m_msgs.isEmpty())
         emit dataChanged(index(0), index(m_msgs.size() - 1), {MarkupRole});
 }

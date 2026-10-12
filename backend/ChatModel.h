@@ -43,6 +43,8 @@ class ChatModel : public QAbstractListModel {
     Q_PROPERTY(QString quoteColor READ quoteColor WRITE setQuoteColor NOTIFY quoteColorChanged)
     // And for the run a search matched, marked by highlightMatches().
     Q_PROPERTY(QString matchColor READ matchColor WRITE setMatchColor NOTIFY matchColorChanged)
+    // And for links.
+    Q_PROPERTY(QString linkColor READ linkColor WRITE setLinkColor NOTIFY linkColorChanged)
 
 public:
     enum Role {
@@ -90,12 +92,14 @@ public:
     bool online() const { return m_online; }
     QString quoteColor() const { return m_quoteColor; }
     QString matchColor() const { return m_matchColor; }
+    QString linkColor() const { return m_linkColor; }
     void setBackend(TackyBackend *backend);
     void setAccount(const QString &acc);
     void setChat(const QString &chat);
     void setGroupchat(bool v);
     void setQuoteColor(const QString &css);
     void setMatchColor(const QString &css);
+    void setLinkColor(const QString &css);
 
     // Mark where a search matched inside one message, so the row shows which
     // characters were found and not merely that it was. `ranges` is tacky's
@@ -188,6 +192,7 @@ signals:
     void onlineChanged();
     void quoteColorChanged();
     void matchColorChanged();
+    void linkColorChanged();
     // A history request finished; dir is init/old/new/goto/catchup and added is
     // the net rows inserted. The view pages off this to fill an under-tall
     // viewport, and stops when added == 0 (archive exhausted).
@@ -252,6 +257,7 @@ private:
     // Until QML binds the palette's, and what the Tk client uses verbatim.
     QString m_quoteColor = QStringLiteral("green");
     QString m_matchColor = QStringLiteral("yellow");
+    QString m_linkColor = QStringLiteral("#1a5fb4");
     // The one message carrying a search mark, and where in it. Beside the rows
     // rather than in them: it belongs to the search, not to the message.
     qlonglong m_matchTs = 0;
