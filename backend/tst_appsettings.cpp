@@ -64,7 +64,7 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
                                 "chat_list_style", "conn_probe",
                                 "log_level", "log_native",
                                 "log_redact_content", "log_to_file",
-                                "media_backend"}));
+                                "media_backend", "send_chat_markers"}));
     // The running backend is asked for alongside them, and is not a setting.
     QCOMPARE(others, QStringList({"media/backend"}));
 }
@@ -175,6 +175,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setConnProbe(false);
     s.setAnswerTime(true);
     s.setAnswerLastActivity(true);
+    s.setSendChatMarkers(false);
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
 
@@ -199,6 +200,7 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(!readback.connProbe(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.answerTime(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.answerLastActivity(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!readback.sendChatMarkers(), 5000);
     // Stored is not running: the backend answers with what it could open,
     // which is webrtc only where the build staged its library beside us.
     const QString dir = QCoreApplication::applicationDirPath();

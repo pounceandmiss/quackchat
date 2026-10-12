@@ -309,6 +309,26 @@ Page {
                     text: qsTr("Only contacts who see your online status can ask.")
                     wrapMode: Text.WordWrap
                 }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.bottomMargin: 4
+                    implicitHeight: 1
+                    color: Theme.hairline
+                }
+
+                SettingBox {
+                    objectName: "sendChatMarkersBox"
+                    text: qsTr("Send read receipts")
+                    checked: App.settings.sendChatMarkers
+                    onToggled: App.settings.setSendChatMarkers(checked)
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("Tells contacts when their messages reach you and when you've read them. Only contacts who see your online status are told, and never in group chats.")
+                    wrapMode: Text.WordWrap
+                }
             }
 
             // Nothing here takes effect now: both actions only request a

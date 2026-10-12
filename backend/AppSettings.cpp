@@ -25,6 +25,7 @@ const QLatin1String kChatListStyle("chat_list_style");
 const QLatin1String kConnProbe("conn_probe");
 const QLatin1String kAnswerTime("answer_time");
 const QLatin1String kAnswerLastActivity("answer_last_activity");
+const QLatin1String kSendChatMarkers("send_chat_markers");
 
 bool isChatListStyle(const QString &style) {
     return style == QLatin1String("full") || style == QLatin1String("compact")
@@ -83,6 +84,9 @@ void AppSettings::refresh() {
     m_answerLastActivityToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kAnswerLastActivity}});
+    m_sendChatMarkersToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kSendChatMarkers}});
     // Not a setting: what the setting resolved to, which only the backend
     // knows and only after it has tried to open one.
     m_activeBackendToken = m_backend->request(
@@ -114,6 +118,8 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kAnswerTime, data.toString());
     else if (token == m_answerLastActivityToken)
         applyValue(kAnswerLastActivity, data.toString());
+    else if (token == m_sendChatMarkersToken)
+        applyValue(kSendChatMarkers, data.toString());
     else if (token == m_activeBackendToken) {
         const QString name = data.toString();
         if (name == m_activeMediaBackend)
@@ -151,6 +157,8 @@ void AppSettings::handleError(int token, const QString &message) {
         m_answerTimeToken = -1;
     else if (token == m_answerLastActivityToken)
         m_answerLastActivityToken = -1;
+    else if (token == m_sendChatMarkersToken)
+        m_sendChatMarkersToken = -1;
     else if (token == m_activeBackendToken)
         m_activeBackendToken = -1;
 }
@@ -245,6 +253,12 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_answerLastActivity = on;
         emit answerLastActivityChanged();
+    } else if (key == kSendChatMarkers) {
+        const bool on = value != QLatin1String("0");
+        if (m_sendChatMarkers == on)
+            return;
+        m_sendChatMarkers = on;
+        emit sendChatMarkersChanged();
     }
 }
 
@@ -301,6 +315,10 @@ void AppSettings::setAnswerTime(bool on) {
 
 void AppSettings::setAnswerLastActivity(bool on) {
     write(kAnswerLastActivity, on ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void AppSettings::setSendChatMarkers(bool on) {
+    write(kSendChatMarkers, on ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
 // Only what this build offers, plus "" for automatic: tacky would accept any

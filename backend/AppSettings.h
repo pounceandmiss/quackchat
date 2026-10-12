@@ -56,6 +56,12 @@ class AppSettings : public QObject {
     Q_PROPERTY(bool answerTime READ answerTime NOTIFY answerTimeChanged)
     Q_PROPERTY(bool answerLastActivity READ answerLastActivity
                    NOTIFY answerLastActivityChanged)
+    // Whether contacts are told when their messages arrive and are read
+    // (XEP-0184 receipts, XEP-0333 markers). On unless turned off, and only
+    // ever sent to contacts with a subscription to us: tacky's
+    // send_chat_markers, the Tk client's "Send Read Receipts".
+    Q_PROPERTY(bool sendChatMarkers READ sendChatMarkers
+                   NOTIFY sendChatMarkersChanged)
     // "" (tacky picks) | rtc | webrtc, stored by tacky, which reads it when it
     // picks a backend. Takes effect at the next start.
     Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
@@ -79,6 +85,7 @@ public:
     bool connProbe() const { return m_connProbe; }
     bool answerTime() const { return m_answerTime; }
     bool answerLastActivity() const { return m_answerLastActivity; }
+    bool sendChatMarkers() const { return m_sendChatMarkers; }
     QString mediaBackend() const { return m_mediaBackend; }
     QString activeMediaBackend() const { return m_activeMediaBackend; }
 
@@ -99,6 +106,7 @@ public:
     Q_INVOKABLE void setConnProbe(bool on);
     Q_INVOKABLE void setAnswerTime(bool on);
     Q_INVOKABLE void setAnswerLastActivity(bool on);
+    Q_INVOKABLE void setSendChatMarkers(bool on);
     // Unknown names are ignored.
     Q_INVOKABLE void setMediaBackend(const QString &name);
 
@@ -120,6 +128,7 @@ signals:
     void connProbeChanged();
     void answerTimeChanged();
     void answerLastActivityChanged();
+    void sendChatMarkersChanged();
     void mediaBackendChanged();
     void activeMediaBackendChanged();
 
@@ -140,6 +149,7 @@ private:
     bool m_connProbe = true;
     bool m_answerTime = false;
     bool m_answerLastActivity = false;
+    bool m_sendChatMarkers = true;
     QString m_mediaBackend;   // "" until stored: the automatic choice
     QString m_activeMediaBackend;
 
@@ -154,6 +164,7 @@ private:
     int m_connProbeToken = -1;
     int m_answerTimeToken = -1;
     int m_answerLastActivityToken = -1;
+    int m_sendChatMarkersToken = -1;
     int m_mediaBackendToken = -1;
     int m_activeBackendToken = -1;
 };
