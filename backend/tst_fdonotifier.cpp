@@ -250,6 +250,9 @@ private slots:
         QSignalSpy spy(n, &Notifier::activated);
         n->show(QStringLiteral("k1"), alertOf("Ann", "one"));
         QTRY_COMPARE(m_daemon->posted.size(), 1);
+        // The daemon having the call is not the notifier having the id: the
+        // reply can still be on its way, and a signal sent now overtakes it.
+        QTRY_VERIFY(n->isShown(QStringLiteral("k1")));
 
         emit m_daemon->ActionInvoked(1u, QStringLiteral("default"));
 
@@ -263,7 +266,7 @@ private slots:
         FdoNotifier *n = readyNotifier();
         QSignalSpy spy(n, &Notifier::activated);
         n->show(QStringLiteral("k1"), alertOf("Ann", "one"));
-        QTRY_COMPARE(m_daemon->posted.size(), 1);
+        QTRY_VERIFY(n->isShown(QStringLiteral("k1")));
 
         emit m_daemon->ActionInvoked(9999u, QStringLiteral("default"));
         emit m_daemon->ActionInvoked(1u, QStringLiteral("something-else"));
@@ -283,6 +286,8 @@ private slots:
         QTRY_COMPARE(m_daemon->posted.size(), 1); // id 1
         n->show(QStringLiteral("k2"), alertOf("Bo", "hi"));
         QTRY_COMPARE(m_daemon->posted.size(), 2); // id 2
+        QTRY_VERIFY(n->isShown(QStringLiteral("k1")));
+        QTRY_VERIFY(n->isShown(QStringLiteral("k2")));
 
         emit m_daemon->NotificationClosed(1u, 2u); // 2 = dismissed by the user
         // Signals reach the notifier in the order they were sent, so k2 being

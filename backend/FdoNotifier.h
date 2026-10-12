@@ -25,6 +25,13 @@ public:
     // nothing is sent before we know how the body will be parsed.
     bool isAvailable() const { return m_available; }
 
+    // True once the daemon's id for this chat's alert is back. Until then a
+    // click or dismissal naming that id cannot be matched to the chat.
+    bool isShown(const QString &key) const {
+        const auto it = m_entries.constFind(key);
+        return it != m_entries.cend() && it->id;
+    }
+
     void show(const QString &key, const Alert &alert) override;
     void retract(const QString &key) override;
     void retractAll() override;

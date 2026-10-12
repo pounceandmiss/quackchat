@@ -189,8 +189,11 @@ void TestStorageUi::theGateIsRealEstateNotJustObjectNames() {
     QVERIFY(inner->width() > 100 && inner->height() > 60);
 
     // Every part of it is inside it, at distinct heights - a column that
-    // collapsed would stack them all at zero.
-    const QRectF bounds(0, 0, inner->width(), inner->height());
+    // collapsed would stack them all at zero. The half pixel of slack is for
+    // mapping through the scene while the sheet is still sliding in: a
+    // fractional y there puts a row flush with the edge 1e-14 past it.
+    const QRectF bounds = QRectF(0, 0, inner->width(), inner->height())
+                              .adjusted(-0.5, -0.5, 0.5, 0.5);
     QList<double> tops;
     for (const char *name : {"storageGateBlurb", "storagePassphrase",
                              "storageReveal", "storageGateGo"}) {
