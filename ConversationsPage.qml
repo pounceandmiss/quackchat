@@ -306,6 +306,9 @@ Page {
             required property var raw
             width: GridView.view.cellWidth
             height: GridView.view.cellHeight
+            // A name or nick can draw far outside its line (a run of stacked
+            // combining marks), and a Text doesn't clip, so the row does.
+            clip: true
             onClicked: page.openChat(jid, name, groupchat)
 
             readonly property bool current: row.jid === page.currentJid
