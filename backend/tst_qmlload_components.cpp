@@ -200,6 +200,42 @@ private slots:
         e.assertNoErrors();
     }
 
+    // In a ScrollView, ThinScrollBar used to sit at the top-left corner as a
+    // dot instead of along the edge.
+    void aThinBarInAScrollViewRunsAlongItsEdge() {
+        Engine e;
+        QQmlComponent comp(&e);
+        comp.setData(R"(
+            import QtQuick
+            import QtQuick.Controls
+            import Quack
+            ScrollView {
+                width: 200; height: 100
+                ScrollBar.vertical: ThinScrollBar { objectName: "vertical" }
+                ScrollBar.horizontal: ThinScrollBar { objectName: "horizontal" }
+                Item { implicitWidth: 400; implicitHeight: 400 }
+            })", QUrl());
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> view(comp.create());
+        QVERIFY(!view.isNull());
+
+        auto *v = view->findChild<QQuickItem *>("vertical");
+        auto *h = view->findChild<QQuickItem *>("horizontal");
+        QVERIFY(v);
+        QVERIFY(h);
+        const qreal availableWidth = view->property("availableWidth").toReal();
+        const qreal availableHeight = view->property("availableHeight").toReal();
+
+        // Down the right edge, the view's height.
+        QTRY_COMPARE(v->x(), 200 - v->width());
+        QCOMPARE(v->height(), availableHeight);
+        // Along the bottom edge, the view's width.
+        QCOMPARE(h->y(), 100 - h->height());
+        QCOMPARE(h->width(), availableWidth);
+
+        e.assertNoErrors();
+    }
+
     // Android lays the keyboard over the window instead of resizing it, so a
     // dialog centres in the strip left above it. The rectangle Android reports
     // is in physical pixels, and clamped against a window measured in
