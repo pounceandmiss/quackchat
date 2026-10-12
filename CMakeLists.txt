@@ -326,6 +326,7 @@ qt_add_qml_module(quack
         backend/AvatarController.cpp backend/AvatarController.h
         backend/RegistrationController.cpp backend/RegistrationController.h
         backend/Clipboard.cpp backend/Clipboard.h
+        backend/Keyboard.cpp backend/Keyboard.h
         backend/NotificationController.cpp backend/NotificationController.h
         backend/Notifier.h
         ${_notifier}

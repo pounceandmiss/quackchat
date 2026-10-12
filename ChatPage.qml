@@ -156,24 +156,6 @@ Page {
         }
     }
 
-    // Android overlays the keyboard instead of resizing the window, so the
-    // content column has to shift up by this much itself. Zero elsewhere.
-    readonly property real keyboardInset: {
-        if (!Qt.inputMethod.visible) // qmllint disable missing-property
-            return 0
-        const kb = Qt.inputMethod.keyboardRectangle // qmllint disable missing-property
-        if (kb.height <= 0)
-            return 0
-        // Android measures the keyboard in physical pixels while the scene it
-        // covers is laid out in device-independent ones - the same correction
-        // SheetDialog makes.
-        const top = Qt.platform.os === "android"
-            ? kb.y / page.Screen.devicePixelRatio : kb.y
-        // Overlap between the keyboard and this page, in window coordinates.
-        const pageBottom = mapToItem(null, 0, height).y
-        return Math.max(0, Math.min(pageBottom - top, height))
-    }
-
     background: Rectangle {
         gradient: Gradient {
             orientation: Gradient.Vertical
@@ -1417,10 +1399,6 @@ Page {
     ColumnLayout {
         id: chatColumn
         anchors.fill: parent
-        anchors.bottomMargin: page.keyboardInset
-        Behavior on anchors.bottomMargin {
-            NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
-        }
         spacing: 0
         visible: page.hasChat
 

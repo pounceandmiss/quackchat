@@ -36,6 +36,7 @@ private slots:
     void cleanupTestCase();
 
     void theComposerGrowsWithTheTextUpToACeiling();
+    void theComposerSitsOnTopOfTheKeyboard();
     void enterSendsAndShiftEnterOpensALine();
     void pastingAPictureQueuesItAndTextStillTypes();
     void pastingACopiedFileQueuesItButALinkIsStillText();
@@ -154,6 +155,32 @@ void TestChatPageComposer::theComposerGrowsWithTheTextUpToACeiling() {
     QTRY_COMPARE(field->height(), restField);
     QCOMPARE(bar->height(), restBar);
     QVERIFY(sitsInTheBar());
+}
+
+// The window's content area stops at the keyboard, and the composer with it.
+// Tapping into the field with the keyboard up used to drop the page under it.
+void TestChatPageComposer::theComposerSitsOnTopOfTheKeyboard() {
+    const Chat chat = open("keyboard@example.com");
+    QVERIFY(chat.win());
+
+    auto *bar = chat.win()->findChild<QQuickItem *>("composerBar");
+    auto *keyboard = m_engine->singletonInstance<QObject *>("Quack", "Keyboard");
+    QVERIFY(bar);
+    QVERIFY(keyboard);
+    const auto barBottom = [bar] {
+        return bar->mapToScene(QPointF(0, bar->height())).y();
+    };
+    const qreal window = chat.win()->height();
+    QTRY_COMPARE(barBottom(), window);
+
+    keyboard->setProperty("height", 300);
+    QTRY_COMPARE(barBottom(), window - 300);
+
+    keyboard->setProperty("height", 120);
+    QTRY_COMPARE(barBottom(), window - 120);
+
+    keyboard->setProperty("height", 0);
+    QTRY_COMPARE(barBottom(), window);
 }
 
 // Enter still sends, as it did before the field could hold more than a line.

@@ -43,17 +43,17 @@
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="false"
         android:allowBackup="false">
-        <!-- adjustResize, not the pan Android picks by default: the chat lifts its
-             composer over the keyboard itself, and a pan on top of that threw the
-             view up and back. Not adjustNothing either, which leaves Qt no way
-             to tell how tall the keyboard is. -->
+        <!-- adjustNothing: the app keeps clear of the keyboard itself (see
+             backend/Keyboard.h). The default pan threw the chat up and back;
+             adjustResize was undone by Qt on any tap into a field while the
+             keyboard was up. -->
         <activity
             android:name="org.qtproject.qt.android.bindings.QtActivity"
             android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|layoutDirection|locale|fontScale|keyboard|keyboardHidden|navigation|mcc|mnc|density"
             android:label="-- %%INSERT_APP_NAME%% --"
             android:launchMode="singleTop"
             android:screenOrientation="unspecified"
-            android:windowSoftInputMode="adjustResize"
+            android:windowSoftInputMode="adjustNothing"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

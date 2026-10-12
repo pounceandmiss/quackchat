@@ -237,11 +237,8 @@ private slots:
     }
 
     // Android lays the keyboard over the window instead of resizing it, so a
-    // dialog centres in the strip left above it. The rectangle Android reports
-    // is in physical pixels, and clamped against a window measured in
-    // device-independent ones it read as the whole window - leaving the sheet
-    // dead centre under the keyboard. Nothing raises a keyboard on a headless
-    // platform, so the top edge is placed by hand.
+    // dialog centres in the strip left above it. Nothing raises a keyboard on
+    // a headless platform, so its height is set by hand.
     void aDialogCentresInTheStripTheKeyboardLeaves() {
         Engine e;
 
@@ -269,6 +266,9 @@ private slots:
         // strip it fits in, or the top margin is what would be measured below.
         QVERIFY2(h > 0 && h < 380, qPrintable(QString("sheet is %1 high").arg(h)));
 
+        auto *keyboard = e.singletonInstance<QObject *>("Quack", "Keyboard");
+        QVERIFY(keyboard);
+
         // Keyboard down: dead centre of the window.
         QCOMPARE(sheet->property("keyboardTop").toReal(), qreal(-1));
         QTRY_COMPARE(sheet->property("y").toReal(),
@@ -276,14 +276,20 @@ private slots:
 
         // Keyboard up over the bottom half: centred in what is left of the
         // window, and wholly above the keyboard.
-        sheet->setProperty("keyboardTop", 400);
+        keyboard->setProperty("height", 400);
+        QCOMPARE(sheet->property("keyboardTop").toReal(), qreal(400));
         QTRY_COMPARE(sheet->property("y").toReal(), qreal(qRound((400 - h) / 2)));
         QVERIFY(sheet->property("y").toReal() + h <= 400);
 
         // A strip too short to hold it: pinned under the top margin rather than
         // centred off the top of the window.
-        sheet->setProperty("keyboardTop", 40);
+        keyboard->setProperty("height", 760);
         QTRY_COMPARE(sheet->property("y").toReal(), qreal(12));
+
+        // Down again: back to the middle.
+        keyboard->setProperty("height", 0);
+        QTRY_COMPARE(sheet->property("y").toReal(),
+                     qreal(qRound((win.height() - h) / 2)));
 
         e.assertNoErrors();
     }

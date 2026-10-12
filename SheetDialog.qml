@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls
 
 // A modal dialog centred in the window and kept clear of the virtual keyboard.
-// Android lays the keyboard over the window rather than resizing it, so a dialog
-// centred in the overlay ends up underneath it; this centres in whatever strip
+// The overlay a dialog sits in spans the whole window, keyboard included, so a
+// dialog centred there ends up underneath it; this centres in whatever strip
 // the keyboard leaves and slides as it opens and closes.
 //
 // The base for every dialog in the app, typed-into or not: the ones that only
@@ -18,18 +18,10 @@ Dialog {
     modal: true
     width: Math.min(preferredWidth, parent ? parent.width - 24 : preferredWidth)
 
-    // Android measures the keyboard in physical pixels while the scene it
-    // covers is laid out in device-independent ones; every other platform
-    // reports the rectangle in the scene's own units already.
-    readonly property real keyboardScale: parent ? parent.Screen.devicePixelRatio : 1
-
-    // The keyboard's top edge in window coordinates, or -1 while it is down.
-    property real keyboardTop: {
-        if (!Qt.inputMethod.visible) // qmllint disable missing-property
-            return -1
-        const top = Qt.inputMethod.keyboardRectangle.y // qmllint disable missing-property
-        return Qt.platform.os === "android" ? top / sheet.keyboardScale : top
-    }
+    // The keyboard's top edge in the overlay's coordinates, or -1 while it is
+    // down.
+    readonly property real keyboardTop: Keyboard.height > 0 && parent
+        ? parent.mapFromItem(null, 0, parent.Window.height - Keyboard.height).y : -1
 
     // The height of the window strip the keyboard leaves showing.
     readonly property real clearHeight: {

@@ -4,7 +4,8 @@ import QtQuick.Controls.Material
 import Quack
 
 // What every one of this app's windows carries: the palette, the shortcut that
-// cycles it, and a content area held clear of notches and system bars.
+// cycles it, and a content area held clear of notches, system bars and the
+// on-screen keyboard.
 //
 // Children land in that area rather than in the window itself. Theme.background
 // still paints behind the bars, which is what keeps them looking like part of
@@ -67,7 +68,11 @@ ApplicationWindow {
             id: safe
             anchors.fill: parent
             anchors.topMargin: SafeArea.margins.top
-            anchors.bottomMargin: SafeArea.margins.bottom
+            // The resize Android no longer does (see Keyboard.h). The keyboard
+            // is measured from the window's bottom edge; the area this sits in
+            // already stops at the navigation bar, so only the rest counts.
+            anchors.bottomMargin: Math.max(SafeArea.margins.bottom,
+                Keyboard.height - (win.height - parent.mapToItem(null, 0, parent.height).y))
             anchors.leftMargin: SafeArea.margins.left
             anchors.rightMargin: SafeArea.margins.right
         },
