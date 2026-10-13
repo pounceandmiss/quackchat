@@ -456,6 +456,8 @@ void TestCalls::startEmitsOutgoingWithRealSid() {
                                {"password", "x"},
                                {"domain", "example.com"},
                                {"username", "me"}});
+    // A disabled account refuses calls before they start.
+    backend.notify("account", "enable", QVariantMap{{"acc", "me@example.com"}});
 
     CallsModel m;
     m.setBackend(&backend);
@@ -488,6 +490,8 @@ void TestCalls::startOnABadJidReportsFailure() {
                                {"password", "x"},
                                {"domain", "example.com"},
                                {"username", "me"}});
+    // A disabled account refuses calls before they start.
+    backend.notify("account", "enable", QVariantMap{{"acc", "me@example.com"}});
 
     CallsModel m;
     m.setBackend(&backend);
@@ -834,6 +838,8 @@ void TestCalls::listRoundTripsThroughRealTacky() {
                                {"password", "x"},
                                {"domain", "example.com"},
                                {"username", "me"}});
+    // A disabled account refuses calls before they start.
+    backend.notify("account", "enable", QVariantMap{{"acc", "me@example.com"}});
 
     CallsModel m;
     m.setBackend(&backend);

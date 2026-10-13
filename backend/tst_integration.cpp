@@ -480,12 +480,15 @@ void TestIntegration::jumpStormLeavesNothingInFlight() {
 
 // tacky answers `history` from the store when it can, and a chat with nothing
 // stored and no cursor is the one case that always reaches for the archive.
-// An account that never signed in has no stream to carry it, so the query
-// waits rather than fails - and a waiting page is not a loading one.
+// An enabled account that never signed in has no stream to carry it, so the
+// query waits rather than fails - and a waiting page is not a loading one.
 void TestIntegration::openingAnUnsyncedChatOfflineWaitsRatherThanSpins() {
     TackyBackend backend;
     QVERIFY(backend.start());
-    addAccount(backend, "me@example.com"); // added, never signed in
+    addAccount(backend, "me@example.com");
+    // Enabled, never signed in: a disabled account would refuse the query at
+    // once, as it touches no network.
+    backend.notify("account", "enable", QVariantMap{{"acc", "me@example.com"}});
 
     ChatModel chat;
     chat.setBackend(&backend);
