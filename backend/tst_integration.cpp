@@ -78,7 +78,7 @@ void TestIntegration::chatListRefreshesOnChanged() {
 
     ChatListModel chatList;
     chatList.setBackend(&backend);
-    chatList.setAccount("me@example.com"); // initial get (empty)
+    chatList.setAccount("me@example.com"); // initial get: only our own chat
 
     // Create a local chat by sending; the backend now has a "free" entry that a
     // fresh `chatlist get` will return.
@@ -93,9 +93,12 @@ void TestIntegration::chatListRefreshesOnChanged() {
     chatList.handleEvent("chatlist", "Changed",
                          QVariantMap{{"acc", "me@example.com"}});
 
-    QTRY_VERIFY_WITH_TIMEOUT(chatList.rowCount() == 1, 5000);
+    // Above the chat with ourselves, which has no activity to rank it.
+    QTRY_VERIFY_WITH_TIMEOUT(chatList.rowCount() == 2, 5000);
     QCOMPARE(chatList.data(chatList.index(0), ChatListModel::JidRole).toString(),
              QString("friend@example.com"));
+    QCOMPARE(chatList.data(chatList.index(1), ChatListModel::JidRole).toString(),
+             QString("me@example.com"));
 
     backend.stop();
 }

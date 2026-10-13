@@ -728,10 +728,10 @@ private slots:
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"amy@example.com","name":"Amy","source":"roster",
-             "last_activity":300},
+             "last_activity":300,"order":300},
             {"jid":"room@muc.example.com?join","name":"The Room",
              "source":"bookmarks","groupchat":true,"autojoin":false,
-             "last_activity":200}
+             "last_activity":200,"order":200}
         ])")
                              .array()
                              .toVariantList());
@@ -840,10 +840,10 @@ private slots:
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"amy@example.com","name":"Amy","source":"roster",
-             "last_activity":300},
+             "last_activity":300,"order":300},
             {"jid":"room@muc.example.com?join","name":"The Room",
              "source":"bookmarks","groupchat":true,"autojoin":true,
-             "last_activity":200}
+             "last_activity":200,"order":200}
         ])")
                              .array()
                              .toVariantList());
@@ -966,10 +966,10 @@ private slots:
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"amy@example.com","name":"Amy","source":"roster",
-             "last_activity":300},
+             "last_activity":300,"order":300},
             {"jid":"room@muc.example.com?join","name":"","source":"free",
              "groupchat":true,"autojoin":false,"invited":true,
-             "last_activity":200}
+             "last_activity":200,"order":200}
         ])")
                              .array()
                              .toVariantList());
@@ -1041,7 +1041,7 @@ private slots:
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"room@muc.example.com?join","name":"","source":"free",
              "groupchat":true,"autojoin":false,"invited":true,
-             "last_activity":200}
+             "last_activity":200,"order":200}
         ])")
                              .array()
                              .toVariantList());
@@ -1071,7 +1071,7 @@ private slots:
                                      {"groupchat", true},
                                      {"autojoin", true},
                                      {"invited", false},
-                                     {"last_activity", 200}});
+                                     {"last_activity", 200}, {"order", 200}});
         QTRY_COMPARE(subtitle->property("text").toString(),
                      QString("room@muc.example.com?join"));
 

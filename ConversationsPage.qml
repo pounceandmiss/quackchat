@@ -218,6 +218,13 @@ Page {
             enabled: page.account !== ""
             onTriggered: newChatSheet.open()
         }
+        // The chat with the account's own JID.
+        MenuEntry {
+            objectName: "noteToSelfEntry"
+            text: qsTr("Note to self")
+            enabled: page.account !== ""
+            onTriggered: page.openChat(page.account, "", false)
+        }
         MenuEntry {
             objectName: "joinRoomEntry"
             text: qsTr("Join room…")
@@ -263,6 +270,91 @@ Page {
         }
     }
 
+    // Pins can only be dragged where the list shows tacky's order unfiltered.
+    readonly property bool canReorder: visibleChats.sortMode === ChatListFilter.Recent
+                                       && visibleChats.query === ""
+
+    // The pinned chats, top first.
+    function pinnedJids() {
+        const out = []
+        for (let i = 0; i < visibleChats.count; ++i) {
+            const e = visibleChats.entryAt(i)
+            if (e.pinned !== true)
+                break
+            out.push(e.jid)
+        }
+        return out
+    }
+
+    // During a pin drag, the pins in the order shown, top first; else null.
+    // Kept after the drop until the list arrives in that order.
+    property var shownPins: null
+    property var pinsBefore: []
+    property bool pinsSent: false
+
+    // The pin slot under (x, y) in the list's content.
+    function pinSlotAt(x, y) {
+        const last = page.pinsBefore.length - 1
+        let to = listView.indexAt(x, y)
+        if (to < 0)
+            to = y < 0 ? 0 : last
+        return Math.max(0, Math.min(last, to))
+    }
+
+    // Where slot i sits in the list's content.
+    function slotPos(i) {
+        const cols = Math.max(1, Math.round(listView.width / listView.cellWidth))
+        return Qt.point((i % cols) * listView.cellWidth,
+                        Math.floor(i / cols) * listView.cellHeight)
+    }
+
+    function startPinDrag() {
+        page.endPinDrag()
+        page.pinsBefore = page.pinnedJids()
+        page.shownPins = page.pinsBefore
+    }
+
+    function movePin(jid, to) {
+        const pins = page.pinsBefore.filter(j => j !== jid)
+        pins.splice(to, 0, jid)
+        page.shownPins = pins
+    }
+
+    function dropPin() {
+        const changed = page.shownPins.join(" ") !== page.pinsBefore.join(" ")
+        if (changed && page.chatList) {
+            page.pinsSent = true
+            page.chatList.setPinned(page.shownPins)
+        }
+        // Long enough for the slide home, or for tacky to answer.
+        settleTimer.interval = changed ? 2000 : 200
+        settleTimer.restart()
+    }
+
+    function endPinDrag() {
+        settleTimer.stop()
+        page.shownPins = null
+        page.pinsSent = false
+    }
+
+    Timer {
+        id: settleTimer
+        onTriggered: page.endPinDrag()
+    }
+    Connections {
+        target: visibleChats
+        function settleIfDone() {
+            if (page.pinsSent && page.pinnedJids().join(" ") === page.shownPins.join(" "))
+                page.endPinDrag()
+        }
+        function onRowsMoved() { settleIfDone() }
+        function onLayoutChanged() { settleIfDone() }
+        function onDataChanged() { settleIfDone() }
+        function onRowsInserted() { page.endPinDrag() }
+        function onRowsRemoved() { page.endPinDrag() }
+        function onModelReset() { page.endPinDrag() }
+    }
+
     // Compact rows are one line each, with no preview under the name;
     // "columns" puts two of them side by side.
     readonly property bool compactRows: App.settings.chatListStyle !== "full"
@@ -300,6 +392,9 @@ Page {
             required property string room_state
             required property bool invited
             required property string preview
+            required property bool is_self
+            required property bool pinned
+            required property int index
             // The whole entry, for the row menu: it wants the bookmark fields
             // too, and naming each one here would be a second copy of the
             // entry's shape.
@@ -313,6 +408,33 @@ Page {
 
             readonly property bool current: row.jid === page.currentJid
 
+            // Pin drags: the row is drawn at shownX/Y, its slot in
+            // page.shownPins (or under the pointer while `following`), so it
+            // doesn't jump when the list takes that order.
+            property bool following: false
+            property bool landing: false
+            property real dragDx: 0
+            property real dragDy: 0
+            readonly property point home: page.slotPos(row.index)
+            readonly property int shownSlot: {
+                const i = page.shownPins === null ? -1 : page.shownPins.indexOf(row.jid)
+                return i < 0 ? row.index : i
+            }
+            property real shownX: row.following ? row.home.x + row.dragDx
+                                                 : page.slotPos(row.shownSlot).x
+            property real shownY: row.following ? row.home.y + row.dragDy
+                                                 : page.slotPos(row.shownSlot).y
+            Behavior on shownX {
+                enabled: page.shownPins !== null && (!row.following || row.landing)
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            }
+            Behavior on shownY {
+                enabled: page.shownPins !== null && (!row.following || row.landing)
+                NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
+            }
+            transform: Translate { x: row.shownX - row.home.x; y: row.shownY - row.home.y }
+            z: row.following || (row.landing && page.shownPins !== null) ? 10 : 0
+
             // Right-click used to pop the chat out; that is one entry in this
             // menu now, where the rest of the row's verbs are.
             ContextMenuArea {
@@ -322,7 +444,8 @@ Page {
                 }
             }
 
-            readonly property string title: name !== "" ? name : jid
+            readonly property string title: is_self ? qsTr("Note to self")
+                                          : name !== "" ? name : jid
 
             // The Tk list's room-state row styling, in this palette's terms: a
             // room we are not in is dimmed, one on its way in is dimmed and
@@ -463,6 +586,57 @@ Page {
                         font.bold: true
                     }
                 }
+
+                // Pinned, and the drag grip: dragging the whole row would
+                // fight the list's flick.
+                Glyph {
+                    objectName: "pinGlyph"
+                    Layout.rightMargin: row.edge
+                    visible: row.pinned
+                    path: Icons.pushPin
+                    color: pinGrip.pressed ? Theme.accent : Theme.textDim
+                    size: 16
+
+                    MouseArea {
+                        id: pinGrip
+                        objectName: "pinGrip"
+                        anchors.fill: parent
+                        anchors.margins: -8
+                        enabled: page.canReorder && !page.pinsSent
+                        preventStealing: true
+                        cursorShape: !enabled ? Qt.ArrowCursor
+                                   : pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                        property point start
+                        function at(m) { return mapToItem(listView.contentItem, m.x, m.y) }
+                        onPressed: (m) => {
+                            start = at(m)
+                            page.startPinDrag()
+                            row.dragDx = 0
+                            row.dragDy = 0
+                            row.landing = false
+                            row.following = true
+                        }
+                        onPositionChanged: (m) => {
+                            const p = at(m)
+                            // Sideways only where rows sit two to a line.
+                            row.dragDx = listView.cellWidth < listView.width ? p.x - start.x : 0
+                            row.dragDy = p.y - start.y
+                            page.movePin(row.jid, page.pinSlotAt(
+                                row.home.x + row.width / 2 + row.dragDx,
+                                row.home.y + row.height / 2 + row.dragDy))
+                        }
+                        // Landing first, so the slide into the slot animates.
+                        onReleased: {
+                            row.landing = true
+                            row.following = false
+                            page.dropPin()
+                        }
+                        onCanceled: {
+                            row.following = false
+                            page.endPinDrag()
+                        }
+                    }
+                }
             }
         }
 
@@ -486,6 +660,7 @@ Page {
         onOpenChat: page.openChat(jid, chatTitle, groupchat)
         onPopOutChat: page.popOutChat(jid, chatTitle, groupchat)
         onStartCall: App.calls.start(page.account, jid)
+        onTogglePin: if (page.chatList) page.chatList.pin(jid, !pinned)
         onAddContact: if (page.chatList) page.chatList.addContact(jid, "")
         onJoinRoom: if (page.chatList) page.chatList.joinRoom(jid)
         onLeaveRoom: if (page.chatList) page.chatList.leaveRoom(jid)
@@ -533,7 +708,9 @@ Page {
     NewChatSheet {
         id: newChatSheet
         onStartChat: (jid, name, addToContacts) => {
-            if (addToContacts && page.chatList)
+            // Typing your own JID opens notes to yourself; you aren't a contact.
+            if (addToContacts && page.chatList
+                    && page.chatList.entryFor(jid).is_self !== true)
                 page.chatList.addContact(jid, name)
             page.openChat(jid, name, false)
         }

@@ -1,6 +1,5 @@
-// The per-account chat list (roster + bookmarks + history), from `chatlist get`
-// and the chatlist events. The backend keeps it unordered; we sort by last
-// activity so it reads like a conversations list.
+// The per-account chat list (roster + bookmarks + history + pins), from
+// `chatlist get` and the chatlist events, sorted by tacky's `order`.
 #ifndef CHATLISTMODEL_H
 #define CHATLISTMODEL_H
 
@@ -32,6 +31,9 @@ public:
         UnreadMentionsRole,
         InvitedRole, // a room we are not in, listed for an invite still waiting
         PreviewRole, // the newest message as one line; "" for a chat with no history
+        IsSelfRole, // the chat with the account's own JID: notes to yourself
+        PinnedRole,
+        OrderRole, // tacky's opaque sort key: larger sits higher
     };
     Q_ENUM(Role)
 
@@ -69,6 +71,10 @@ public:
     Q_INVOKABLE void forceJoinRoom(const QString &jid);
     Q_INVOKABLE void renameBookmark(const QString &jid, const QString &name);
     Q_INVOKABLE void removeBookmark(const QString &jid);
+    // pin() puts a chat on top of the other pins, or unpins it; setPinned()
+    // takes the whole pinned list, top first.
+    Q_INVOKABLE void pin(const QString &jid, bool pinned);
+    Q_INVOKABLE void setPinned(const QStringList &jids);
     // Re-ask the server for the roster and the bookmarks, then reload. refresh()
     // alone only re-reads what tacky already has stored.
     Q_INVOKABLE void reload();

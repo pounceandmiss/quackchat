@@ -109,7 +109,7 @@ class TestSettings : public QObject {
                           {"name", "Friend Renamed"},
                           {"source", "roster"},
                           {"subscription", subscription},
-                          {"last_activity", 300}};
+                          {"last_activity", 300}, {"order", 300}};
         if (!ask.isEmpty())
             entry["ask"] = ask;
         chats->applyList({entry});

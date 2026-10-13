@@ -79,8 +79,8 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"a@example.com","name":"Amy","last_activity":300},
-            {"jid":"b@example.com","name":"Bob","last_activity":200}
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"order":300},
+            {"jid":"b@example.com","name":"Bob","last_activity":200,"order":200}
         ])")
                              .array()
                              .toVariantList());
@@ -153,7 +153,7 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(
-                             R"([{"jid":"a@example.com","name":"Amy","last_activity":300}])")
+                             R"([{"jid":"a@example.com","name":"Amy","last_activity":300,"order":300}])")
                              .array()
                              .toVariantList());
 
@@ -192,8 +192,8 @@ private slots:
 
         // The reload a fresh roster is: every row replaced at once.
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"a@example.com","name":"Amy","last_activity":300},
-            {"jid":"b@example.com","name":"Bob","last_activity":200}
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"order":300},
+            {"jid":"b@example.com","name":"Bob","last_activity":200,"order":200}
         ])")
                              .array()
                              .toVariantList());

@@ -22,6 +22,9 @@ AppMenu {
     // is offered the way in instead.
     property string source: ""
     property bool groupchat: false
+    // The chat with the account's own JID: no one to call or add.
+    property bool isSelf: false
+    property bool pinned: false
     property bool autojoin: false
     property string roomState: ""
     property string roomReason: ""
@@ -31,6 +34,7 @@ AppMenu {
     signal openChat()
     signal popOutChat()
     signal startCall()
+    signal togglePin()
     signal addContact()
     signal renameContact()
     signal removeContact()
@@ -46,8 +50,11 @@ AppMenu {
     // free chat carries no bookmark fields and a 1:1 chat no room state.
     function load(entry) {
         menu.jid = entry.jid ?? ""
+        menu.isSelf = entry.is_self === true
+        menu.pinned = entry.pinned === true
         // The row's own title rule: an unnamed chat goes by its JID.
-        menu.chatTitle = entry.name ? entry.name : menu.jid
+        menu.chatTitle = menu.isSelf ? qsTr("Note to self")
+                       : entry.name ? entry.name : menu.jid
         menu.source = entry.source ?? ""
         menu.groupchat = entry.groupchat === true
         menu.autojoin = entry.autojoin === true
@@ -123,8 +130,14 @@ AppMenu {
     MenuEntry {
         objectName: "startCallEntry"
         text: qsTr("Start call")
-        offered: !menu.groupchat
+        offered: !menu.groupchat && !menu.isSelf
         onTriggered: menu.startCall()
+    }
+
+    MenuEntry {
+        objectName: "pinEntry"
+        text: menu.pinned ? qsTr("Unpin") : qsTr("Pin")
+        onTriggered: menu.togglePin()
     }
 
     // Membership, not attendance: joining remembers the room (autojoin), and
@@ -152,7 +165,7 @@ AppMenu {
         text: qsTr("Add to contacts")
         // Only a chat that is in neither the roster nor the bookmarks: the rest
         // are already somewhere this would put them.
-        offered: !menu.groupchat && menu.source === "free"
+        offered: !menu.groupchat && !menu.isSelf && menu.source === "free"
         onTriggered: menu.addContact()
     }
     MenuEntry {

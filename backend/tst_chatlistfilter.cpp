@@ -16,9 +16,9 @@ static QVariantList entriesFrom(const QByteArray &json) {
 // one with no name at all. Newest first: bob, zoe, cy; by name: zoe (Amy), bob, cy.
 static void seed(ChatListModel &m) {
     m.applyList(entriesFrom(R"([
-        {"jid":"zoe@h","name":"Amy","last_activity":200},
-        {"jid":"bob@h","name":"Bob","last_activity":300},
-        {"jid":"cy@h","name":"","last_activity":100}
+        {"jid":"zoe@h","name":"Amy","last_activity":200,"order":200},
+        {"jid":"bob@h","name":"Bob","last_activity":300,"order":300},
+        {"jid":"cy@h","name":"","last_activity":100,"order":100}
     ])"));
 }
 
@@ -93,8 +93,8 @@ void TestChatListFilter::sortByNameUsesWhatTheRowShows() {
 void TestChatListFilter::switchingBackToRecentRestoresTheSourceOrder() {
     ChatListModel m;
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","name":"Zed","last_activity":300},
-        {"jid":"b@h","name":"Abe","last_activity":100}
+        {"jid":"a@h","name":"Zed","last_activity":300,"order":300},
+        {"jid":"b@h","name":"Abe","last_activity":100,"order":100}
     ])"));
     ChatListFilter f;
     f.setSource(&m);
@@ -222,8 +222,8 @@ void TestChatListFilter::steppingCountsOnlyTheRowsOnShow() {
 void TestChatListFilter::entryAtHandsBackTheWholeRow() {
     ChatListModel m;
     m.applyList(entriesFrom(R"([
-        {"jid":"room@conf.h","name":"Room","groupchat":true,"last_activity":300},
-        {"jid":"bob@h","name":"Bob","last_activity":200}
+        {"jid":"room@conf.h","name":"Room","groupchat":true,"last_activity":300,"order":300},
+        {"jid":"bob@h","name":"Bob","last_activity":200,"order":200}
     ])"));
     ChatListFilter f;
     f.setSource(&m);

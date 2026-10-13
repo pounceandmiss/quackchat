@@ -91,6 +91,65 @@ private slots:
     // Driven as keys rather than by calling what they are bound to: a Shortcut
     // the key never reaches, or misses because Shift turns Tab into Backtab,
     // leaves every other test here green.
+    // Picked with the mouse, "Note to self" opens the chat with the account's
+    // own JID, whatever row lies under the menu.
+    void noteToSelfOpensTheOwnChat() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        app->accounts()->applyList({"me@example.com"});
+        app->chatListFor("me@example.com")->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"room@muc.example.com?join","name":"The Room","groupchat":true,
+             "source":"bookmarks","autojoin":true,"last_activity":300,"order":300},
+            {"jid":"amy@example.com","name":"Amy","source":"roster",
+             "last_activity":200,"order":200},
+            {"jid":"me@example.com","source":"free","is_self":true,
+             "last_activity":0,"order":0}
+        ])").array().toVariantList());
+
+        QQuickWindow win;
+        win.resize(1000, 700);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "AppShell");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"initialAccount", "me@example.com"}, {"width", 1000}, {"height", 700}}));
+        auto *shell = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(shell);
+        shell->setParentItem(win.contentItem());
+        win.grabWindow();
+
+        QObject *overflow = shell->findChild<QObject *>("overflowMenu");
+        QVERIFY(overflow);
+        // Opened over the list, so a click that went through would land on a
+        // row rather than on nothing.
+        QVERIFY(QMetaObject::invokeMethod(overflow, "popupUnder",
+            Q_ARG(QVariant, QVariant::fromValue(findItem(shell, "chatList"))),
+            Q_ARG(QVariant, QVariant(true))));
+        QTRY_VERIFY(overflow->property("opened").toBool());
+        auto *entry = qobject_cast<QQuickItem *>(
+            overflow->findChild<QObject *>("noteToSelfEntry"));
+        QVERIFY(entry);
+        QTRY_VERIFY(entry->width() > 0);
+        const QPoint at = entry->mapToScene(
+            QPointF(entry->width() / 2, entry->height() / 2)).toPoint();
+        QTest::mouseClick(&win, Qt::LeftButton, {}, at);
+
+        QTRY_COMPARE(shell->property("currentChatJid").toString(),
+                     QString("me@example.com"));
+        QVERIFY(!shell->property("currentChatGroupchat").toBool());
+        QQuickItem *chat = findItem(shell, "chatPane");
+        QVERIFY(chat);
+        QCOMPARE(chat->property("chatTitle").toString(), QString("Note to self"));
+        QTest::qWait(300);
+        QCOMPARE(shell->property("currentChatJid").toString(),
+                 QString("me@example.com"));
+
+        e.assertNoErrors();
+    }
+
     void ctrlTabWalksTheConversationList() {
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
@@ -100,10 +159,10 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"amy@example.com","name":"Amy","last_activity":300},
-            {"jid":"bob@example.com","name":"Bob","last_activity":200},
+            {"jid":"amy@example.com","name":"Amy","last_activity":300,"order":300},
+            {"jid":"bob@example.com","name":"Bob","last_activity":200,"order":200},
             {"jid":"room@muc.example.com?join","name":"Room","groupchat":true,
-             "last_activity":100}
+             "last_activity":100,"order":100}
         ])")
                               .array()
                               .toVariantList());

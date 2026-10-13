@@ -87,6 +87,7 @@ private slots:
     void aSheetKeepsItsPageClearOfTheSystemBars();
     void aMenuNearTheBottomOpensClearOfTheSystemBars();
     void tappingTheChatHeaderOpensTheContact();
+    void notesToSelfHaveNoCallsAndNoContact();
     void senderNamesComeFromAuthorGet();
     void avatarsMarkTheFootOfEachRun();
     void anOutgoingAvatarHangsOffTheOtherEdge();
@@ -289,6 +290,28 @@ void TestChatPageWindows::tappingTheChatHeaderOpensTheContact() {
     QVERIFY(!contactWindow());
     roomWindow()->close();
     QTRY_VERIFY(roomWindow() == nullptr);
+}
+
+// The chat with your own JID is notes to yourself: named so, whatever name it
+// was opened under, with nobody to ring and no contact behind the header.
+void TestChatPageWindows::notesToSelfHaveNoCallsAndNoContact() {
+    const Chat chat = open(kAcc);
+    QVERIFY(chat.win());
+    QCOMPARE(chat.win()->title(), QString("Note to self"));
+    auto *call = chat.win()->findChild<QQuickItem *>("callButton");
+    auto *video = chat.win()->findChild<QQuickItem *>("videoCallButton");
+    QVERIFY(call);
+    QVERIFY(video);
+    QVERIFY(!call->isVisible());
+    QVERIFY(!video->isVisible());
+
+    auto *identity = chat.win()->findChild<QQuickItem *>("chatIdentity");
+    QVERIFY(identity);
+    const QPointF centre =
+            identity->mapToScene(QPointF(identity->width() / 2, identity->height() / 2));
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, centre.toPoint());
+    QTest::qWait(200);
+    QVERIFY(!contactWindow());
 }
 
 // The name used to be the JID chopped at the "@", which is neither the roster

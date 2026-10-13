@@ -10,7 +10,8 @@
 ChatListModel::ChatListModel(QObject *parent)
     : MapListModel({"jid", "name", "source", "groupchat", "autojoin",
                     "last_activity", "subscription", "room_state", "room_reason",
-                    "unread", "unread_mentions", "invited", "preview"},
+                    "unread", "unread_mentions", "invited", "preview",
+                    "is_self", "pinned", "order"},
                    parent) {}
 
 // One chat's entry, for the views that hold a JID with no row of this model to
@@ -91,6 +92,19 @@ void ChatListModel::removeContact(const QString &jid) {
              {{QStringLiteral("jid"), jid}});
 }
 
+void ChatListModel::pin(const QString &jid, bool pinned) {
+    sendEdit(QStringLiteral("chatlist"), QStringLiteral("pin"),
+             {{QStringLiteral("jid"), jid}, {QStringLiteral("pinned"), pinned}});
+}
+
+void ChatListModel::setPinned(const QStringList &jids) {
+    if (!m_backend || m_account.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("chatlist"), QStringLiteral("setPinned"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("jids"), jids}});
+}
+
 void ChatListModel::joinRoom(const QString &jid, const QString &nick,
                              const QString &password) {
     QVariantMap args{{QStringLiteral("jid"), jid},
@@ -160,22 +174,12 @@ void ChatListModel::setLoadError(const QString &message) {
     emit loadErrorChanged();
 }
 
-// Sort under what the row shows: an unnamed chat is listed by its JID, so it
-// belongs where that JID puts it, not ahead of every named chat as a bare ""
-// would. The Tk list's SortName.
-static QString sortName(const QVariantMap &e) {
-    const QString name = e.value(QStringLiteral("name")).toString();
-    return name.isEmpty() ? e.value(QStringLiteral("jid")).toString() : name;
-}
-
+// `order` largest first, the JID breaking ties.
 bool ChatListModel::lessThan(const QVariantMap &a, const QVariantMap &b) {
-    const qlonglong la = a.value(QStringLiteral("last_activity")).toLongLong();
-    const qlonglong lb = b.value(QStringLiteral("last_activity")).toLongLong();
-    if (la != lb)
-        return la > lb; // newest activity first
-    const int c = sortName(a).compare(sortName(b), Qt::CaseInsensitive);
-    if (c != 0)
-        return c < 0;
+    const qlonglong oa = a.value(QStringLiteral("order")).toLongLong();
+    const qlonglong ob = b.value(QStringLiteral("order")).toLongLong();
+    if (oa != ob)
+        return oa > ob;
     return a.value(QStringLiteral("jid")).toString() <
            b.value(QStringLiteral("jid")).toString();
 }
@@ -196,7 +200,8 @@ static QString attachmentPreview(const QVariantList &atts) {
 // One line for the row under the chat's name, worded the way tacky's own list
 // words it: who said the newest message, then what. Your own are "You:", a
 // room-mate's carry their nick, and a 1:1 peer's carry nothing, since the row
-// is already named after them. Invites and calls ship a fallback body, so only
+// is already named after them. Notes to yourself are all yours, so they carry
+// nothing either. Invites and calls ship a fallback body, so only
 // media needs a case of its own.
 static QString previewOf(const QVariantMap &entry) {
     const QVariantMap m = entry.value(QStringLiteral("last_message")).toMap();
@@ -228,7 +233,8 @@ static QString previewOf(const QVariantMap &entry) {
 
     QString who;
     if (m.value(QStringLiteral("is_outgoing")).toBool()) {
-        who = ChatListModel::tr("You");
+        if (!entry.value(QStringLiteral("is_self")).toBool())
+            who = ChatListModel::tr("You");
     } else if (entry.value(QStringLiteral("groupchat")).toBool()) {
         const QString from = m.value(QStringLiteral("from_jid")).toString();
         const int slash = from.indexOf(QLatin1Char('/'));

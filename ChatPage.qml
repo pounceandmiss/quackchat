@@ -18,6 +18,14 @@ Page {
     // Off inside a pop-out window, so you cannot pop a pop-out.
     property bool canPopOut: false
     readonly property bool hasChat: chatJid !== ""
+    // Notes to yourself: nobody to call and no contact behind it.
+    readonly property bool isSelf: {
+        void page.chatListRevision
+        return page.hasChat && page.chatList !== null
+            && page.chatList.entryFor(page.chatJid).is_self === true
+    }
+    readonly property string chatTitle: isSelf ? qsTr("Note to self")
+                                      : chatName !== "" ? chatName : chatJid
     signal back()
     signal popOut()
     // Somewhere other than this chat to go, named by an invite's room.
@@ -172,7 +180,7 @@ Page {
     // A room has no contact behind it - no roster entry, no keys of its own -
     // so it has no details to show.
     function openContact() {
-        if (!page.hasChat || page.chatGroupchat)
+        if (!page.hasChat || page.chatGroupchat || page.isSelf)
             return null
         if (Theme.mobile) {
             contactSheet.open()
@@ -1004,8 +1012,10 @@ Page {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Accessible.name: page.chatGroupchat
-                    ? qsTr("Room details: %1").arg(page.chatName !== "" ? page.chatName : page.chatJid)
-                    : qsTr("Contact details: %1").arg(page.chatName !== "" ? page.chatName : page.chatJid)
+                    ? qsTr("Room details: %1").arg(page.chatTitle)
+                    : page.isSelf ? page.chatTitle
+                    : qsTr("Contact details: %1").arg(page.chatTitle)
+                enabled: !page.isSelf
                 focusPolicy: Qt.TabFocus
                 onClicked: page.chatGroupchat ? page.openDetails() : page.openContact()
 
@@ -1023,7 +1033,10 @@ Page {
                     Behavior on opacity { NumberAnimation { duration: 120 } }
                 }
 
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                HoverHandler {
+                    enabled: chatIdentity.enabled
+                    cursorShape: Qt.PointingHandCursor
+                }
 
                 contentItem: RowLayout {
                     spacing: 10
@@ -1032,7 +1045,7 @@ Page {
                         Layout.preferredHeight: 38
                         account: page.account
                         jid: page.chatJid
-                        label: page.chatName !== "" ? page.chatName : page.chatJid
+                        label: page.chatTitle
                         initialsPixelSize: 15
                     }
                     ColumnLayout {
@@ -1040,7 +1053,7 @@ Page {
                         spacing: 1
                         Text {
                             Layout.fillWidth: true
-                            text: page.chatName !== "" ? page.chatName : page.chatJid
+                            text: page.chatTitle
                             color: Theme.textPrimary
                             font.pixelSize: 16
                             font.bold: true
@@ -1049,7 +1062,7 @@ Page {
                         Text {
                             Layout.fillWidth: true
                             text: page.chatJid
-                            visible: page.chatName !== ""
+                            visible: page.chatTitle !== page.chatJid
                             color: Theme.textDim
                             font.pixelSize: 11
                             elide: Text.ElideRight
@@ -1072,7 +1085,7 @@ Page {
             // which rings nobody. Same two buttons either way.
             IconButton {
                 objectName: "callButton"
-                visible: page.hasChat && !page.inGroupCall
+                visible: page.hasChat && !page.isSelf && !page.inGroupCall
                 Accessible.name: page.chatGroupchat ? qsTr("Group call") : qsTr("Call")
                 iconPath: Icons.call
                 iconSize: 20
@@ -1081,7 +1094,7 @@ Page {
             }
             IconButton {
                 objectName: "videoCallButton"
-                visible: page.hasChat && !page.inGroupCall
+                visible: page.hasChat && !page.isSelf && !page.inGroupCall
                 Accessible.name: page.chatGroupchat ? qsTr("Group video call") : qsTr("Video call")
                 iconPath: Icons.videoCam
                 iconSize: 20

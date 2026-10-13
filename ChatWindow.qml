@@ -15,7 +15,7 @@ AppWindow {
     height: 680
     minimumWidth: 320
     minimumHeight: 420
-    title: chatName !== "" ? chatName : chatJid
+    title: pane.chatTitle
 
     // The search bar lives in the chat's own header, so a pop-out has one too.
     Shortcut { sequences: [StandardKey.Find]; onActivated: pane.openSearch() }

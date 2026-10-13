@@ -27,7 +27,8 @@ class TestChatList : public QObject {
     Q_OBJECT
 private slots:
     void sortsByActivity();
-    void unnamedChatsSortUnderTheirJid();
+    void tiesGoByJidNotName();
+    void pinsSitAboveActivity();
     void carriesUnreadCounts();
     void insertKeepsOrder();
     void upsertRenameInPlace();
@@ -35,13 +36,15 @@ private slots:
     void aReorderMovesTheRow();
     void removeDrops();
     void ignoresOtherAccounts();
-    void integrationRefreshEmpty();
+    void integrationRefreshListsOnlySelf();
     void failedLoadIsNotAnEmptyList();
     void carriesMentionsAndRoomReason();
     void previewsTheNewestMessage();
     void aLongPreviewIsCutBetweenCharacters();
+    void notesToSelfPreviewWithoutYou();
     void contactEditsGoOutAsRosterCommands();
     void roomEditsGoOutAsBookmarkCommands();
+    void pinsGoOutAsChatlistCommands();
     void editsWithoutAnAccountOrJidAreDropped();
     void reloadReAsksTheServer();
 };
@@ -63,9 +66,9 @@ static QStringList framesFrom(const QSignalSpy &sent) {
 void TestChatList::sortsByActivity() {
     ChatListModel m;
     m.applyList(entriesFrom(R"([
-        {"jid":"b@h","name":"Bob","last_activity":100},
-        {"jid":"a@h","name":"Al","last_activity":300},
-        {"jid":"c@h","name":"Cy","last_activity":200}
+        {"jid":"b@h","name":"Bob","last_activity":100,"order":100},
+        {"jid":"a@h","name":"Al","last_activity":300,"order":300},
+        {"jid":"c@h","name":"Cy","last_activity":200,"order":200}
     ])"));
     QCOMPARE(m.rowCount(), 3);
     QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("a@h"));
@@ -73,29 +76,49 @@ void TestChatList::sortsByActivity() {
     QCOMPARE(m.data(m.index(2), ChatListModel::JidRole).toString(), QString("b@h"));
 }
 
-// Contacts never messaged all sit at activity 0, so the name leg orders that
-// whole block. A nameless one belongs under the JID its row shows; a bare ""
-// swept every one of them to the top instead.
-void TestChatList::unnamedChatsSortUnderTheirJid() {
+// tacky's order is the whole rule, so contacts never messaged - all at order
+// 0 - come out by JID, whatever they are named.
+void TestChatList::tiesGoByJidNotName() {
     ChatListModel m;
     m.applyList(entriesFrom(R"([
-        {"jid":"zoe@h","name":"","last_activity":0},
-        {"jid":"bob@h","name":"Bob","last_activity":0},
-        {"jid":"amy@h","name":"","last_activity":0},
-        {"jid":"cy@h","name":"Cy","last_activity":0}
+        {"jid":"zoe@h","name":"Abe","order":0},
+        {"jid":"bob@h","name":"","order":0},
+        {"jid":"amy@h","name":"Zed","order":0}
     ])"));
     QStringList order;
     for (int i = 0; i < m.rowCount(); ++i)
         order << m.data(m.index(i), ChatListModel::JidRole).toString();
-    QCOMPARE(order, QStringList({"amy@h", "bob@h", "cy@h", "zoe@h"}));
+    QCOMPARE(order, QStringList({"amy@h", "bob@h", "zoe@h"}));
+}
+
+// A pinned chat's order sits far above any activity, and it stays an int64
+// on the way: rounded to a double, the two pins would tie.
+void TestChatList::pinsSitAboveActivity() {
+    ChatListModel m;
+    m.setAccount("me@h");
+    m.applyList(entriesFrom(R"([
+        {"jid":"new@h","last_activity":1760000000000000,"order":1760000000000000},
+        {"jid":"low@h","pinned":true,"order":4611686018427387905},
+        {"jid":"top@h","pinned":true,"order":4611686018427387906}
+    ])"));
+    QStringList order;
+    for (int i = 0; i < m.rowCount(); ++i)
+        order << m.data(m.index(i), ChatListModel::JidRole).toString();
+    QCOMPARE(order, QStringList({"top@h", "low@h", "new@h"}));
+    QVERIFY(m.data(m.index(0), ChatListModel::PinnedRole).toBool());
+
+    // Unpinned, it drops back to where its activity puts it.
+    feedEvent(m, R"(["event","chatlist","Item",
+        {"acc":"me@h","jid":"top@h","item":{"jid":"top@h","pinned":false,"order":5}}])");
+    QCOMPARE(m.data(m.index(2), ChatListModel::JidRole).toString(), QString("top@h"));
 }
 
 void TestChatList::carriesUnreadCounts() {
     ChatListModel m;
     m.setAccount("me@h");
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","last_activity":300,"unread":3},
-        {"jid":"b@h","last_activity":100}
+        {"jid":"a@h","last_activity":300,"order":300,"unread":3},
+        {"jid":"b@h","last_activity":100,"order":100}
     ])"));
     QCOMPARE(m.data(m.index(0), ChatListModel::UnreadRole).toInt(), 3);
     // Absent means nothing unread, not "unknown" - the badge has to hide.
@@ -104,7 +127,7 @@ void TestChatList::carriesUnreadCounts() {
 
     // Reading the chat re-emits the entry with the count cleared.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"a@h","item":{"jid":"a@h","last_activity":300,"unread":0}}])");
+        {"acc":"me@h","jid":"a@h","item":{"jid":"a@h","last_activity":300,"order":300,"unread":0}}])");
     QCOMPARE(m.data(m.index(0), ChatListModel::UnreadRole).toInt(), 0);
 }
 
@@ -112,13 +135,13 @@ void TestChatList::insertKeepsOrder() {
     ChatListModel m;
     m.setAccount("me@h");
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","last_activity":300},
-        {"jid":"b@h","last_activity":100}
+        {"jid":"a@h","last_activity":300,"order":300},
+        {"jid":"b@h","last_activity":100,"order":100}
     ])"));
     QSignalSpy ins(&m, &QAbstractItemModel::rowsInserted);
     // Activity 200 belongs between a (300) and b (100) -> row 1.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"x@h","item":{"jid":"x@h","last_activity":200}}])");
+        {"acc":"me@h","jid":"x@h","item":{"jid":"x@h","last_activity":200,"order":200}}])");
     QCOMPARE(m.rowCount(), 3);
     QCOMPARE(ins.count(), 1);
     QCOMPARE(ins.first().at(1).toInt(), 1); // first inserted row
@@ -128,12 +151,12 @@ void TestChatList::insertKeepsOrder() {
 void TestChatList::upsertRenameInPlace() {
     ChatListModel m;
     m.setAccount("me@h");
-    m.applyList(entriesFrom(R"([{"jid":"a@h","name":"Old","last_activity":300}])"));
+    m.applyList(entriesFrom(R"([{"jid":"a@h","name":"Old","last_activity":300,"order":300}])"));
     QSignalSpy chg(&m, &QAbstractItemModel::dataChanged);
     QSignalSpy ins(&m, &QAbstractItemModel::rowsInserted);
     // Same activity -> position unchanged -> dataChanged, not insert/move.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"a@h","item":{"jid":"a@h","name":"New","last_activity":300}}])");
+        {"acc":"me@h","jid":"a@h","item":{"jid":"a@h","name":"New","last_activity":300,"order":300}}])");
     QCOMPARE(m.rowCount(), 1);
     QCOMPARE(ins.count(), 0);
     QCOMPARE(chg.count(), 1);
@@ -144,13 +167,13 @@ void TestChatList::upsertActivityReorders() {
     ChatListModel m;
     m.setAccount("me@h");
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","last_activity":300},
-        {"jid":"b@h","last_activity":200},
-        {"jid":"c@h","last_activity":100}
+        {"jid":"a@h","last_activity":300,"order":300},
+        {"jid":"b@h","last_activity":200,"order":200},
+        {"jid":"c@h","last_activity":100,"order":100}
     ])"));
     // c gets a new message -> activity 400 -> jumps to the top.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":400}}])");
+        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":400,"order":400}}])");
     QCOMPARE(m.rowCount(), 3);
     QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("c@h"));
     QCOMPARE(m.data(m.index(1), ChatListModel::JidRole).toString(), QString("a@h"));
@@ -163,22 +186,22 @@ void TestChatList::aReorderMovesTheRow() {
     QAbstractItemModelTester tester(&m, QAbstractItemModelTester::FailureReportingMode::QtTest);
     m.setAccount("me@h");
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","last_activity":300},
-        {"jid":"b@h","last_activity":200},
-        {"jid":"c@h","last_activity":100}
+        {"jid":"a@h","last_activity":300,"order":300},
+        {"jid":"b@h","last_activity":200,"order":200},
+        {"jid":"c@h","last_activity":100,"order":100}
     ])"));
     QPersistentModelIndex c(m.index(2));
     QPersistentModelIndex a(m.index(0));
     QSignalSpy removed(&m, &QAbstractItemModel::rowsRemoved);
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":400}}])");
+        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":400,"order":400}}])");
     QCOMPARE(removed.count(), 0);
     QCOMPARE(c.row(), 0);
     QCOMPARE(a.row(), 1);
 
     // And back down past the others.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":50}}])");
+        {"acc":"me@h","jid":"c@h","item":{"jid":"c@h","last_activity":50,"order":50}}])");
     QCOMPARE(c.row(), 2);
     QCOMPARE(a.row(), 0);
     QCOMPARE(m.data(c, ChatListModel::JidRole).toString(), QString("c@h"));
@@ -188,8 +211,8 @@ void TestChatList::removeDrops() {
     ChatListModel m;
     m.setAccount("me@h");
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","last_activity":300},
-        {"jid":"b@h","last_activity":100}
+        {"jid":"a@h","last_activity":300,"order":300},
+        {"jid":"b@h","last_activity":100,"order":100}
     ])"));
     QSignalSpy rem(&m, &QAbstractItemModel::rowsRemoved);
     feedEvent(m, R"(["event","chatlist","Remove",{"acc":"me@h","jid":"a@h"}])");
@@ -203,14 +226,15 @@ void TestChatList::ignoresOtherAccounts() {
     m.setAccount("me@h");
     // An event for a different account must not touch this model.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"other@h","jid":"x@h","item":{"jid":"x@h","last_activity":1}}])");
+        {"acc":"other@h","jid":"x@h","item":{"jid":"x@h","last_activity":1,"order":1}}])");
     QCOMPARE(m.rowCount(), 0);
 }
 
 // Wire a real libtacky backend: add an in-memory account, then refresh() issues
-// `chatlist get`, whose (empty) result must route through handleResult without
-// error and leave the model empty.
-void TestChatList::integrationRefreshEmpty() {
+// `chatlist get`, whose result must route through handleResult without error.
+// A new account has one chat, the one with itself, and its fields arrive
+// typed: a real bool, not the string "1".
+void TestChatList::integrationRefreshListsOnlySelf() {
     TackyBackend backend;
     QVERIFY(backend.start());
 
@@ -227,7 +251,13 @@ void TestChatList::integrationRefreshEmpty() {
 
     // Only an applied reply resets the model.
     QTRY_VERIFY2_WITH_TIMEOUT(applied.count() > 0, "no chatlist get reply applied", 5000);
-    QCOMPARE(m.rowCount(), 0);
+    QCOMPARE(m.rowCount(), 1);
+    QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(),
+             QString("me@example.com"));
+    const QVariant self = m.data(m.index(0), ChatListModel::IsSelfRole);
+    QCOMPARE(self.typeId(), QMetaType::Bool);
+    QVERIFY(self.toBool());
+    QCOMPARE(m.data(m.index(0), ChatListModel::PinnedRole).typeId(), QMetaType::Bool);
     QVERIFY(m.loadError().isEmpty());
 
     backend.stop();
@@ -284,22 +314,22 @@ void TestChatList::previewsTheNewestMessage() {
     ChatListModel m;
     m.setAccount("me@h");
     m.applyList(entriesFrom(R"([
-        {"jid":"a@h","last_activity":9,"last_message":{"from_jid":"a@h/phone",
+        {"jid":"a@h","last_activity":9,"order":9,"last_message":{"from_jid":"a@h/phone",
          "is_outgoing":false,"content":{"type":"text","body":"hey,\n  look"}}},
-        {"jid":"b@h","last_activity":8,"last_message":{"is_outgoing":true,
+        {"jid":"b@h","last_activity":8,"order":8,"last_message":{"is_outgoing":true,
          "content":{"type":"text","body":"on my way"}}},
-        {"jid":"r@muc?join","groupchat":true,"last_activity":7,
+        {"jid":"r@muc?join","groupchat":true,"last_activity":7,"order":7,
          "last_message":{"from_jid":"r@muc/Romeo","is_outgoing":false,
          "content":{"type":"media","caption":"","attachments":[
            {"type":"image","name":"roof.jpg"}]}}},
-        {"jid":"c@h","last_activity":6,"last_message":{"retracted":true,
+        {"jid":"c@h","last_activity":6,"order":6,"last_message":{"retracted":true,
          "content":{"type":"text","body":""}}},
-        {"jid":"d@h","last_activity":5,"last_message":{"content":{"type":"media",
+        {"jid":"d@h","last_activity":5,"order":5,"last_message":{"content":{"type":"media",
          "caption":"","attachments":[{"type":"file","name":"a.pdf"},
                                      {"type":"file","name":"b.pdf"}]}}},
-        {"jid":"e@h","last_activity":4,"last_message":{"content":{"type":"media",
+        {"jid":"e@h","last_activity":4,"order":4,"last_message":{"content":{"type":"media",
          "caption":"","attachments":[{"type":"file","name":"notes.txt"}]}}},
-        {"jid":"f@h","last_activity":0}
+        {"jid":"f@h","last_activity":0,"order":0}
     ])"));
     QStringList previews;
     for (int i = 0; i < m.rowCount(); ++i)
@@ -313,7 +343,7 @@ void TestChatList::previewsTheNewestMessage() {
 
     // A new message re-emits the entry, and the preview follows it.
     feedEvent(m, R"(["event","chatlist","Item",
-        {"acc":"me@h","jid":"f@h","item":{"jid":"f@h","last_activity":10,
+        {"acc":"me@h","jid":"f@h","item":{"jid":"f@h","last_activity":10,"order":10,
          "last_message":{"is_outgoing":false,
          "content":{"type":"text","body":"<b>hi</b>"}}}}])");
     QCOMPARE(m.data(m.index(0), ChatListModel::JidRole).toString(), QString("f@h"));
@@ -321,12 +351,31 @@ void TestChatList::previewsTheNewestMessage() {
              QString("<b>hi</b>"));
 }
 
+// Every message in the chat with yourself is yours, so "You:" says nothing.
+void TestChatList::notesToSelfPreviewWithoutYou() {
+    ChatListModel m;
+    m.setAccount("me@h");
+    m.applyList(entriesFrom(R"([
+        {"jid":"me@h","is_self":true,"last_activity":2,"order":2,"last_message":{
+         "is_outgoing":true,"content":{"type":"text","body":"buy milk"}}},
+        {"jid":"b@h","last_activity":1,"order":1,"last_message":{"is_outgoing":true,
+         "content":{"type":"text","body":"on my way"}}}
+    ])"));
+    QCOMPARE(m.data(m.index(0), ChatListModel::PreviewRole).toString(),
+             QString("buy milk"));
+    QVERIFY(m.data(m.index(0), ChatListModel::IsSelfRole).toBool());
+    QCOMPARE(m.data(m.index(1), ChatListModel::PreviewRole).toString(),
+             QString("You: on my way"));
+    QVERIFY(!m.data(m.index(1), ChatListModel::IsSelfRole).toBool());
+    QCOMPARE(m.roleNames().value(ChatListModel::IsSelfRole), QByteArray("is_self"));
+}
+
 void TestChatList::aLongPreviewIsCutBetweenCharacters() {
     ChatListModel m;
     m.setAccount("me@h");
     const QString body = QString(199, QLatin1Char('a')) + QStringLiteral("\U0001F986 and more");
     m.applyList({QVariantMap{
-        {"jid", "a@h"}, {"last_activity", 1},
+        {"jid", "a@h"}, {"last_activity", 1}, {"order", 1},
         {"last_message", QVariantMap{{"content", QVariantMap{{"type", "text"}, {"body", body}}}}}}});
     const QString preview = m.data(m.index(0), ChatListModel::PreviewRole).toString();
     QVERIFY(preview.isValidUtf16());
@@ -350,6 +399,27 @@ void TestChatList::contactEditsGoOutAsRosterCommands() {
                           "roster/add acc=me@h jid=cy@h",
                           "roster/item acc=me@h jid=bob@h name=Bobby",
                           "roster/remove acc=me@h jid=bob@h"}));
+}
+
+// pin() and setPinned() only send commands; the rows move on tacky's <Item>s.
+void TestChatList::pinsGoOutAsChatlistCommands() {
+    TackyBackend backend;
+    ChatListModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.pin("room@muc?join", true);
+    m.pin("bob@h", false);
+    m.setPinned({"b@h", "a@h"});
+
+    QCOMPARE(framesFrom(sent),
+             QStringList({"chatlist/pin acc=me@h jid=room@muc?join pinned=true",
+                          "chatlist/pin acc=me@h jid=bob@h pinned=false",
+                          "chatlist/setPinned acc=me@h jids="}));
+    QCOMPARE(sent.at(2).at(2).toMap().value("jids").toStringList(),
+             QStringList({"b@h", "a@h"}));
+    QCOMPARE(m.rowCount(), 0);
 }
 
 // The JID goes out exactly as the row holds it, `?join` and all - stripping it

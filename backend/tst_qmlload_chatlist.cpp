@@ -26,9 +26,9 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"a@example.com","name":"Amy","last_activity":300,"unread":3},
-            {"jid":"b@example.com","name":"Bob","last_activity":200,"unread":0},
-            {"jid":"c@example.com","name":"Cy","last_activity":100,"unread":140}
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"order":300,"unread":3},
+            {"jid":"b@example.com","name":"Bob","last_activity":200,"order":200,"unread":0},
+            {"jid":"c@example.com","name":"Cy","last_activity":100,"order":100,"unread":140}
         ])")
                               .array()
                               .toVariantList());
@@ -79,7 +79,7 @@ private slots:
         // Opening the chat marks it read, which comes back as an <Item>.
         chats->applyItem(QVariantMap{{"jid", "a@example.com"},
                                      {"name", "Amy"},
-                                     {"last_activity", 300},
+                                     {"last_activity", 300}, {"order", 300},
                                      {"unread", 0}});
         QTRY_VERIFY(!badge(0)->isVisible());
 
@@ -96,10 +96,10 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"a@example.com","name":"Amy","last_activity":300,
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"order":300,
              "last_message":{"is_outgoing":true,
              "content":{"type":"text","body":"<b>see you</b>"}}},
-            {"jid":"b@example.com","name":"Bob","last_activity":0}
+            {"jid":"b@example.com","name":"Bob","last_activity":0,"order":0}
         ])")
                               .array()
                               .toVariantList());
@@ -150,18 +150,18 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"amy@example.com","name":"Amy","last_activity":600},
+            {"jid":"amy@example.com","name":"Amy","last_activity":600,"order":600},
             {"jid":"ok@muc.example.com?join","name":"Joined","groupchat":true,
-             "room_state":"joined","last_activity":500,
+             "room_state":"joined","last_activity":500,"order":500,
              "unread":4,"unread_mentions":1},
             {"jid":"bad@muc.example.com?join","name":"Failed","groupchat":true,
-             "room_state":"error","room_reason":"forbidden","last_activity":400},
+             "room_state":"error","room_reason":"forbidden","last_activity":400,"order":400},
             {"jid":"gone@muc.example.com?join","name":"Dropped","groupchat":true,
-             "room_state":"disconnected","last_activity":300},
+             "room_state":"disconnected","last_activity":300,"order":300},
             {"jid":"wait@muc.example.com?join","name":"Joining","groupchat":true,
-             "room_state":"joining","last_activity":200},
+             "room_state":"joining","last_activity":200,"order":200},
             {"jid":"idle@muc.example.com?join","name":"Idle","groupchat":true,
-             "room_state":"idle","last_activity":100}
+             "room_state":"idle","last_activity":100,"order":100}
         ])")
                               .array()
                               .toVariantList());
@@ -222,7 +222,7 @@ private slots:
                                      {"name", "Joined"},
                                      {"groupchat", true},
                                      {"room_state", "joined"},
-                                     {"last_activity", 500},
+                                     {"last_activity", 500}, {"order", 500},
                                      {"unread", 4},
                                      {"unread_mentions", 0}});
         QTRY_VERIFY(!mention(1)->isVisible());
@@ -241,9 +241,9 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"amy@example.com","name":"Amy","last_activity":300},
-            {"jid":"bob@example.com","name":"Bob","last_activity":200},
-            {"jid":"cy@example.com","name":"Cy","last_activity":100}
+            {"jid":"amy@example.com","name":"Amy","last_activity":300,"order":300},
+            {"jid":"bob@example.com","name":"Bob","last_activity":200,"order":200},
+            {"jid":"cy@example.com","name":"Cy","last_activity":100,"order":100}
         ])")
                               .array()
                               .toVariantList());
@@ -322,7 +322,8 @@ private slots:
         for (int i = 0; i < 12; ++i)
             entries << QVariantMap{{"jid", QString("c%1@example.com").arg(i)},
                                    {"name", QString("Chat %1").arg(i)},
-                                   {"last_activity", 1200 - i}};
+                                   {"last_activity", 1200 - i},
+                                   {"order", 1200 - i}};
         chats->applyList(entries);
 
         QQuickWindow win;
@@ -408,7 +409,7 @@ private slots:
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"amy@example.com","name":"Amy","source":"roster",
-             "last_activity":300}
+             "last_activity":300,"order":300}
         ])")
                               .array()
                               .toVariantList());
@@ -485,12 +486,12 @@ private slots:
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"amy@example.com","name":"Amy","source":"roster",
-             "last_activity":300},
+             "last_activity":300,"order":300},
             {"jid":"room@muc.example.com?join","name":"The Room",
              "source":"bookmarks","groupchat":true,"autojoin":false,
-             "room_state":"error","room_reason":"forbidden","last_activity":200},
+             "room_state":"error","room_reason":"forbidden","last_activity":200,"order":200},
             {"jid":"cy@example.com","name":"","source":"free",
-             "last_activity":100}
+             "last_activity":100,"order":100}
         ])")
                               .array()
                               .toVariantList());
@@ -634,6 +635,201 @@ private slots:
         e.assertNoErrors();
     }
 
+    // The menu pins; dragging a pinned row's pin over another pinned row sends
+    // the new pinned list. An unpinned row has no pin to drag.
+    void pinnedRowsDragByTheirPin() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"top@example.com","name":"Top","pinned":true,
+             "order":4611686018427387906},
+            {"jid":"low@example.com","name":"Low","pinned":true,
+             "order":4611686018427387905},
+            {"jid":"amy@example.com","name":"Amy","last_activity":300,"order":300}
+        ])").array().toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 3);
+        win.grabWindow();
+        auto rowAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return item;
+        };
+        QVERIFY(findItem(rowAt(0), "pinGlyph")->isVisible());
+        QVERIFY(findItem(rowAt(1), "pinGlyph")->isVisible());
+        QVERIFY(!findItem(rowAt(2), "pinGlyph")->isVisible());
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+
+        // The menu offers what the row isn't.
+        QObject *menu = page->findChild<QObject *>("chatRowMenu");
+        QVERIFY(menu);
+        QObject *pinEntry = menu->findChild<QObject *>("pinEntry");
+        QVERIFY(pinEntry);
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "load", Q_ARG(QVariant, QVariant(chats->entryFor("amy@example.com")))));
+        QCOMPARE(pinEntry->property("text").toString(), QString("Pin"));
+        QVERIFY(QMetaObject::invokeMethod(pinEntry, "triggered"));
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "load", Q_ARG(QVariant, QVariant(chats->entryFor("top@example.com")))));
+        QCOMPARE(pinEntry->property("text").toString(), QString("Unpin"));
+        QVERIFY(QMetaObject::invokeMethod(pinEntry, "triggered"));
+        QCOMPARE(sent.count(), 2);
+        QCOMPARE(sent.at(0).at(1).toString(), QString("pin"));
+        QCOMPARE(sent.at(0).at(2).toMap().value("jid").toString(), QString("amy@example.com"));
+        QVERIFY(sent.at(0).at(2).toMap().value("pinned").toBool());
+        QCOMPARE(sent.at(1).at(2).toMap().value("jid").toString(), QString("top@example.com"));
+        QVERIFY(!sent.at(1).at(2).toMap().value("pinned").toBool());
+        sent.clear();
+
+        // Low's pin, dragged up over Top.
+        QQuickItem *grip = findItem(rowAt(1), "pinGrip");
+        QVERIFY(grip);
+        const QPoint from = grip->mapToScene(
+            QPointF(grip->width() / 2, grip->height() / 2)).toPoint();
+        const QPoint to(from.x(), int(rowAt(0)->mapToScene(
+            QPointF(0, rowAt(0)->height() / 2)).y()));
+        const qreal cell = list->property("cellHeight").toReal();
+        auto shownY = [&](QQuickItem *row) {
+            return row->property("shownY").toReal() - row->property("home").toPointF().y();
+        };
+        QTest::mousePress(&win, Qt::LeftButton, {}, from);
+        for (int i = 1; i <= 8; ++i)
+            QTest::mouseMove(&win, from + (to - from) * i / 8);
+        // Top makes room below it before the drop.
+        QTRY_COMPARE(shownY(rowAt(0)), cell);
+        QTest::mouseRelease(&win, Qt::LeftButton, {}, to);
+
+        QCOMPARE(sent.count(), 1);
+        QCOMPARE(sent.at(0).at(0).toString(), QString("chatlist"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("setPinned"));
+        QCOMPARE(sent.at(0).at(2).toMap().value("jids").toStringList(),
+                 QStringList({"low@example.com", "top@example.com"}));
+        // Low lands in the top slot and both stay put until tacky answers.
+        QTRY_COMPARE(shownY(rowAt(1)), -cell);
+        QCOMPARE(shownY(rowAt(0)), cell);
+
+        // tacky's reply puts the list in that order, and nothing moves on screen.
+        chats->handleEvent("chatlist", "Item", QVariantMap{
+            {"acc", "me@example.com"},
+            {"item", QVariantMap{{"jid", "low@example.com"}, {"name", "Low"},
+                                 {"pinned", true}, {"order", Q_INT64_C(4611686018427387906)}}}});
+        chats->handleEvent("chatlist", "Item", QVariantMap{
+            {"acc", "me@example.com"},
+            {"item", QVariantMap{{"jid", "top@example.com"}, {"name", "Top"},
+                                 {"pinned", true}, {"order", Q_INT64_C(4611686018427387905)}}}});
+        QCOMPARE(rowAt(0)->property("jid").toString(), QString("low@example.com"));
+        QCOMPARE(shownY(rowAt(0)), 0.0);
+        QCOMPARE(shownY(rowAt(1)), 0.0);
+        QVERIFY(!page->property("pinsSent").toBool());
+
+        // Dragged past the pins, it stays the last of them: a no-op here.
+        sent.clear();
+        const QPoint below(from.x(), int(rowAt(2)->mapToScene(
+            QPointF(0, rowAt(2)->height() / 2)).y()));
+        QTest::mousePress(&win, Qt::LeftButton, {}, from);
+        for (int i = 1; i <= 8; ++i)
+            QTest::mouseMove(&win, from + (below - from) * i / 8);
+        QTest::mouseRelease(&win, Qt::LeftButton, {}, below);
+        QCOMPARE(sent.count(), 0);
+
+        e.assertNoErrors();
+    }
+
+    // Notes to yourself: named so, with nobody to call or add, and never a
+    // roster entry when typed into the new-chat sheet.
+    void notesToSelf() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"me@example.com","is_self":true,"source":"free",
+             "last_activity":300,"order":300}
+        ])")
+                              .array()
+                              .toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 1);
+        win.grabWindow(); // force the delegates to lay out and bind
+        QQuickItem *row = nullptr;
+        QMetaObject::invokeMethod(list, "itemAtIndex", Q_RETURN_ARG(QQuickItem *, row),
+                                  Q_ARG(int, 0));
+        QVERIFY(row);
+        QCOMPARE(row->property("title").toString(), QString("Note to self"));
+
+        QObject *menu = page->findChild<QObject *>("chatRowMenu");
+        QVERIFY(menu);
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "load",
+            Q_ARG(QVariant, QVariant(chats->entryFor("me@example.com")))));
+        QCOMPARE(menu->property("chatTitle").toString(), QString("Note to self"));
+        QVERIFY(!menu->findChild<QObject *>("startCallEntry")->property("offered").toBool());
+        QVERIFY(!menu->findChild<QObject *>("addContactEntry")->property("offered").toBool());
+
+        QSignalSpy opened(page, SIGNAL(openChat(QString, QString, bool)));
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QObject *entry = page->findChild<QObject *>("noteToSelfEntry");
+        QVERIFY(entry);
+        QVERIFY(QMetaObject::invokeMethod(entry, "triggered"));
+        QCOMPARE(opened.count(), 1);
+        QCOMPARE(opened.at(0).at(0).toString(), QString("me@example.com"));
+        QVERIFY(!opened.at(0).at(2).toBool());
+
+        QObject *sheet = page->findChild<QObject *>("newChatSheet");
+        QVERIFY(sheet);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+        sheet->findChild<QObject *>("newChatJid")->setProperty("text", "Me@Example.com");
+        QVERIFY(QMetaObject::invokeMethod(sheet, "accept"));
+        QCOMPARE(opened.count(), 2);
+        QCOMPARE(opened.at(1).at(0).toString(), QString("me@example.com"));
+        QCOMPARE(sent.count(), 0);
+
+        e.assertNoErrors();
+    }
+
     // Joining from the menu has to reach the backend as a bookmark write, and a
     // remove has to wait for the confirmation rather than fire on the click.
     void rowMenuEditsReachTheBackend() {
@@ -645,10 +841,10 @@ private slots:
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
             {"jid":"amy@example.com","name":"Amy","source":"roster",
-             "last_activity":300},
+             "last_activity":300,"order":300},
             {"jid":"room@muc.example.com?join","name":"The Room",
              "source":"bookmarks","groupchat":true,"autojoin":false,
-             "last_activity":200}
+             "last_activity":200,"order":200}
         ])")
                               .array()
                               .toVariantList());
@@ -726,9 +922,9 @@ private slots:
         ChatListModel *chats = app->chatListFor("me@example.com");
         QVERIFY(chats);
         chats->applyList(QJsonDocument::fromJson(R"([
-            {"jid":"a@example.com","name":"Amy","last_activity":300,"unread":3},
-            {"jid":"b@example.com","name":"Bob","last_activity":200},
-            {"jid":"c@example.com","name":"Cy","last_activity":100}
+            {"jid":"a@example.com","name":"Amy","last_activity":300,"order":300,"unread":3},
+            {"jid":"b@example.com","name":"Bob","last_activity":200,"order":200},
+            {"jid":"c@example.com","name":"Cy","last_activity":100,"order":100}
         ])")
                               .array()
                               .toVariantList());
