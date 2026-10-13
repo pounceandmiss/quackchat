@@ -47,7 +47,8 @@ void AccountSettings::requestNick() {
                                        {QStringLiteral("jid"), m_account}});
 }
 
-void AccountSettings::save(const QString &password, const QString &nick) {
+void AccountSettings::save(const QString &password, const QString &nick,
+                           const QString &proxy) {
     if (!m_backend || m_account.isEmpty())
         return;
 
@@ -61,6 +62,7 @@ void AccountSettings::save(const QString &password, const QString &nick) {
         wrote = true;
     }
 
+    m_pendingProxy = proxy;
     if (nick != m_nick) {
         // Publishing the nickname is a round trip to the server, so this is
         // the one write worth waiting on before calling the save done.
@@ -73,8 +75,23 @@ void AccountSettings::save(const QString &password, const QString &nick) {
         return;
     }
 
-    setStatus(wrote ? tr("Saved") : QString(), false);
-    emit saved();
+    saveProxy(wrote);
+}
+
+// The last step of a save, after the nickname is through: a changed proxy
+// restarts the account, so tacky's answer is what ends the save.
+void AccountSettings::saveProxy(bool wrote) {
+    if (m_pendingProxy == m_proxy) {
+        setStatus(wrote ? tr("Saved") : QString(), false);
+        emit saved();
+        return;
+    }
+    m_proxyToken =
+        m_backend->request(QStringLiteral("account"), QStringLiteral("set"),
+                           QVariantMap{{QStringLiteral("acc"), m_account},
+                                       {QStringLiteral("proxy"), m_pendingProxy}});
+    setStatus(tr("Saving"), false);
+    emit savingChanged();
 }
 
 void AccountSettings::changeServerPassword(const QString &password) {
@@ -185,6 +202,12 @@ void AccountSettings::handleResult(int token, const QVariant &data) {
     } else if (token == m_nickToken) {
         m_nickToken = -1;
         emit savingChanged();
+        saveProxy(true);
+    } else if (token == m_proxyToken) {
+        m_proxyToken = -1;
+        m_proxy = m_pendingProxy;
+        emit proxyChanged();
+        emit savingChanged();
         setStatus(tr("Saved"), false);
         emit saved();
     } else if (token == m_avatarToken) {
@@ -218,6 +241,12 @@ void AccountSettings::handleError(int token, const QString &message) {
                                                  : message);
         return;
     }
+    if (token == m_proxyToken) {
+        m_proxyToken = -1;
+        emit savingChanged();
+        setStatus(message.isEmpty() ? tr("The proxy was refused") : message, true);
+        return;
+    }
     if (token != m_nickToken)
         return;
     m_nickToken = -1;
@@ -226,6 +255,11 @@ void AccountSettings::handleError(int token, const QString &message) {
 }
 
 void AccountSettings::applyAccount(const QVariantMap &row) {
+    const QString proxy = row.value(QStringLiteral("proxy")).toString();
+    if (proxy != m_proxy) {
+        m_proxy = proxy;
+        emit proxyChanged();
+    }
     const QString password = row.value(QStringLiteral("password")).toString();
     if (password == m_password)
         return;

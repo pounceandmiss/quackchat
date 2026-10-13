@@ -42,6 +42,8 @@ private slots:
     void integrationLoadsAndSavesPassword();
     void integrationSaveWithoutChangesIsNoWrite();
     void integrationAvatarPublishFailureIsReported();
+    void integrationSavesProxy();
+    void integrationMalformedProxyIsRefused();
     void refetchesNickOnReady();
     void serverPasswordChangeReadsBackTheStoredOne();
     void serverPasswordRefusalIsKeptForTheDialog();
@@ -223,7 +225,7 @@ void TestAccountSettings::integrationLoadsAndSavesPassword() {
 
     QSignalSpy saved(&s, &AccountSettings::saved);
     QSignalSpy sent(&backend, &TackyBackend::sent);
-    s.save("new", s.nick());
+    s.save("new", s.nick(), s.proxy());
     QCOMPARE(saved.count(), 1); // nothing to wait on but the local write
     QCOMPARE(sent.count(), 1);
     QCOMPARE(sent.first().at(1).toString(), QString("set"));
@@ -253,7 +255,7 @@ void TestAccountSettings::integrationSaveWithoutChangesIsNoWrite() {
     QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("old"), 5000);
 
     QSignalSpy saved(&s, &AccountSettings::saved);
-    s.save(s.password(), s.nick());
+    s.save(s.password(), s.nick(), s.proxy());
     QCOMPARE(saved.count(), 1);
     QCOMPARE(s.status(), QString()); // nothing was written, so nothing to report
     QVERIFY(!s.saving());
@@ -290,6 +292,66 @@ void TestAccountSettings::integrationAvatarPublishFailureIsReported() {
     QCOMPARE(busy.count(), 2); // in flight, then done
     QVERIFY(s.avatarError());
     QVERIFY(!s.avatarStatus().isEmpty());
+
+    backend.stop();
+}
+
+// Real backend: a changed proxy waits on tacky's answer, since it starts the
+// account over, and reads back from the account row.
+void TestAccountSettings::integrationSavesProxy() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "pw"},
+                               {"domain", "example.com"},
+                               {"username", "me"}});
+
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@example.com");
+    QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("pw"), 5000);
+    QCOMPARE(s.proxy(), QString());
+
+    QSignalSpy saved(&s, &AccountSettings::saved);
+    s.save(s.password(), s.nick(), "socks5://127.0.0.1:9050");
+    QVERIFY(s.saving());
+    QTRY_COMPARE_WITH_TIMEOUT(saved.count(), 1, 5000);
+    QVERIFY(!s.saving());
+    QCOMPARE(s.status(), QString("Saved"));
+    QCOMPARE(s.proxy(), QString("socks5://127.0.0.1:9050"));
+
+    s.applyAccount({});
+    QCOMPARE(s.proxy(), QString());
+    s.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(s.proxy(), QString("socks5://127.0.0.1:9050"), 5000);
+
+    backend.stop();
+}
+
+// tacky refuses a malformed proxy; its reason is the status, the stored value
+// stays, and the page is not closed.
+void TestAccountSettings::integrationMalformedProxyIsRefused() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "pw"},
+                               {"domain", "example.com"},
+                               {"username", "me"}});
+
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@example.com");
+    QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("pw"), 5000);
+
+    QSignalSpy saved(&s, &AccountSettings::saved);
+    s.save(s.password(), s.nick(), "http://example.com:8080");
+    QTRY_VERIFY_WITH_TIMEOUT(!s.saving(), 5000);
+    QCOMPARE(saved.count(), 0);
+    QVERIFY(s.statusError());
+    QVERIFY(!s.status().isEmpty());
+    QCOMPARE(s.proxy(), QString());
 
     backend.stop();
 }

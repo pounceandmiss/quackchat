@@ -11,6 +11,10 @@
 // The avatar is not part of that save: publishing is a server round-trip with
 // its own progress, so it is applied the moment a picture is picked, like the
 // OMEMO trust controls.
+//
+// The proxy is saved with the rest, but last: tacky starts the account over
+// when it changes, which would fail a nickname write still out on the old
+// session. A malformed one is refused, and the refusal is the status.
 #ifndef ACCOUNTSETTINGS_H
 #define ACCOUNTSETTINGS_H
 
@@ -31,6 +35,8 @@ class AccountSettings : public QObject {
     Q_PROPERTY(QString account READ account NOTIFY accountChanged)
     Q_PROPERTY(QString password READ password NOTIFY passwordChanged)
     Q_PROPERTY(QString nick READ nick NOTIFY nickChanged)
+    // socks5://[user:pass@]host:port, or empty to connect directly.
+    Q_PROPERTY(QString proxy READ proxy NOTIFY proxyChanged)
     // Last outcome of a save, for the line under the form. Cleared on the next
     // save; the page times it out.
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
@@ -58,9 +64,10 @@ public:
 
     QString password() const { return m_password; }
     QString nick() const { return m_nick; }
+    QString proxy() const { return m_proxy; }
     QString status() const { return m_status; }
     bool statusError() const { return m_statusError; }
-    bool saving() const { return m_nickToken >= 0; }
+    bool saving() const { return m_nickToken >= 0 || m_proxyToken >= 0; }
     bool changingPassword() const { return m_changePasswordToken >= 0; }
     QString changePasswordError() const { return m_changePasswordError; }
     OmemoDevicesModel *devices() { return &m_devices; }
@@ -78,7 +85,8 @@ public:
 
     // Writes whatever differs from what was loaded. saved() follows once the
     // writes are through, which for the nickname means the server said yes.
-    Q_INVOKABLE void save(const QString &password, const QString &nick);
+    Q_INVOKABLE void save(const QString &password, const QString &nick,
+                          const QString &proxy);
 
     // Change the password on the server. On success tacky stores the new one
     // too; serverPasswordChanged() follows, and a failure lands in
@@ -104,6 +112,7 @@ signals:
     void accountChanged();
     void passwordChanged();
     void nickChanged();
+    void proxyChanged();
     void statusChanged();
     void savingChanged();
     void saved();
@@ -115,6 +124,7 @@ signals:
 
 private:
     void requestNick();
+    void saveProxy(bool wrote);
     void setStatus(const QString &text, bool error);
     void setAvatarStatus(const QString &text, bool error);
     void finishAvatar(const QString &error);
@@ -125,11 +135,14 @@ private:
     QString m_account;
     QString m_password;
     QString m_nick;
+    QString m_proxy;
+    QString m_pendingProxy; // what save() was given, written after the nick
     QString m_status;
     bool m_statusError = false;
     int m_getToken = -1;
     int m_nickGetToken = -1;
-    int m_nickToken = -1; // in flight `nick set`, which is what saving() means
+    int m_nickToken = -1; // in flight `nick set`
+    int m_proxyToken = -1; // in flight `account set` of the proxy
     int m_avatarToken = -1; // in flight `avatar publish` / `avatar disable`
     int m_changePasswordToken = -1; // in flight `account changePassword`
     QString m_changePasswordError;

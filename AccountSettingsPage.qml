@@ -7,12 +7,12 @@ import QtQuick.Layouts
 import Quack
 
 // One account's details: the stored login password (and a way to change the
-// one on the server), the published name, this device's OMEMO key, and the
+// one on the server), the proxy it connects through, the published name, this device's OMEMO key, and the
 // trust state of every other device the account has. Hosted by
 // AccountSettingsWindow on desktop and as a full-screen sheet on mobile, so it
 // carries its own header and footer.
 //
-// The credential and the name are edited and then saved. The OMEMO controls
+// The credential, the proxy and the name are edited and then saved. The OMEMO controls
 // are not: a trust change is written the moment it is picked, so Cancel has
 // nothing to undo there.
 Page {
@@ -43,13 +43,15 @@ Page {
         page.editingNick = false
         page.bindPassword()
         nickField.text = Qt.binding(() => page.settings ? page.settings.nick : "")
+        proxyField.text = Qt.binding(() => page.settings ? page.settings.proxy : "")
     }
     onAccountChanged: page.bindAccount()
     Component.onCompleted: page.bindAccount()
 
     readonly property bool dirty: page.settings !== null
                                   && (passwordField.text !== page.settings.password
-                                      || nickField.text !== page.settings.nick)
+                                      || nickField.text !== page.settings.nick
+                                      || proxyField.text.trim() !== page.settings.proxy)
 
     // Whether this account has an avatar published, which is what decides if
     // there is anything to remove. The hash is the truth here rather than the
@@ -333,6 +335,43 @@ Page {
                 }
             }
 
+            // How the account reaches its server.
+            Card {
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Caption { text: qsTr("SOCKS5 proxy") }
+                    TextField {
+                        id: proxyField
+                        objectName: "proxyField"
+                        Layout.fillWidth: true
+                        // Armed by bindAccount. It can carry a login, so no
+                        // suggestions.
+                        placeholderText: qsTr("socks5://host:port")
+                        inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
+                                          | Qt.ImhNoPredictiveText | Qt.ImhUrlCharactersOnly
+                        onAccepted: if (page.dirty) page.save()
+                    }
+                }
+
+                Caption {
+                    Layout.fillWidth: true
+                    text: proxyField.text.trim() !== ""
+                          ? qsTr("Everything this account sends goes through the proxy, files included. Calls are off while it is set.")
+                          : qsTr("Leave empty to connect directly. A login goes in as socks5://user:password@host:port.")
+                    wrapMode: Text.WordWrap
+                }
+
+                // tacky starts the account over on the new route.
+                Caption {
+                    Layout.fillWidth: true
+                    visible: page.settings !== null
+                             && proxyField.text.trim() !== page.settings.proxy
+                    text: qsTr("Saving reconnects the account, ending any call or transfer it has going.")
+                    wrapMode: Text.WordWrap
+                }
+            }
+
             // The name others see, and this device's own key.
             Card {
                 RowLayout {
@@ -510,7 +549,7 @@ Page {
 
     function save() {
         if (page.settings)
-            page.settings.save(passwordField.text, nickField.text)
+            page.settings.save(passwordField.text, nickField.text, proxyField.text.trim())
     }
 
     // A copy is silent otherwise.
