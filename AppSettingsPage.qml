@@ -273,26 +273,6 @@ Page {
                 SectionTitle { text: qsTr("Connection and privacy") }
 
                 SettingBox {
-                    objectName: "connProbeBox"
-                    text: qsTr("Check the connection after sleep or on returning to Quack")
-                    checked: App.settings.connProbe
-                    onToggled: App.settings.setConnProbe(checked)
-                }
-                Caption {
-                    Layout.fillWidth: true
-                    text: qsTr("After the device sleeps or Quack comes back into use, a connection that quietly died is noticed and remade straight away.")
-                    wrapMode: Text.WordWrap
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    Layout.topMargin: 4
-                    Layout.bottomMargin: 4
-                    implicitHeight: 1
-                    color: Theme.hairline
-                }
-
-                SettingBox {
                     objectName: "answerTimeBox"
                     text: qsTr("Let contacts see my local time")
                     checked: App.settings.answerTime

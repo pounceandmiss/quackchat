@@ -22,7 +22,6 @@ const QLatin1String kLogNative("log_native");
 const QLatin1String kLogRedact("log_redact_content");
 const QLatin1String kChatAvatars("chat_avatars");
 const QLatin1String kChatListStyle("chat_list_style");
-const QLatin1String kConnProbe("conn_probe");
 const QLatin1String kAnswerTime("answer_time");
 const QLatin1String kAnswerLastActivity("answer_last_activity");
 const QLatin1String kSendChatMarkers("send_chat_markers");
@@ -78,9 +77,6 @@ void AppSettings::refresh() {
     m_mediaBackendToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kMediaBackend}});
-    m_connProbeToken =
-        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
-                           QVariantMap{{QStringLiteral("key"), kConnProbe}});
     m_answerTimeToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kAnswerTime}});
@@ -121,8 +117,6 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kChatListStyle, data.toString());
     else if (token == m_mediaBackendToken)
         applyValue(kMediaBackend, data.toString());
-    else if (token == m_connProbeToken)
-        applyValue(kConnProbe, data.toString());
     else if (token == m_answerTimeToken)
         applyValue(kAnswerTime, data.toString());
     else if (token == m_answerLastActivityToken)
@@ -164,8 +158,6 @@ void AppSettings::handleError(int token, const QString &message) {
         m_chatListStyleToken = -1;
     else if (token == m_mediaBackendToken)
         m_mediaBackendToken = -1;
-    else if (token == m_connProbeToken)
-        m_connProbeToken = -1;
     else if (token == m_answerTimeToken)
         m_answerTimeToken = -1;
     else if (token == m_answerLastActivityToken)
@@ -264,12 +256,6 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_chatListStyle = value;
         emit chatListStyleChanged();
-    } else if (key == kConnProbe) {
-        const bool on = value != QLatin1String("0");
-        if (m_connProbe == on)
-            return;
-        m_connProbe = on;
-        emit connProbeChanged();
     } else if (key == kAnswerTime) {
         // Off unless "1", the way tacky reads it.
         const bool on = value == QLatin1String("1");
@@ -333,10 +319,6 @@ void AppSettings::setChatListStyle(const QString &style) {
     if (!isChatListStyle(style))
         return;
     write(kChatListStyle, style);
-}
-
-void AppSettings::setConnProbe(bool on) {
-    write(kConnProbe, on ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
 void AppSettings::setAnswerTime(bool on) {

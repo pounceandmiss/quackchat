@@ -76,7 +76,7 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
     QCOMPARE(keys, QStringList({"answer_last_activity", "answer_time",
                                 "attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
-                                "chat_list_style", "conn_probe",
+                                "chat_list_style",
                                 "emoji_recent", "emoji_tones",
                                 "log_level", "log_native",
                                 "log_redact_content", "log_to_file",
@@ -188,7 +188,6 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setChatAvatars(false);
     s.setChatListStyle(QStringLiteral("columns"));
     s.setMediaBackend(QStringLiteral("webrtc"));
-    s.setConnProbe(false);
     s.setAnswerTime(true);
     s.setAnswerLastActivity(true);
     s.setSendChatMarkers(false);
@@ -218,7 +217,6 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.mediaBackend() == QLatin1String("webrtc"), 5000);
     // Each the opposite of its default, so only a stored value passes.
-    QTRY_VERIFY_WITH_TIMEOUT(!readback.connProbe(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.answerTime(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.answerLastActivity(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(!readback.sendChatMarkers(), 5000);
