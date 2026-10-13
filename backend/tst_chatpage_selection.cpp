@@ -24,6 +24,7 @@ private slots:
     void rightClickStillOpensTheBubbleMenu();
     void aTouchTapOpensTheBubbleMenu();
     void aPressOutsideAMenuOnlyDismissesIt();
+    void oneClickOutsideClosesTheMenuAndItsReactions();
     void aLongPressSelectsAndOffersItsActions();
     void theSelectionBarActsOnTheOneMessage();
     void theSelectionBarFollowsTheMessagesState();
@@ -340,6 +341,56 @@ void TestChatPageSelection::aTouchTapOpensTheBubbleMenu() {
     auto *page = chat.win()->findChild<QObject *>("chatPane");
     QVERIFY(page);
     QCOMPARE(page->property("selectedCount").toInt(), 0);
+}
+
+// The bar sits above the menu in the overlay, and Qt closes only the top popup
+// a click outside lands beside. One click has to take both, or the menu is
+// left behind for a second.
+void TestChatPageSelection::oneClickOutsideClosesTheMenuAndItsReactions() {
+    const Chat chat = open("select@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *menu = popupIn(body, "bubbleMenu");
+    QVERIFY(menu);
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+
+    QTest::mouseClick(chat.win(), Qt::RightButton, {},
+                      body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint());
+    QTRY_VERIFY(menu->property("opened").toBool());
+    QTRY_VERIFY(bar->property("opened").toBool());
+
+    // Somewhere in the feed neither of them covers.
+    const auto sceneRect = [](QObject *popup) {
+        auto *anchor = popup->property("parent").value<QQuickItem *>();
+        return anchor->mapRectToScene(
+            QRectF(popup->property("x").toReal(), popup->property("y").toReal(),
+                   popup->property("width").toReal(), popup->property("height").toReal()));
+    };
+    const QRectF covered = sceneRect(menu).united(sceneRect(bar));
+    const QRectF feed = chat.feed->mapRectToScene(
+        QRectF(0, 0, chat.feed->width(), chat.feed->height()));
+    QPoint outside;
+    bool found = false;
+    for (const QPointF &at : {feed.bottomLeft() + QPointF(8, -8),
+                              feed.bottomRight() + QPointF(-8, -8),
+                              feed.topLeft() + QPointF(8, 8),
+                              feed.topRight() + QPointF(-8, 8)}) {
+        if (!covered.contains(at)) {
+            outside = at.toPoint();
+            found = true;
+            break;
+        }
+    }
+    QVERIFY2(found, "the menu and its bar covered every corner of the feed");
+
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, outside);
+    QTRY_VERIFY(!bar->property("visible").toBool());
+    QTRY_VERIFY(!menu->property("visible").toBool());
 }
 
 // The press that dismisses a menu is spent on dismissing it: closing one

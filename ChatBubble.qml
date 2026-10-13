@@ -493,7 +493,12 @@ Item {
         // bar off the top edge is one nobody can reach.
         margins: 8
         modal: false
-        closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside | Popup.CloseOnEscape
+        // Above the menu in the overlay, it is the first to hear a press outside,
+        // and Qt stops at the top popup unless told otherwise. CloseMultiple
+        // passes the press on down, so one click puts the pair away, as a tap
+        // already did.
+        closePolicy: Popup.CloseOnPressOutside | Popup.CloseOnReleaseOutside
+            | Popup.CloseOnEscape | Popup.CloseMultiple
         background: Rectangle {
             color: Theme.surface
             radius: height / 2
