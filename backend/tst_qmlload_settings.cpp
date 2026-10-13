@@ -1,6 +1,8 @@
 // The account settings window, the avatar it publishes, the devices it trusts,
 // and the contact page that asks the same of somebody else.
 #include <QtTest>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QImage>
 #include <QQmlComponent>
 
@@ -156,6 +158,50 @@ private slots:
         holder.reset();
         QCoreApplication::processEvents();
 
+        e.assertNoErrors();
+    }
+
+    // Why the account can't connect leads the page while it stands, in full
+    // and copyable, whatever the cause; getting through takes the card away.
+    void aConnectionErrorHasACardOfItsOwn() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        app->accounts()->applyAdded("me@example.com");
+        app->accounts()->setEnabled("me@example.com", true);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+
+        QObject *card = w->findChild<QObject *>("problemCard");
+        QVERIFY(card);
+        QVERIFY(!card->property("visible").toBool());
+
+        const QString why = "Connect failed: can't reach the proxy: connection refused";
+        app->accounts()->handleEvent("conn", "ConnError",
+                                     QVariantMap{{"acc", "me@example.com"}, {"message", why}});
+        app->accounts()->handleEvent("conn", "State",
+                                     QVariantMap{{"acc", "me@example.com"}, {"state", "waiting"}});
+        QTRY_VERIFY(card->property("visible").toBool());
+        QObject *text = w->findChild<QObject *>("problemText");
+        QVERIFY(text);
+        QCOMPARE(text->property("text").toString(), why);
+
+        const QString shot = qEnvironmentVariable("QUACK_SHOT");
+        if (!shot.isEmpty())
+            w->grabWindow().save(shot);
+
+        QObject *copy = w->findChild<QObject *>("copyProblem");
+        QVERIFY(copy);
+        QVERIFY(QMetaObject::invokeMethod(copy, "clicked"));
+        QCOMPARE(QGuiApplication::clipboard()->text(), why);
+
+        app->accounts()->handleEvent("conn", "State",
+                                     QVariantMap{{"acc", "me@example.com"}, {"state", "connected"}});
+        QTRY_VERIFY(!card->property("visible").toBool());
+
+        holder.reset();
+        QCoreApplication::processEvents();
         e.assertNoErrors();
     }
 

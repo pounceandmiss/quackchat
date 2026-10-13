@@ -329,8 +329,8 @@ void TestAccountSettings::integrationSavesProxy() {
     backend.stop();
 }
 
-// tacky refuses a malformed proxy; its reason is the status, the stored value
-// stays, and the page is not closed.
+// tacky refuses a malformed proxy; its reason is kept apart from the status,
+// the stored value stays, and the page is not closed.
 void TestAccountSettings::integrationMalformedProxyIsRefused() {
     TackyBackend backend;
     QVERIFY(backend.start());
@@ -350,8 +350,14 @@ void TestAccountSettings::integrationMalformedProxyIsRefused() {
     QTRY_VERIFY_WITH_TIMEOUT(!s.saving(), 5000);
     QCOMPARE(saved.count(), 0);
     QVERIFY(s.statusError());
-    QVERIFY(!s.status().isEmpty());
+    QCOMPARE(s.status(), QString("Not saved"));
+    // tacky's reason in full, for under the field.
+    QVERIFY2(s.proxyError().contains("socks5://"), qPrintable(s.proxyError()));
     QCOMPARE(s.proxy(), QString());
+
+    // The next save starts clean.
+    s.save(s.password(), s.nick(), s.proxy());
+    QVERIFY(s.proxyError().isEmpty());
 
     backend.stop();
 }

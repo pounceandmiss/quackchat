@@ -26,6 +26,7 @@ public:
         ConnStateRole, // "", connecting, connected, waiting, auth-error, ...
         EnabledRole,
         StatusKnownRole, // false while the row is still waiting to be told
+        ConnErrorRole, // why the last attempt failed, until one gets through
     };
     Q_ENUM(Role)
 
@@ -41,7 +42,8 @@ public:
     // (Re)enumerate accounts from the backend (all + the enabled subset).
     Q_INVOKABLE void refresh();
 
-    // Bumped whenever an account's connection state or enabled flag changes.
+    // Bumped whenever an account's connection state, error or enabled flag
+    // changes.
     // connStateFor() and isEnabled() are plain calls, so a QML binding on them
     // has nothing to re-evaluate against; reading this in the same binding gives
     // it the dependency.
@@ -51,6 +53,7 @@ public:
     Q_INVOKABLE QString connStateFor(const QString &jid) const;
     Q_INVOKABLE bool isEnabled(const QString &jid) const;
     Q_INVOKABLE bool statusKnownFor(const QString &jid) const;
+    Q_INVOKABLE QString connErrorFor(const QString &jid) const;
     Q_INVOKABLE bool contains(const QString &jid) const { return indexOfJid(jid) >= 0; }
     Q_INVOKABLE QString firstJid() const;
 
@@ -73,6 +76,7 @@ public:
     void applyRemoved(const QString &jid);
     void setEnabled(const QString &jid, bool enabled);
     void setConnState(const QString &jid, const QString &state);
+    void setConnError(const QString &jid, const QString &message);
 
 signals:
     void backendChanged();
@@ -94,6 +98,10 @@ private:
     struct Account {
         QString jid;
         QString connState;
+        // tacky's reason from <ConnError>, <AuthError> or <Disconnected>. It
+        // outlives the `waiting` and `connecting` that follow, which is when it
+        // is worth showing, and goes once the account is connected.
+        QString connError;
         bool enabled = false;
         bool enabledKnown = false;
         bool stateKnown = false;

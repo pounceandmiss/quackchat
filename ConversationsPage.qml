@@ -40,6 +40,10 @@ Page {
         App.accounts.connRev
         return App.accounts.isEnabled(page.account)
     }
+    readonly property string connError: {
+        App.accounts.connRev
+        return App.accounts.connErrorFor(page.account)
+    }
     readonly property bool accountStatusKnown: {
         App.accounts.connRev
         return App.accounts.statusKnownFor(page.account)
@@ -781,18 +785,21 @@ Page {
                 return qsTr("Couldn't load conversations.\n%1").arg(failure)
             if (!page.accountStatusKnown)
                 return qsTr("Checking %1 …").arg(page.account)
+            // tacky's reason, under whichever line below says it is not
+            // connected; empty once it is.
+            const why = page.connError !== "" ? "\n" + page.connError : ""
             switch (page.connState) {
             case "connected":
                 return qsTr("Connected as %1.\nNo conversations yet.").arg(page.account)
             case "auth-error":
-                return qsTr("Authentication failed for %1.\nCheck the password.").arg(page.account)
+                return qsTr("Authentication failed for %1.\nCheck the password.").arg(page.account) + why
             case "conn-error":
-                return qsTr("Can't reach the server for %1.\nRetrying…").arg(page.account)
+                return qsTr("Can't reach the server for %1.\nRetrying…").arg(page.account) + why
             case "disconnected":
             case "waiting":
-                return qsTr("Reconnecting %1 …").arg(page.account)
+                return qsTr("Reconnecting %1 …").arg(page.account) + why
             default: // starting, connecting, authenticating, binding
-                return qsTr("Connecting %1 …").arg(page.account)
+                return qsTr("Connecting %1 …").arg(page.account) + why
             }
         }
     }

@@ -63,6 +63,7 @@ void AccountSettings::save(const QString &password, const QString &nick,
     }
 
     m_pendingProxy = proxy;
+    setProxyError(QString());
     if (nick != m_nick) {
         // Publishing the nickname is a round trip to the server, so this is
         // the one write worth waiting on before calling the save done.
@@ -244,7 +245,8 @@ void AccountSettings::handleError(int token, const QString &message) {
     if (token == m_proxyToken) {
         m_proxyToken = -1;
         emit savingChanged();
-        setStatus(message.isEmpty() ? tr("The proxy was refused") : message, true);
+        setProxyError(message.isEmpty() ? tr("The proxy was refused") : message);
+        setStatus(tr("Not saved"), true);
         return;
     }
     if (token != m_nickToken)
@@ -280,6 +282,13 @@ void AccountSettings::setStatus(const QString &text, bool error) {
     m_status = text;
     m_statusError = error;
     emit statusChanged();
+}
+
+void AccountSettings::setProxyError(const QString &error) {
+    if (m_proxyError == error)
+        return;
+    m_proxyError = error;
+    emit proxyErrorChanged();
 }
 
 void AccountSettings::setChangePasswordError(const QString &error) {

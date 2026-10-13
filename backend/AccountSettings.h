@@ -37,6 +37,10 @@ class AccountSettings : public QObject {
     Q_PROPERTY(QString nick READ nick NOTIFY nickChanged)
     // socks5://[user:pass@]host:port, or empty to connect directly.
     Q_PROPERTY(QString proxy READ proxy NOTIFY proxyChanged)
+    // Why tacky refused the last proxy saved, in full: it is shown under the
+    // field, where the one-line status would cut it short. Cleared by the next
+    // save.
+    Q_PROPERTY(QString proxyError READ proxyError NOTIFY proxyErrorChanged)
     // Last outcome of a save, for the line under the form. Cleared on the next
     // save; the page times it out.
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
@@ -65,6 +69,7 @@ public:
     QString password() const { return m_password; }
     QString nick() const { return m_nick; }
     QString proxy() const { return m_proxy; }
+    QString proxyError() const { return m_proxyError; }
     QString status() const { return m_status; }
     bool statusError() const { return m_statusError; }
     bool saving() const { return m_nickToken >= 0 || m_proxyToken >= 0; }
@@ -113,6 +118,7 @@ signals:
     void passwordChanged();
     void nickChanged();
     void proxyChanged();
+    void proxyErrorChanged();
     void statusChanged();
     void savingChanged();
     void saved();
@@ -125,6 +131,7 @@ signals:
 private:
     void requestNick();
     void saveProxy(bool wrote);
+    void setProxyError(const QString &error);
     void setStatus(const QString &text, bool error);
     void setAvatarStatus(const QString &text, bool error);
     void finishAvatar(const QString &error);
@@ -136,6 +143,7 @@ private:
     QString m_password;
     QString m_nick;
     QString m_proxy;
+    QString m_proxyError;
     QString m_pendingProxy; // what save() was given, written after the nick
     QString m_status;
     bool m_statusError = false;

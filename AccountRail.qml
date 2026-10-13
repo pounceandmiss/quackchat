@@ -86,12 +86,19 @@ Rectangle {
                 readonly property string connState: cell.model.connState
                 readonly property bool acctEnabled: cell.model.enabled
                 readonly property bool statusKnown: cell.model.statusKnown
+                // With why the last attempt failed, until one gets through; the
+                // account page has it in full.
+                readonly property string stateLine: {
+                    const state = rail.stateText(cell.connState, cell.acctEnabled,
+                                                 cell.statusKnown)
+                    return cell.model.connError !== "" && cell.acctEnabled
+                           ? state + " · " + cell.model.connError : state
+                }
                 width: ListView.view.width
                 height: 64
                 padding: 0
                 text: cell.jid
-                Accessible.description: rail.stateText(cell.connState, cell.acctEnabled,
-                                                       cell.statusKnown)
+                Accessible.description: cell.stateLine
                 onClicked: rail.selectAccount(cell.jid)
 
                 readonly property bool current: cell.jid === rail.currentAccount
@@ -162,13 +169,27 @@ Rectangle {
                         elide: Text.ElideRight
                     }
                     Text {
+                        id: stateLine
                         objectName: "accountRowState"
                         Layout.fillWidth: true
-                        text: rail.stateText(cell.connState, cell.acctEnabled,
-                                             cell.statusKnown)
+                        text: cell.stateLine
                         color: badge.stateColor
                         font.pixelSize: 11
                         elide: Text.ElideRight
+
+                        // An error rarely fits the row: tapping it opens the
+                        // account page, which has it in full, copyable, with
+                        // a way to try again.
+                        readonly property bool hasError: cell.model.connError !== ""
+                                                         && cell.acctEnabled
+                        HoverHandler {
+                            enabled: stateLine.hasError
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            enabled: stateLine.hasError
+                            onTapped: rail.openSettings(cell.jid)
+                        }
                     }
                 }
 

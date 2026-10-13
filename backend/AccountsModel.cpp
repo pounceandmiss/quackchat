@@ -21,6 +21,8 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const {
         return a.jid;
     case ConnStateRole:
         return a.connState;
+    case ConnErrorRole:
+        return a.connError;
     case EnabledRole:
         return a.enabled;
     case StatusKnownRole:
@@ -36,6 +38,7 @@ QHash<int, QByteArray> AccountsModel::roleNames() const {
         {ConnStateRole, "connState"},
         {EnabledRole, "enabled"},
         {StatusKnownRole, "statusKnown"},
+        {ConnErrorRole, "connError"},
     };
 }
 
@@ -99,6 +102,11 @@ bool AccountsModel::statusKnownFor(const QString &jid) const {
     return i >= 0 && m_accounts.at(i).statusKnown();
 }
 
+QString AccountsModel::connErrorFor(const QString &jid) const {
+    const int i = indexOfJid(jid);
+    return i < 0 ? QString() : m_accounts.at(i).connError;
+}
+
 QString AccountsModel::firstJid() const {
     return m_accounts.isEmpty() ? QString() : m_accounts.first().jid;
 }
@@ -143,15 +151,29 @@ void AccountsModel::handleEvent(const QString &module, const QString &name,
             applyRemoved(acc);
         else if (name == QLatin1String("Enabled"))
             setEnabled(acc, true);
-        else if (name == QLatin1String("Disabled"))
+        else if (name == QLatin1String("Disabled")) {
             setEnabled(acc, false);
+            setConnError(acc, QString()); // off on purpose: nothing failed
+        }
     } else if (module == QLatin1String("conn")) {
-        if (name == QLatin1String("State"))
-            setConnState(acc, a.value(QStringLiteral("state")).toString());
-        else if (name == QLatin1String("AuthError"))
+        const QString message = a.value(QStringLiteral("message")).toString();
+        if (name == QLatin1String("State")) {
+            const QString state = a.value(QStringLiteral("state")).toString();
+            if (state == QLatin1String("connected"))
+                setConnError(acc, QString());
+            setConnState(acc, state);
+        } else if (name == QLatin1String("AuthError")) {
+            // The state first: for an account not listed yet, it adds the row.
             setConnState(acc, QStringLiteral("auth-error"));
-        else if (name == QLatin1String("ConnError"))
+            setConnError(acc, message);
+        } else if (name == QLatin1String("ConnError")) {
             setConnState(acc, QStringLiteral("conn-error"));
+            setConnError(acc, message);
+        } else if (name == QLatin1String("Disconnected")) {
+            // tacky gave up and will not retry on its own.
+            setConnState(acc, QStringLiteral("disconnected"));
+            setConnError(acc, message);
+        }
     }
 }
 
@@ -311,4 +333,15 @@ void AccountsModel::setConnState(const QString &jid, const QString &state) {
     emit connRevChanged();
     const QModelIndex idx = index(i);
     emit dataChanged(idx, idx, {ConnStateRole, StatusKnownRole});
+}
+
+void AccountsModel::setConnError(const QString &jid, const QString &message) {
+    const int i = indexOfJid(jid);
+    if (i < 0 || m_accounts.at(i).connError == message)
+        return;
+    m_accounts[i].connError = message;
+    ++m_connRev;
+    emit connRevChanged();
+    const QModelIndex idx = index(i);
+    emit dataChanged(idx, idx, {ConnErrorRole});
 }

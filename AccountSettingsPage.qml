@@ -48,6 +48,22 @@ Page {
     onAccountChanged: page.bindAccount()
     Component.onCompleted: page.bindAccount()
 
+    // Why the account's last connection attempt failed, until one gets through.
+    // connRev is read only to give the call a dependency.
+    readonly property string connError: {
+        App.accounts.connRev
+        return page.account !== "" ? App.accounts.connErrorFor(page.account) : ""
+    }
+    // tacky retries a transport failure for good, but stops on rejected
+    // credentials (auth-error) or a stream error retrying won't cure
+    // (disconnected), until the account is enabled again or a connection
+    // field changes.
+    readonly property bool connGaveUp: {
+        App.accounts.connRev
+        const state = page.account !== "" ? App.accounts.connStateFor(page.account) : ""
+        return state === "auth-error" || state === "disconnected"
+    }
+
     readonly property bool dirty: page.settings !== null
                                   && (passwordField.text !== page.settings.password
                                       || nickField.text !== page.settings.nick
@@ -72,6 +88,7 @@ Page {
 
     function copyFingerprint(spaced) {
         Clipboard.setText(spaced)
+        copiedNotice.text = qsTr("Fingerprint copied")
         copiedNotice.show()
     }
 
@@ -109,6 +126,19 @@ Page {
         nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.gif *.webp)"),
                       qsTr("All files (*)")]
         onAccepted: if (page.settings) page.settings.setAvatar(avatarDialog.selectedFile)
+    }
+
+    // An action that reads as a link, as "Change password on server…" does.
+    component LinkButton: Button {
+        id: link
+        flat: true
+        padding: 0
+        contentItem: Text {
+            text: link.text
+            color: Theme.accent
+            font.pixelSize: 14
+        }
+        background: null
     }
 
     component Card: Rectangle {
@@ -272,6 +302,66 @@ Page {
                 wrapMode: Text.WordWrap
             }
 
+            // What is wrong with the account, first thing on the page and only
+            // while something is: why it can't connect, whatever the cause.
+            // The rail and the chat list say it in a line; this is where it
+            // is read in full, selected or copied, and acted on.
+            Card {
+                objectName: "problemCard"
+                visible: page.connError !== ""
+                border.color: Theme.negative
+
+                SectionTitle {
+                    text: page.connGaveUp ? qsTr("Stopped connecting")
+                                          : qsTr("Can't connect")
+                }
+
+                // tacky's own sentence, as it stands.
+                TextEdit {
+                    objectName: "problemText"
+                    Layout.fillWidth: true
+                    text: page.connError
+                    readOnly: true
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    color: Theme.negative
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.textOnAccent
+                    font.pixelSize: 14
+                }
+
+                Caption {
+                    Layout.fillWidth: true
+                    text: page.connGaveUp
+                          ? qsTr("Quack won't retry this on its own. Fix the cause, or try again.")
+                          : qsTr("Retrying on its own, less often as it keeps failing.")
+                    wrapMode: Text.WordWrap
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 16
+
+                    LinkButton {
+                        objectName: "copyProblem"
+                        text: qsTr("Copy")
+                        onClicked: {
+                            Clipboard.setText(page.connError)
+                            copiedNotice.text = qsTr("Copied")
+                            copiedNotice.show()
+                        }
+                    }
+                    // `enable` on an enabled account that is offline is
+                    // tacky's reconnect, and skips what is left of the wait.
+                    LinkButton {
+                        objectName: "retryNow"
+                        text: qsTr("Try again now")
+                        onClicked: App.accounts.enable(page.account)
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+
             // Who this account is, and what it signs in with.
             Card {
                 ColumnLayout {
@@ -337,6 +427,8 @@ Page {
 
             // How the account reaches its server.
             Card {
+                SectionTitle { text: qsTr("Connection") }
+
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
@@ -352,6 +444,16 @@ Page {
                                           | Qt.ImhNoPredictiveText | Qt.ImhUrlCharactersOnly
                         onAccepted: if (page.dirty) page.save()
                     }
+                }
+
+                // tacky's reason for refusing what was saved, in full.
+                Caption {
+                    objectName: "proxyError"
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: page.settings ? page.settings.proxyError : ""
+                    color: Theme.negative
+                    wrapMode: Text.WordWrap
                 }
 
                 Caption {
@@ -552,37 +654,10 @@ Page {
             page.settings.save(passwordField.text, nickField.text, proxyField.text.trim())
     }
 
-    // A copy is silent otherwise.
-    Rectangle {
+    CopiedNotice {
         id: copiedNotice
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 24
-        width: noticeText.implicitWidth + 28
-        height: 34
-        radius: 17
-        color: Theme.textPrimary
-        opacity: 0
-        visible: opacity > 0
-
-        function show() {
-            copiedNotice.opacity = 0.92
-            hideTimer.restart()
-        }
-
-        Behavior on opacity { NumberAnimation { duration: 180 } }
-        Timer {
-            id: hideTimer
-            interval: 1400
-            onTriggered: copiedNotice.opacity = 0
-        }
-
-        Text {
-            id: noticeText
-            anchors.centerIn: parent
-            text: qsTr("Fingerprint copied")
-            color: Theme.surface
-            font.pixelSize: 12
-        }
     }
 }

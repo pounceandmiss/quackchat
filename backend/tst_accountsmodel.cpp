@@ -27,8 +27,11 @@ private slots:
     void enableDisableEvents();
     void enableCreatesMissingRow();
     void connStateEvents();
+    void connErrorOutlivesTheRetry();
     void lookups();
     void integrationListsAddedAccount();
+    void integrationDeadProxyIsReported();
+    void integrationEnableRetriesNow();
     void pullsConnStateForRowsFromTheList();
     void statusIsUnknownUntilBothRepliesLand();
     void aDisabledAccountNeedsNoConnState();
@@ -186,6 +189,40 @@ void TestAccountsModel::connStateEvents() {
     QCOMPARE(m.connStateFor("z@h"), QString("waiting"));
 }
 
+// The reason is what matters while tacky retries, so the `waiting` and
+// `connecting` after it leave it standing; getting through clears it.
+void TestAccountsModel::connErrorOutlivesTheRetry() {
+    AccountsModel m;
+    m.applyList(QVariantList{"amy@h"});
+    QSignalSpy rev(&m, &AccountsModel::connRevChanged);
+    m.handleEvent("conn", "ConnError",
+                  QVariantMap{{"acc", "amy@h"}, {"message", "Connect failed: proxy: refused"}});
+    QCOMPARE(m.connErrorFor("amy@h"), QString("Connect failed: proxy: refused"));
+    QCOMPARE(m.data(m.index(0), AccountsModel::ConnErrorRole).toString(),
+             QString("Connect failed: proxy: refused"));
+    QVERIFY(rev.count() > 0);
+
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", "waiting"}});
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", "connecting"}});
+    QCOMPARE(m.connErrorFor("amy@h"), QString("Connect failed: proxy: refused"));
+
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"}, {"state", "connected"}});
+    QVERIFY(m.connErrorFor("amy@h").isEmpty());
+
+    m.handleEvent("conn", "AuthError",
+                  QVariantMap{{"acc", "amy@h"}, {"message", "not-authorized"}});
+    QCOMPARE(m.connErrorFor("amy@h"), QString("not-authorized"));
+    // Turned off on purpose: nothing to report.
+    m.handleEvent("account", "Disabled", QVariantMap{{"acc", "amy@h"}});
+    QVERIFY(m.connErrorFor("amy@h").isEmpty());
+
+    // tacky giving up says why, and leaves the account offline.
+    m.handleEvent("conn", "Disconnected",
+                  QVariantMap{{"acc", "new@h"}, {"message", "gave up"}});
+    QCOMPARE(m.connStateFor("new@h"), QString("disconnected"));
+    QCOMPARE(m.connErrorFor("new@h"), QString("gave up"));
+}
+
 void TestAccountsModel::lookups() {
     AccountsModel m;
     m.applyList(QVariantList{"bob@h", "amy@h"});
@@ -196,6 +233,64 @@ void TestAccountsModel::lookups() {
     QVERIFY(m.isEnabled("amy@h"));
     QVERIFY(!m.isEnabled("bob@h"));
     QCOMPARE(m.connStateFor("nobody@h"), QString());
+}
+
+// Real backend: a proxy nobody listens on fails the connection, and the model
+// keeps tacky's reason through the retries that follow, rather than showing
+// only "reconnecting".
+void TestAccountsModel::integrationDeadProxyIsReported() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    AccountsModel m;
+    m.setBackend(&backend);
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "x"},
+                               {"proxy", "socks5://127.0.0.1:1"}});
+    backend.notify("account", "enable", QVariantMap{{"acc", "me@example.com"}});
+
+    QTRY_VERIFY_WITH_TIMEOUT(!m.connErrorFor("me@example.com").isEmpty(), 10000);
+    // Said once, by tacky: "Connect failed: can't reach the proxy: <why>".
+    QVERIFY2(m.connErrorFor("me@example.com")
+                 .startsWith("Connect failed: can't reach the proxy: "),
+             qPrintable(m.connErrorFor("me@example.com")));
+    QCOMPARE(m.connErrorFor("me@example.com").count("proxy"), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(m.connStateFor("me@example.com"), QString("waiting"), 5000);
+    QVERIFY(!m.connErrorFor("me@example.com").isEmpty());
+
+    backend.stop();
+}
+
+// Real backend: `enable` on an enabled account that is waiting out its backoff
+// tries again at once, which is what the account page's "Try again now" is.
+void TestAccountsModel::integrationEnableRetriesNow() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    AccountsModel m;
+    m.setBackend(&backend);
+    QSignalSpy events(&backend, &TackyBackend::event);
+    const auto attempts = [&] {
+        int n = 0;
+        for (const auto &e : events)
+            if (e.at(0).toString() == "conn" && e.at(1).toString() == "State" &&
+                e.at(2).toMap().value("state").toString() == "connecting")
+                ++n;
+        return n;
+    };
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "x"},
+                               {"proxy", "socks5://127.0.0.1:1"}});
+    backend.notify("account", "enable", QVariantMap{{"acc", "me@example.com"}});
+
+    // Three failures in (after waits of 1s and 2s), the next wait is 5s.
+    QTRY_VERIFY_WITH_TIMEOUT(attempts() >= 3, 8000);
+    QTRY_COMPARE_WITH_TIMEOUT(m.connStateFor("me@example.com"), QString("waiting"), 2000);
+    const int before = attempts();
+    m.enable("me@example.com");
+    QTRY_VERIFY_WITH_TIMEOUT(attempts() > before, 1000);
+
+    backend.stop();
 }
 
 // Real backend: adding + enabling an account surfaces it through the model's
