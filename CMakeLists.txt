@@ -290,6 +290,8 @@ qt_add_qml_module(quack
         ThinScrollBar.qml
         ChatPage.qml
         ChatBubble.qml
+        EmojiPicker.qml
+        EmojiPopup.qml
         MessageAttachment.qml
         Avatar.qml
         IconButton.qml
@@ -345,6 +347,7 @@ qt_add_qml_module(quack
         backend/FrameStream.cpp backend/FrameStream.h
         backend/VideoSurface.cpp backend/VideoSurface.h
         backend/AppSettings.cpp backend/AppSettings.h
+        backend/EmojiModel.cpp backend/EmojiModel.h
         backend/StorageController.cpp backend/StorageController.h
         backend/AvatarEncoder.h
         backend/AvatarSink.h)
@@ -372,6 +375,13 @@ qt_add_resources(quack "appicon"
     PREFIX "/icons"
     BASE icons
     FILES icons/quack-48.png icons/quack-128.png icons/quack-256.png)
+
+# The emoji picker's catalogue, which tools/emoji-gen.py writes. In `quack` for
+# the same reason as the icon: a test linking it gets the picker whole.
+qt_add_resources(quack "emoji"
+    PREFIX "/emoji"
+    BASE emoji
+    FILES emoji/emoji.tsv)
 
 # The QImage half of avatar publishing stays out of `quack`, like the image
 # provider, so the headless tests keep their QtGui-free include path.
@@ -564,6 +574,12 @@ qt_add_executable(tst_framestream backend/tst_framestream.cpp)
 target_link_libraries(tst_framestream PRIVATE quack Qt6::Test Qt6::Multimedia)
 add_test(NAME tst_framestream COMMAND tst_framestream)
 set_tests_properties(tst_framestream PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# needs QtGui: the catalogue is sifted against the emoji font
+qt_add_executable(tst_emojimodel backend/tst_emojimodel.cpp)
+target_link_libraries(tst_emojimodel PRIVATE quack Qt6::Test Qt6::Gui)
+add_test(NAME tst_emojimodel COMMAND tst_emojimodel)
+set_tests_properties(tst_emojimodel PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # needs QtGui for QImage
 qt_add_executable(tst_avatarencoder

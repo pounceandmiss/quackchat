@@ -409,6 +409,91 @@ private slots:
         e.assertNoErrors();
     }
 
+    // The emoji picker as a card where it was asked for, kept inside the
+    // window however near an edge that was.
+    void theEmojiCardStaysInsideTheWindow() {
+        Engine e;
+
+        QQuickWindow win;
+        win.resize(800, 600);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QScopedPointer<QObject> obj;
+        QObject *pop = emojiPopup(e, win, false, obj);
+        QVERIFY(pop);
+
+        QVERIFY(QMetaObject::invokeMethod(pop, "openAt",
+                                          Q_ARG(QVariant, QPointF(790, 590))));
+        QTRY_VERIFY(pop->property("opened").toBool());
+        const qreal x = pop->property("x").toReal(), y = pop->property("y").toReal();
+        const qreal w = pop->property("width").toReal(), h = pop->property("height").toReal();
+        QVERIFY2(w > 300 && h > 300, qPrintable(QString("card is %1x%2").arg(w).arg(h)));
+        QVERIFY(x >= 0 && x + w <= 800);
+        QVERIFY(y >= 0 && y + h <= 600);
+
+        // Built and laid out: a grid of emoji under a field with the keys.
+        auto *content = pop->property("contentItem").value<QQuickItem *>();
+        QVERIFY(content);
+        QTRY_VERIFY(findItem(content, "emojiCell"));
+        QQuickItem *search = findItem(content, "emojiSearch");
+        QVERIFY(search);
+        QTRY_VERIFY(search->hasActiveFocus());
+
+        // What the pointer is over is named along the foot.
+        QQuickItem *cell = findItem(content, "emojiCell");
+        QQuickItem *name = findItem(content, "emojiPreviewName");
+        QVERIFY(name);
+        QTest::mouseMove(&win, cell->mapToScene(QPointF(cell->width() / 2,
+                                                        cell->height() / 2)).toPoint());
+        QTRY_COMPARE(name->property("text").toString(), QString("grinning face"));
+
+        e.assertNoErrors();
+    }
+
+    // On touch, a sheet across the bottom edge, which rides up over the
+    // keyboard the search field brings and comes back down after.
+    void theEmojiSheetSitsOnTheKeyboard() {
+        Engine e;
+
+        QQuickWindow win;
+        win.resize(360, 800);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QScopedPointer<QObject> obj;
+        QObject *pop = emojiPopup(e, win, true, obj);
+        QVERIFY(pop);
+        auto *keyboard = e.singletonInstance<QObject *>("Quack", "Keyboard");
+        QVERIFY(keyboard);
+
+        QVERIFY(QMetaObject::invokeMethod(pop, "openAt", Q_ARG(QVariant, QPointF(0, 0))));
+        QTRY_VERIFY(pop->property("opened").toBool());
+        const auto bottom = [&] {
+            return pop->property("y").toReal() + pop->property("height").toReal();
+        };
+        QCOMPARE(pop->property("width").toReal(), qreal(360));
+        QTRY_COMPARE(bottom(), qreal(800));
+        // Some of the chat stays in view above it.
+        QVERIFY(pop->property("y").toReal() > 200);
+
+        // No keys until the field is tapped: focus there raises the keyboard.
+        auto *content = pop->property("contentItem").value<QQuickItem *>();
+        QQuickItem *search = findItem(content, "emojiSearch");
+        QVERIFY(search);
+        QVERIFY(!search->hasActiveFocus());
+
+        keyboard->setProperty("height", 300);
+        QTRY_COMPARE(bottom(), qreal(500));
+        // Shorter, rather than off the top of the window.
+        QVERIFY(pop->property("y").toReal() >= 24);
+
+        keyboard->setProperty("height", 0);
+        QTRY_COMPARE(bottom(), qreal(800));
+
+        e.assertNoErrors();
+    }
+
     // A registration form is drawn from questions the app has never seen: the
     // field types decide which control answers each one, and nothing about the
     // page can be checked against a layout written for it. So: every field got
@@ -670,6 +755,33 @@ QtObject { function when(us) { return Stamp.when(us) } })",
         QCOMPARE(opened.count(), 3);
 
         e.assertNoErrors();
+    }
+
+private:
+    // An EmojiPopup in `win`, in an item for the overlay to be found through;
+    // `holder` keeps that item alive.
+    static QObject *emojiPopup(Engine &e, QQuickWindow &win, bool sheet,
+                               QScopedPointer<QObject> &holder) {
+        QQmlComponent comp(&e);
+        comp.setData(R"(
+            import QtQuick
+            import Quack
+            Item {
+                property alias pop: pop
+                EmojiPopup { id: pop }
+            }
+        )", QUrl());
+        holder.reset(comp.createWithInitialProperties(
+            {{"width", win.width()}, {"height", win.height()}}));
+        if (holder.isNull()) {
+            qWarning() << comp.errorString();
+            return nullptr;
+        }
+        qobject_cast<QQuickItem *>(holder.data())->setParentItem(win.contentItem());
+        QObject *pop = holder->property("pop").value<QObject *>();
+        if (pop)
+            pop->setProperty("sheet", sheet);
+        return pop;
     }
 };
 

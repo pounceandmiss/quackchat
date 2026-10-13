@@ -13,6 +13,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 #include <QtQml/qqmlregistration.h>
 
@@ -70,6 +71,11 @@ class AppSettings : public QObject {
     // backend answers.
     Q_PROPERTY(QString activeMediaBackend READ activeMediaBackend
                    NOTIFY activeMediaBackendChanged)
+    // The emoji picker's memory, newest first: what was sent from it, and the
+    // skin tone picked for each emoji that has them. Keys of our own, which
+    // EmojiModel reads and writes.
+    Q_PROPERTY(QStringList recentEmoji READ recentEmoji NOTIFY recentEmojiChanged)
+    Q_PROPERTY(QStringList emojiTones READ emojiTones NOTIFY emojiTonesChanged)
 
 public:
     explicit AppSettings(QObject *parent = nullptr);
@@ -88,6 +94,8 @@ public:
     bool sendChatMarkers() const { return m_sendChatMarkers; }
     QString mediaBackend() const { return m_mediaBackend; }
     QString activeMediaBackend() const { return m_activeMediaBackend; }
+    QStringList recentEmoji() const { return m_recentEmoji; }
+    QStringList emojiTones() const { return m_emojiTones; }
 
     void setBackend(TackyBackend *backend);
 
@@ -109,6 +117,8 @@ public:
     Q_INVOKABLE void setSendChatMarkers(bool on);
     // Unknown names are ignored.
     Q_INVOKABLE void setMediaBackend(const QString &name);
+    void setRecentEmoji(const QStringList &emoji);
+    void setEmojiTones(const QStringList &emoji);
 
     // Public so tests can drive them with canned events and replies.
     void handleEvent(const QString &module, const QString &name,
@@ -131,6 +141,8 @@ signals:
     void sendChatMarkersChanged();
     void mediaBackendChanged();
     void activeMediaBackendChanged();
+    void recentEmojiChanged();
+    void emojiTonesChanged();
 
 private:
     void applyValue(const QString &key, const QString &value);
@@ -152,6 +164,8 @@ private:
     bool m_sendChatMarkers = true;
     QString m_mediaBackend;   // "" until stored: the automatic choice
     QString m_activeMediaBackend;
+    QStringList m_recentEmoji;
+    QStringList m_emojiTones;
 
     int m_autofetchToken = -1;
     int m_autofetchMaxToken = -1;
@@ -167,6 +181,8 @@ private:
     int m_sendChatMarkersToken = -1;
     int m_mediaBackendToken = -1;
     int m_activeBackendToken = -1;
+    int m_recentEmojiToken = -1;
+    int m_emojiTonesToken = -1;
 };
 
 #endif // APPSETTINGS_H

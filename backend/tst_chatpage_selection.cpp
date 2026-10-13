@@ -38,6 +38,7 @@ private slots:
     void hoveringAReactionGrowsItsGlyphRatherThanTheItem();
     void aReactionThatArrivesPopsItsChip();
     void chipsTheRowWasBuiltWithDoNotPop();
+    void theFullPickerReactsWithWhatItFinds();
 };
 
 void TestChatPageSelection::initTestCase() {
@@ -52,6 +53,7 @@ void TestChatPageSelection::initTestCase() {
     send("chip@example.com", "already reacted to");
     send("pop@example.com", "watch the chip land");
     send("drawn@example.com", "reacted to earlier");
+    send("picker@example.com", "react past the bar");
 
     QCOMPARE(stored("friend@example.com"), kSeeded);
 }
@@ -420,9 +422,23 @@ void TestChatPageSelection::aPressOutsideAMenuOnlyDismissesIt() {
     // rather than pass vacuously if every visible one is covered.
     auto *anchor = menu->property("parent").value<QQuickItem *>();
     QVERIFY(anchor);
-    const QRectF covered = anchor->mapRectToScene(
-        QRectF(menu->property("x").toReal(), menu->property("y").toReal(),
-               menu->property("width").toReal(), menu->property("height").toReal()));
+    // The reaction bar opens with it, over the same rows, and a press on the
+    // bar is a press on the bar - more so while it is still scaling in, past
+    // its resting size.
+    const auto footprint = [&](QObject *popup, qreal grow) {
+        const QRectF r(popup->property("x").toReal(), popup->property("y").toReal(),
+                       popup->property("width").toReal(),
+                       popup->property("height").toReal());
+        return anchor->mapRectToScene(r.adjusted(-grow, -grow, grow, grow));
+    };
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+    const QRectF menuRect = footprint(menu, 0);
+    const QRectF barRect = footprint(bar, 12);
+    const struct {
+        QRectF a, b;
+        bool contains(const QPointF &p) const { return a.contains(p) || b.contains(p); }
+    } covered{menuRect, barRect};
     QQuickItem *clear = nullptr;
     QPoint outside;
     for (int i = 1; i < chat.count() && !clear; ++i) {
@@ -910,6 +926,64 @@ void TestChatPageSelection::chipsTheRowWasBuiltWithDoNotPop() {
     }
 
     model->react(ts, "\xf0\x9f\x91\x8d");
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
+}
+
+// The bar's last button opens every emoji in its place. On desktop the search
+// has the keys at once, so typing and Enter is a whole reaction, and what it
+// was is the first thing the picker offers next time.
+void TestChatPageSelection::theFullPickerReactsWithWhatItFinds() {
+    const Chat chat = open("picker@example.com");
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    QTRY_COMPARE(chat.count(), 1);
+    ChatModel *model = chat.model();
+    const qlonglong ts =
+        model->data(model->index(0), ChatModel::TimestampRole).toLongLong();
+    const QString wave = QStringLiteral("👋");
+
+    QQuickItem *body = findItem(chat.feed, "bubbleText");
+    QVERIFY(body);
+    QObject *bar = popupIn(body, "reactionBar");
+    QVERIFY(bar);
+    const QPoint on =
+        body->mapToScene(QPointF(body->width() / 2, body->height() / 2)).toPoint();
+    QTest::mouseClick(chat.win(), Qt::RightButton, {}, on);
+    QTRY_VERIFY(bar->property("opened").toBool());
+
+    auto *barContent = bar->property("contentItem").value<QQuickItem *>();
+    QVERIFY(barContent);
+    QQuickItem *more = findItem(barContent, "moreReactions");
+    QVERIFY(more);
+    QTRY_VERIFY(more->width() > 0);
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {},
+                      more->mapToScene(QPointF(more->width() / 2, more->height() / 2))
+                          .toPoint());
+
+    auto *picker = chat.win()->findChild<QObject *>("emojiPopup");
+    QVERIFY(picker);
+    QTRY_VERIFY(picker->property("opened").toBool());
+    QTRY_VERIFY(!bar->property("opened").toBool());
+    auto *content = picker->property("contentItem").value<QQuickItem *>();
+    QVERIFY(content);
+    QQuickItem *search = findItem(content, "emojiSearch");
+    QVERIFY(search);
+    QTRY_VERIFY(search->hasActiveFocus());
+
+    for (char c : QByteArray("waving"))
+        QTest::keyClick(chat.win(), c);
+    QCOMPARE(search->property("text").toString(), QString("waving"));
+    QTest::keyClick(chat.win(), Qt::Key_Return);
+
+    QTRY_VERIFY(!picker->property("opened").toBool());
+    QTRY_VERIFY_WITH_TIMEOUT(
+        model->data(model->index(0), ChatModel::ReactionsRole).toMap().contains(wave), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!m_app->settings()->recentEmoji().isEmpty(), 5000);
+    QCOMPARE(m_app->settings()->recentEmoji().first(), wave);
+
+    // React is a toggle, so this hands the fixture back clean.
+    model->react(ts, wave);
     QTRY_VERIFY_WITH_TIMEOUT(
         model->data(model->index(0), ChatModel::ReactionsRole).toMap().isEmpty(), 5000);
 }

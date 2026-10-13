@@ -148,6 +148,8 @@ Item {
             railDrawer.close()
             return true
         }
+        if (chatPage.closeEmoji())
+            return true
         if (chatPage.closeXml())
             return true
         if (chatPage.closeContact())

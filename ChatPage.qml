@@ -301,6 +301,32 @@ Page {
         }
     }
 
+    // Every emoji, for a reaction past the bar's few. One for the page rather
+    // than one per row: reactTs says which message it is answering.
+    property var reactTs: 0
+
+    function pickReaction(ts, at) {
+        page.reactTs = ts
+        emojiPopup.openAt(at)
+    }
+
+    // Same contract as closeContact.
+    function closeEmoji() {
+        if (!emojiPopup.opened)
+            return false
+        emojiPopup.close()
+        return true
+    }
+
+    EmojiPopup {
+        id: emojiPopup
+        covers: chatColumn
+        onChosen: (emoji) => {
+            if (page.chatModel)
+                page.chatModel.react(page.reactTs, emoji)
+        }
+    }
+
     // The conversation itself belongs to the app, not to this view of it: the
     // shell and a pop-out window on the same chat get the same session, and so
     // read one history window and compose into one draft. Null until a chat is
@@ -1721,6 +1747,7 @@ Page {
                     onCopyRequested: Clipboard.setText(wrap.label)
                     onReplyRequested: page.startReply(wrap.timestamp, wrap.label, wrap.outgoing)
                     onReactRequested: (emoji) => page.chatModel.react(wrap.timestamp, emoji)
+                    onReactionPickerRequested: (at) => page.pickReaction(wrap.timestamp, at)
                     onViewXmlRequested: page.viewXml(wrap.timestamp)
                 }
             }

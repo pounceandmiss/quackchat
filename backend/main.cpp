@@ -28,10 +28,12 @@
 #include <QLocale>
 #include <QLoggingCategory>
 #include <QQmlApplicationEngine>
+#include <QThreadPool>
 #include <QTranslator>
 
 #include "AppController.h"
 #include "AvatarImageProvider.h"
+#include "EmojiModel.h"
 #include "LogBridge.h"
 #include "QImageAvatarEncoder.h"
 
@@ -245,6 +247,11 @@ int main(int argc, char *argv[]) {
     engine.loadFromModule("Quack", "Main");
     if (engine.rootObjects().isEmpty())
         return -1;
+
+    // The emoji picker's catalogue is sifted against the font by shaping every
+    // emoji in it, which takes a moment; done now and off the UI thread, the
+    // picker opens straight away the first time too.
+    QThreadPool::globalInstance()->start(&EmojiModel::preload);
 
     return app.exec();
 }

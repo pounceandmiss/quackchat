@@ -159,6 +159,9 @@ Item {
     signal copyRequested()
     signal replyRequested()
     signal reactRequested(string emoji)
+    // Everything past the bar's few: the page opens the full picker at `at`,
+    // in scene coordinates, where the bar was.
+    signal reactionPickerRequested(point at)
     signal retryRequested()
     signal resendPlainRequested()
     signal editRequested()
@@ -544,6 +547,32 @@ Item {
                         }
                     }
                     HoverHandler { id: choiceHover }
+                }
+            }
+            // The rest of them. Drawn rather than typed, in the bar's quieter
+            // colour, so it reads as a way in and not as one more reaction.
+            AbstractButton {
+                id: moreReactions
+                objectName: "moreReactions"
+                width: 40; height: 40
+                Accessible.name: qsTr("More reactions")
+                focusPolicy: Qt.NoFocus
+                onClicked: {
+                    const at = reactionBar.contentItem.mapToItem(null, 0, 0)
+                    root.closeActions()
+                    root.take(root.reactionPickerRequested, at)
+                }
+                background: Rectangle {
+                    radius: 20
+                    color: moreReactions.hovered ? Theme.menuHover : "transparent"
+                }
+                contentItem: Item {
+                    Glyph {
+                        anchors.centerIn: parent
+                        path: Icons.addReaction
+                        color: Theme.textDim
+                        size: 22
+                    }
                 }
             }
         }

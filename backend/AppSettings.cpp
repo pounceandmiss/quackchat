@@ -26,6 +26,9 @@ const QLatin1String kConnProbe("conn_probe");
 const QLatin1String kAnswerTime("answer_time");
 const QLatin1String kAnswerLastActivity("answer_last_activity");
 const QLatin1String kSendChatMarkers("send_chat_markers");
+// Space-separated: no emoji has a space in it.
+const QLatin1String kRecentEmoji("emoji_recent");
+const QLatin1String kEmojiTones("emoji_tones");
 
 bool isChatListStyle(const QString &style) {
     return style == QLatin1String("full") || style == QLatin1String("compact")
@@ -87,6 +90,12 @@ void AppSettings::refresh() {
     m_sendChatMarkersToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kSendChatMarkers}});
+    m_recentEmojiToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kRecentEmoji}});
+    m_emojiTonesToken =
+        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                           QVariantMap{{QStringLiteral("key"), kEmojiTones}});
     // Not a setting: what the setting resolved to, which only the backend
     // knows and only after it has tried to open one.
     m_activeBackendToken = m_backend->request(
@@ -120,6 +129,10 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kAnswerLastActivity, data.toString());
     else if (token == m_sendChatMarkersToken)
         applyValue(kSendChatMarkers, data.toString());
+    else if (token == m_recentEmojiToken)
+        applyValue(kRecentEmoji, data.toString());
+    else if (token == m_emojiTonesToken)
+        applyValue(kEmojiTones, data.toString());
     else if (token == m_activeBackendToken) {
         const QString name = data.toString();
         if (name == m_activeMediaBackend)
@@ -159,6 +172,10 @@ void AppSettings::handleError(int token, const QString &message) {
         m_answerLastActivityToken = -1;
     else if (token == m_sendChatMarkersToken)
         m_sendChatMarkersToken = -1;
+    else if (token == m_recentEmojiToken)
+        m_recentEmojiToken = -1;
+    else if (token == m_emojiTonesToken)
+        m_emojiTonesToken = -1;
     else if (token == m_activeBackendToken)
         m_activeBackendToken = -1;
 }
@@ -184,6 +201,19 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_mediaBackend = value;
         emit mediaBackendChanged();
+        return;
+    }
+    // Lists, where empty is a list emptied: the last tone pick taken back.
+    if (key == kRecentEmoji || key == kEmojiTones) {
+        const QStringList list = value.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        QStringList &held = key == kRecentEmoji ? m_recentEmoji : m_emojiTones;
+        if (held == list)
+            return;
+        held = list;
+        if (key == kRecentEmoji)
+            emit recentEmojiChanged();
+        else
+            emit emojiTonesChanged();
         return;
     }
     if (value.isEmpty())
@@ -327,4 +357,12 @@ void AppSettings::setMediaBackend(const QString &name) {
     if (!isMediaBackend(name))
         return;
     write(kMediaBackend, name);
+}
+
+void AppSettings::setRecentEmoji(const QStringList &emoji) {
+    write(kRecentEmoji, emoji.join(QLatin1Char(' ')));
+}
+
+void AppSettings::setEmojiTones(const QStringList &emoji) {
+    write(kEmojiTones, emoji.join(QLatin1Char(' ')));
 }

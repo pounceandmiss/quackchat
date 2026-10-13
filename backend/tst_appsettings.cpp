@@ -30,7 +30,22 @@ private slots:
     void refreshesWhenTheBackendConnects();
     void theMediaBackendDefaultsToAutomatic();
     void theMediaBackendReachesTheTacoArgs();
+    void anEmojiListCanBeEmptied();
 };
+
+// Unlike the other keys, "" is a value here: the last tone pick taken back
+// leaves an empty list, which has to land rather than read as unwritten.
+void TestAppSettings::anEmojiListCanBeEmptied() {
+    AppSettings s;
+    QSignalSpy changed(&s, &AppSettings::emojiTonesChanged);
+    feed(s, R"(["event","setting","Changed",{"key":"emoji_tones","value":"👍🏽 👋🏿"}])");
+    QCOMPARE(s.emojiTones(), QStringList({"👍🏽", "👋🏿"}));
+    QCOMPARE(changed.count(), 1);
+
+    feed(s, R"(["event","setting","Changed",{"key":"emoji_tones","value":""}])");
+    QVERIFY(s.emojiTones().isEmpty());
+    QCOMPARE(changed.count(), 2);
+}
 
 // Keep QSettings away from the developer's own config.
 void TestAppSettings::initTestCase() {
@@ -62,6 +77,7 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
                                 "attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
                                 "chat_list_style", "conn_probe",
+                                "emoji_recent", "emoji_tones",
                                 "log_level", "log_native",
                                 "log_redact_content", "log_to_file",
                                 "media_backend", "send_chat_markers"}));
@@ -176,6 +192,11 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setAnswerTime(true);
     s.setAnswerLastActivity(true);
     s.setSendChatMarkers(false);
+    // Astral characters and joiners, through the store and back intact.
+    const QStringList recent{QStringLiteral("👍🏽"), QStringLiteral("👩‍👩‍👧"),
+                             QStringLiteral("🇩🇪")};
+    s.setRecentEmoji(recent);
+    s.setEmojiTones({QStringLiteral("👍🏽")});
     // Shown straight away rather than after the round trip.
     QCOMPARE(s.attachmentAutofetch(), QString("never"));
 
@@ -201,6 +222,8 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     QTRY_VERIFY_WITH_TIMEOUT(readback.answerTime(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.answerLastActivity(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(!readback.sendChatMarkers(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(readback.recentEmoji() == recent, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(readback.emojiTones() == QStringList({"👍🏽"}), 5000);
     // Stored is not running: the backend answers with what it could open,
     // which is webrtc only where the build staged its library beside us.
     const QString dir = QCoreApplication::applicationDirPath();
