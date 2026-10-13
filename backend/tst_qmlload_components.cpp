@@ -294,6 +294,56 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A menu opened low on the screen while the keyboard is up goes above the
+    // keyboard, as it would above the window's bottom edge.
+    void aMenuStaysAboveTheKeyboard() {
+        Engine e;
+
+        QQuickWindow win;
+        win.resize(360, 800);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e);
+        comp.setData(R"(
+            import QtQuick
+            import Quack
+            Item {
+                property alias menu: menu
+                AppMenu {
+                    id: menu
+                    MenuEntry { text: "One" }
+                    MenuEntry { text: "Two" }
+                    MenuEntry { text: "Three" }
+                }
+            }
+        )", QUrl());
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"width", win.width()}, {"height", win.height()}}));
+        QVERIFY2(!obj.isNull(), qPrintable(comp.errorString()));
+        auto *root = qobject_cast<QQuickItem *>(obj.data());
+        root->setParentItem(win.contentItem());
+        auto *menu = obj->property("menu").value<QObject *>();
+        QVERIFY(menu);
+
+        auto *keyboard = e.singletonInstance<QObject *>("Quack", "Keyboard");
+        QVERIFY(keyboard);
+        keyboard->setProperty("height", 400);
+
+        // Asked for just above where the keyboard starts.
+        menu->setProperty("x", 20);
+        menu->setProperty("y", 380);
+        QVERIFY(QMetaObject::invokeMethod(menu, "open"));
+        QTRY_VERIFY(menu->property("opened").toBool());
+        const qreal h = menu->property("height").toReal();
+        QVERIFY2(h > 20, qPrintable(QString("menu is %1 high").arg(h)));
+        QVERIFY2(menu->property("y").toReal() + h <= 400,
+                 qPrintable(QString("menu runs to %1")
+                                .arg(menu->property("y").toReal() + h)));
+
+        e.assertNoErrors();
+    }
+
     // A registration form is drawn from questions the app has never seen: the
     // field types decide which control answers each one, and nothing about the
     // page can be checked against a layout written for it. So: every field got

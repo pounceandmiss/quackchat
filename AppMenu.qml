@@ -5,10 +5,13 @@ import Quack
 // The panel every menu in the app is drawn on. Its entries are MenuEntry.
 Menu {
     // Qt keeps a menu inside the window, which on Android runs edge to edge
-    // under the system bars; these pull it in to what can be seen of it.
+    // under the system bars and has the keyboard laid over it; these pull it
+    // in to what can be seen of it. The overlay spans the window, so the
+    // keyboard's height from the window's bottom edge is the margin as is.
     readonly property Item windowOverlay: Overlay.overlay
     topMargin: windowOverlay ? windowOverlay.SafeArea.margins.top : 0
-    bottomMargin: windowOverlay ? windowOverlay.SafeArea.margins.bottom : 0
+    bottomMargin: windowOverlay
+        ? Math.max(windowOverlay.SafeArea.margins.bottom, Keyboard.height) : 0
     leftMargin: windowOverlay ? windowOverlay.SafeArea.margins.left : 0
     rightMargin: windowOverlay ? windowOverlay.SafeArea.margins.right : 0
 
