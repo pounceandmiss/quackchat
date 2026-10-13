@@ -170,6 +170,11 @@ stays out of the process table. Left unset, `apksigner` prompts.
 `--webrtc` puts the webrtc backend in the apk, where the background service
 uses it for calls: see [Calls: the webrtc backend](#calls-the-webrtc-backend).
 
+`--x86_64` builds for x86_64 instead of arm64-v8a, for the emulator, leaving
+`dist/quackchat-<version>-rtc-x86_64-unsigned.apk` (or `-debug.apk`). It builds
+in `build-android-x86_64/`, so the arm64 tree is left alone. It cannot take
+`--webrtc`: the libwebrtc prebuilt is arm64-only.
+
 The image carries its own NDK, so tacky's Android targets are driven with
 `ANDROID_DOCKER=0`. Left at the default they would start a second container from
 inside this one. `docker/android.Dockerfile` pins the NDK, the JDK and the

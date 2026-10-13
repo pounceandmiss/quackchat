@@ -1,5 +1,6 @@
 build/
 build-android/
+build-android-x86_64/
 build-win/
 build-appimage/
 build-test/

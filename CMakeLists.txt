@@ -57,8 +57,13 @@ qt_standard_project_setup(REQUIRES 6.10 I18N_SOURCE_LANGUAGE en)
 # elsewhere is named with -DTACKY_ROOT=<dir> or $TACKY_ROOT, or the archive
 # itself with -DTACKY_LIB=<file>.
 if(ANDROID)
-    # bionic arm64 archive; tacky builds it in Docker via `make android-lib`
-    set(_tacky_lib_file libtacky-android.a)
+    # bionic archive; tacky builds it in Docker via `make android-lib`, with
+    # ANDROID_ABI=x86_64 (for the emulator) under a name of its own
+    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+        set(_tacky_lib_file libtacky-android-x86_64.a)
+    else()
+        set(_tacky_lib_file libtacky-android.a)
+    endif()
     set(_tacky_make android-lib)
 elseif(WIN32)
     # MinGW PE archive, cross-built from Linux. `make win-lib` tracks whichever
@@ -465,7 +470,9 @@ if(ANDROID)
     set(_webrtc_so "${_tacky_dist}/libtacky_webrtc-android.so")
     set(_webrtc_jar "${_tacky_dist}/webrtc-android.jar")
     set(_stage_webrtc)
-    if(EXISTS "${_webrtc_so}" AND EXISTS "${_webrtc_jar}")
+    # arm64 only: there is no x86_64 libwebrtc prebuilt to build one from.
+    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a"
+            AND EXISTS "${_webrtc_so}" AND EXISTS "${_webrtc_jar}")
         message(STATUS "webrtc media backend: ${_webrtc_so}")
         set(_stage_webrtc
             COMMAND ${CMAKE_COMMAND} -E copy "${_webrtc_so}"

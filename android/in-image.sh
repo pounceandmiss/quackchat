@@ -4,7 +4,22 @@
 # android/build.sh is the entry point.
 set -euo pipefail
 
-build=/src/build-android
+# arm64-v8a unless android/build.sh --x86_64 asked otherwise. x86_64 builds in
+# its own tree, so switching back and forth rebuilds neither from scratch.
+abi=${QUACK_ANDROID_ABI:-arm64-v8a}
+case $abi in
+    arm64-v8a)
+        build=/src/build-android
+        qt_android=$QUACK_QT_ANDROID
+        abi_suffix= ;;
+    x86_64)
+        build=/src/build-android-x86_64
+        qt_android=$QUACK_QT_ANDROID_X86_64
+        abi_suffix=-x86_64 ;;
+    *)
+        echo "in-image.sh: unknown QUACK_ANDROID_ABI '$abi' (arm64-v8a or x86_64)" >&2
+        exit 1 ;;
+esac
 export CCACHE_DIR=$build/.ccache
 
 export TZ=UTC
@@ -47,7 +62,8 @@ export GRADLE_USER_HOME=$build/gradle-home
 echo "==> tacky"
 make -C /src/third_party/tacky android-lib \
     ANDROID_DOCKER=0 \
-    ANDROID_BUILD=../../build-android/tacky
+    ANDROID_ABI="$abi" \
+    ANDROID_BUILD="../../${build#/src/}/tacky"
 
 # qt-cmake rather than cmake: it is the Android kit's wrapper, and it sets the
 # toolchain file, the ABI and the deployment plumbing that androiddeployqt later
@@ -68,11 +84,15 @@ suffix=
 if [ -z "${QUACK_WEBRTC-}" ]; then
     echo "    off (pass --webrtc); rtc backend only"
     suffix=-rtc
-    rm -f /src/third_party/tacky/dist/libtacky_webrtc-android.so \
-          /src/third_party/tacky/dist/webrtc-android.jar
+    # x86_64 never stages it (CMakeLists.txt), so an arm64 one can stay.
+    if [ "$abi" = arm64-v8a ]; then
+        rm -f /src/third_party/tacky/dist/libtacky_webrtc-android.so \
+              /src/third_party/tacky/dist/webrtc-android.jar
+    fi
 else
     make -C /src/third_party/tacky android-webrtc-so \
-        ANDROID_BUILD=../../build-android/tacky \
+        ANDROID_ABI="$abi" \
+        ANDROID_BUILD="../../${build#/src/}/tacky" \
         WEBRTC_DEPS_DIR=/src/build-deps \
         ${QUACK_WEBRTC_SRC:+WEBRTC_SRC="$QUACK_WEBRTC_SRC"}
 fi
@@ -91,7 +111,7 @@ if [ -n "${QUACK_ANDROID_DEBUG-}" ]; then
 else
     deployment=Release
 fi
-"$QUACK_QT_ANDROID/bin/qt-cmake" -S /src -B "$build/cmake" -G Ninja \
+"$qt_android/bin/qt-cmake" -S /src -B "$build/cmake" -G Ninja \
     -DQT_HOST_PATH="$QUACK_QT_HOST" \
     -DANDROID_SDK_ROOT="$QUACK_ANDROID_SDK" \
     -DANDROID_NDK_ROOT="$QUACK_ANDROID_NDK" \
@@ -117,10 +137,10 @@ cmake --build "$build/cmake" --target apk
 VERSION=$(sed -n 's/.*project(quack_qml VERSION \([0-9.]*\).*/\1/p' /src/CMakeLists.txt)
 mkdir -p /src/dist
 if [ -n "${QUACK_ANDROID_DEBUG-}" ]; then
-    out=/src/dist/quackchat-$VERSION$suffix-debug.apk
+    out=/src/dist/quackchat-$VERSION$suffix$abi_suffix-debug.apk
     src=$debug_apk
 else
-    out=/src/dist/quackchat-$VERSION$suffix-unsigned.apk
+    out=/src/dist/quackchat-$VERSION$suffix$abi_suffix-unsigned.apk
     src=$unsigned
 fi
 [ -f "$src" ] || {
@@ -158,7 +178,7 @@ tools=$(ls -d "$QUACK_ANDROID_SDK"/build-tools/* | sort -V | tail -1)
 
 echo "==> signing"
 aligned=$build/quackchat-$VERSION-aligned.apk
-signed=/src/dist/quackchat-$VERSION$suffix.apk
+signed=/src/dist/quackchat-$VERSION$suffix$abi_suffix.apk
 "$tools/zipalign" -p -f 4 "$out" "$aligned"
 
 pass_args=()

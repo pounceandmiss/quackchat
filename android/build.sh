@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Android apk.
 #
-#   android/build.sh [--clean] [--debug] [--test] [--webrtc]
+#   android/build.sh [--clean] [--debug] [--test] [--webrtc] [--x86_64]
 #
 # Runs entirely in the Android toolchain image (docker/android.Dockerfile), so
 # docker is all the host needs - no SDK, no NDK r29, no JDK 21, no Qt kit.
@@ -21,6 +21,10 @@
 # dependencies in place, in their own source directories, so that tree belongs to
 # this target alone. --webrtc puts the webrtc media backend in (see README.md,
 # "Calls: the webrtc backend"); the result is named differently without it.
+#
+# --x86_64 builds for x86_64 instead of arm64-v8a, for the emulator, in a tree of
+# its own (build-android-x86_64/). There is no x86_64 libwebrtc prebuilt, so it
+# cannot take --webrtc, and its apk carries -x86_64 in the name.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -30,16 +34,22 @@ clean=
 debug=
 tests=
 webrtc=${QUACK_WEBRTC-}
+abi=arm64-v8a
 while [ "$#" -gt 0 ]; do
     case $1 in
         --clean)  clean=1 ;;
         --debug)  debug=1 ;;
         --test)   tests=1 ;;
         --webrtc) webrtc=1 ;;
-        *) echo "usage: android/build.sh [--clean] [--debug] [--test] [--webrtc]" >&2; exit 2 ;;
+        --x86_64) abi=x86_64 ;;
+        *) echo "usage: android/build.sh [--clean] [--debug] [--test] [--webrtc] [--x86_64]" >&2; exit 2 ;;
     esac
     shift
 done
+if [ "$abi" = x86_64 ] && [ -n "$webrtc" ]; then
+    echo "android/build.sh: no libwebrtc prebuilt for x86_64; drop --webrtc" >&2
+    exit 2
+fi
 
 # The commit date, as the other targets do. The apk is not reproducible - gradle
 # would have to be made deterministic first - but zippy reads this for tacky's
@@ -58,6 +68,7 @@ export QUACK_ANDROID_CLEAN=$clean
 export QUACK_WEBRTC=$webrtc
 export QUACK_ANDROID_DEBUG=$debug
 export QUACK_ANDROID_TESTS=$tests
+export QUACK_ANDROID_ABI=$abi
 
 # The signing key, if there is one. It is mounted read-only rather than copied
 # anywhere: it must not end up in the checkout, in a layer, or in an image. The
@@ -82,4 +93,6 @@ if [ -n "${QUACK_ANDROID_KEYSTORE-}" ]; then
     export QUACK_ANDROID_KEY_ALIAS
 fi
 
-exec "$project/docker/run.sh" android android/in-image.sh
+profile=android
+[ "$abi" = arm64-v8a ] || profile=android-$abi
+exec "$project/docker/run.sh" "$profile" android/in-image.sh

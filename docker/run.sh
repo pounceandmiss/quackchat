@@ -5,11 +5,12 @@
 #
 # <profile> names an image, docker/<profile>.Dockerfile:
 #
-#   common    the AppImage and the Windows cross-build
-#   android   the same plus an NDK and an SDK, derived from common
+#   common          the AppImage and the Windows cross-build
+#   android         the same plus an NDK and an SDK, derived from common
+#   android-x86_64  android plus the x86_64 Qt kit, for emulator builds
 #
-# The image is built as quack-build:<profile>, preceded by common when the
-# profile's Dockerfile says FROM quack-build:common. Layer caching makes both
+# The image is built as quack-build:<profile>, preceded by the images it derives
+# from when the profile's Dockerfile says FROM quack-build:<other>. Layer caching makes both
 # near-instant once neither has moved.
 #
 # The checkout is bind-mounted at /src and the command runs there as the
@@ -79,12 +80,15 @@ build_image() {
         --label "quack.dockerfile=$want" -f "$file" "$here" >&2
 }
 
-# The common image first, when this profile derives from it: docker resolves a
+# The images this profile derives from first, base upwards: docker resolves a
 # FROM against images it already has and will not go and build that itself.
-if grep -q '^FROM quack-build:common' "$dockerfile"; then
-    build_image quack-build:common "$here/common.Dockerfile"
-fi
-build_image "quack-build:$profile" "$dockerfile"
+build_chain() {
+    local file=$here/$1.Dockerfile parent
+    parent=$(sed -n 's/^FROM quack-build:\([^ ]*\).*/\1/p' "$file")
+    [ -z "$parent" ] || build_chain "$parent"
+    build_image "quack-build:$1" "$file"
+}
+build_chain "$profile"
 
 # -e NAME with no value passes the host's through. Names only: a value on the
 # command line is readable from /proc for as long as docker runs, and one of
