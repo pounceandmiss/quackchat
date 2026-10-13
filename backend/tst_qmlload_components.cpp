@@ -294,6 +294,71 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A strip shorter than the sheet: the sheet shrinks into it, buttons and
+    // all, and scrolls its fields, keeping the focused one in view.
+    void aSheetTooTallForTheStripScrollsItsFieldIntoView() {
+        Engine e;
+
+        QQuickWindow win;
+        win.resize(360, 800);
+        win.show();
+        win.requestActivate();
+        QVERIFY(QTest::qWaitForWindowActive(&win));
+
+        QQmlComponent comp(&e, "Quack", "AccountRail");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"width", win.width()}, {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *rail = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(rail);
+        rail->setParentItem(win.contentItem());
+
+        QObject *sheet = rail->findChild<QObject *>("addAccountSheet");
+        QVERIFY(sheet);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+        QTRY_VERIFY(sheet->property("opened").toBool());
+        auto *flick = sheet->property("contentItem").value<QQuickItem *>();
+        auto *jid = sheet->findChild<QQuickItem *>("addAccountJid");
+        auto *password = sheet->findChild<QQuickItem *>("addAccountPassword");
+        QVERIFY(flick && jid && password);
+        QTRY_VERIFY(jid->hasActiveFocus());
+
+        const qreal natural = sheet->property("height").toReal();
+        QCOMPARE(flick->property("interactive").toBool(), false);
+
+        // Shown within the flickable's viewport, top and bottom.
+        const auto inView = [flick](QQuickItem *field) {
+            const qreal top = field->mapToItem(flick, QPointF(0, 0)).y();
+            return top >= -0.5 && top + field->height() <= flick->height() + 0.5;
+        };
+
+        auto *keyboard = e.singletonInstance<QObject *>("Quack", "Keyboard");
+        QVERIFY(keyboard);
+        keyboard->setProperty("height", 600);
+        const qreal strip = 200;
+        QVERIFY2(natural > strip, qPrintable(QString("sheet is only %1 high").arg(natural)));
+
+        // Within the strip, so the buttons are above the keyboard.
+        QTRY_COMPARE(sheet->property("height").toReal(), strip - 24);
+        QTRY_VERIFY(sheet->property("y").toReal() + sheet->property("height").toReal() <= strip);
+        QCOMPARE(flick->property("interactive").toBool(), true);
+        QTRY_VERIFY(inView(jid));
+
+        // On to the field below: scrolled down to it.
+        password->forceActiveFocus();
+        QTRY_VERIFY(inView(password));
+        QVERIFY(flick->property("contentY").toReal() > 0);
+
+        // Down again: its full height, and nothing left scrolled.
+        keyboard->setProperty("height", 0);
+        QTRY_COMPARE(sheet->property("height").toReal(), natural);
+        QCOMPARE(flick->property("contentY").toReal(), qreal(0));
+        QCOMPARE(flick->property("interactive").toBool(), false);
+
+        e.assertNoErrors();
+    }
+
     // A menu opened low on the screen while the keyboard is up goes above the
     // keyboard, as it would above the window's bottom edge.
     void aMenuStaysAboveTheKeyboard() {

@@ -22,7 +22,7 @@ SheetDialog {
 
     title: qsTr("Join room")
     preferredWidth: 420
-    height: Math.min(480, parent ? parent.height - 24 : 480)
+    height: Math.min(480, sheet.maxHeight)
     standardButtons: Dialog.Cancel | Dialog.Ok
 
     // The list's rooms carry a ?join suffix; the bookmark commands are keyed by
@@ -145,6 +145,8 @@ SheetDialog {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // Kept to a few rows where the sheet scrolls, not squeezed out.
+            Layout.minimumHeight: 120
             color: Theme.field
             radius: 6
             border.color: Theme.hairline

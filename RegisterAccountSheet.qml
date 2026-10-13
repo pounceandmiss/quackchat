@@ -21,7 +21,7 @@ SheetDialog {
 
     title: qsTr("Create account")
     preferredWidth: 420
-    height: Math.min(520, parent ? parent.height - 24 : 520)
+    height: Math.min(520, sheet.maxHeight)
     standardButtons: Dialog.Cancel
 
     readonly property bool busy: reg.state === RegistrationController.Connecting

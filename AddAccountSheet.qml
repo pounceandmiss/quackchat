@@ -41,6 +41,7 @@ SheetDialog {
         }
         TextField {
             id: jidField
+            objectName: "addAccountJid"
             Layout.fillWidth: true
             placeholderText: qsTr("you@example.com")
             inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
@@ -54,6 +55,7 @@ SheetDialog {
         }
         TextField {
             id: passwordField
+            objectName: "addAccountPassword"
             Layout.fillWidth: true
             placeholderText: qsTr("password")
             echoMode: TextInput.Password
