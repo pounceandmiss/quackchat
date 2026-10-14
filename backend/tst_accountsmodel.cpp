@@ -28,6 +28,7 @@ private slots:
     void enableCreatesMissingRow();
     void connStateEvents();
     void connErrorOutlivesTheRetry();
+    void proxyFollowsState();
     void lookups();
     void integrationListsAddedAccount();
     void integrationDeadProxyIsReported();
@@ -189,6 +190,35 @@ void TestAccountsModel::connStateEvents() {
     QCOMPARE(m.connStateFor("z@h"), QString("waiting"));
 }
 
+// The route comes with every <State>, so whichever arrives last says it: one
+// through a proxy names it, and one without (direct, or disconnected) clears it.
+void TestAccountsModel::proxyFollowsState() {
+    AccountsModel m;
+    m.applyList(QVariantList{"amy@h"});
+    QVERIFY(m.proxyFor("amy@h").isEmpty());
+    const int rev = m.connRev();
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"},
+                                               {"state", "connected"},
+                                               {"proxy", "127.0.0.1:1080"}});
+    QCOMPARE(m.proxyFor("amy@h"), QString("127.0.0.1:1080"));
+    QCOMPARE(m.data(m.index(0), AccountsModel::ProxyRole).toString(),
+             QString("127.0.0.1:1080"));
+    QVERIFY(m.connRev() > rev);
+    // A failure leaves the route as it was: the <State> after it says the next.
+    m.handleEvent("conn", "ConnError", QVariantMap{{"acc", "amy@h"}, {"message", "x"}});
+    QCOMPARE(m.proxyFor("amy@h"), QString("127.0.0.1:1080"));
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "amy@h"},
+                                               {"state", "disconnected"},
+                                               {"proxy", ""}});
+    QVERIFY(m.proxyFor("amy@h").isEmpty());
+
+    // An unlisted account's first <State> lands its route on the row it adds.
+    m.handleEvent("conn", "State", QVariantMap{{"acc", "z@h"},
+                                               {"state", "connecting"},
+                                               {"proxy", "[::1]:1080"}});
+    QCOMPARE(m.proxyFor("z@h"), QString("[::1]:1080"));
+}
+
 // The reason is what matters while tacky retries, so the `waiting` and
 // `connecting` after it leave it standing; getting through clears it.
 void TestAccountsModel::connErrorOutlivesTheRetry() {
@@ -257,6 +287,8 @@ void TestAccountsModel::integrationDeadProxyIsReported() {
     QCOMPARE(m.connErrorFor("me@example.com").count("proxy"), 1);
     QTRY_COMPARE_WITH_TIMEOUT(m.connStateFor("me@example.com"), QString("waiting"), 5000);
     QVERIFY(!m.connErrorFor("me@example.com").isEmpty());
+    // Still on its way through the proxy, which <State> names without the scheme.
+    QCOMPARE(m.proxyFor("me@example.com"), QString("127.0.0.1:1"));
 
     backend.stop();
 }

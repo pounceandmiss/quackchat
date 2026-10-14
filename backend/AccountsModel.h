@@ -1,6 +1,6 @@
-// The app-wide account list: one row per account with its JID, enabled flag and
-// connection state. Seeded from `account list` and kept live by the account and
-// conn events.
+// The app-wide account list: one row per account with its JID, enabled flag,
+// connection state and the proxy that connection goes through. Seeded from
+// `account list` and kept live by the account and conn events.
 #ifndef ACCOUNTSMODEL_H
 #define ACCOUNTSMODEL_H
 
@@ -27,6 +27,7 @@ public:
         EnabledRole,
         StatusKnownRole, // false while the row is still waiting to be told
         ConnErrorRole, // why the last attempt failed, until one gets through
+        ProxyRole, // host:port of the proxy carrying the connection, "" direct
     };
     Q_ENUM(Role)
 
@@ -42,8 +43,8 @@ public:
     // (Re)enumerate accounts from the backend (all + the enabled subset).
     Q_INVOKABLE void refresh();
 
-    // Bumped whenever an account's connection state, error or enabled flag
-    // changes.
+    // Bumped whenever an account's connection state, error, proxy or enabled
+    // flag changes.
     // connStateFor() and isEnabled() are plain calls, so a QML binding on them
     // has nothing to re-evaluate against; reading this in the same binding gives
     // it the dependency.
@@ -54,6 +55,7 @@ public:
     Q_INVOKABLE bool isEnabled(const QString &jid) const;
     Q_INVOKABLE bool statusKnownFor(const QString &jid) const;
     Q_INVOKABLE QString connErrorFor(const QString &jid) const;
+    Q_INVOKABLE QString proxyFor(const QString &jid) const;
     Q_INVOKABLE bool contains(const QString &jid) const { return indexOfJid(jid) >= 0; }
     Q_INVOKABLE QString firstJid() const;
 
@@ -77,6 +79,7 @@ public:
     void setEnabled(const QString &jid, bool enabled);
     void setConnState(const QString &jid, const QString &state);
     void setConnError(const QString &jid, const QString &message);
+    void setProxy(const QString &jid, const QString &proxy);
 
 signals:
     void backendChanged();
@@ -102,6 +105,9 @@ private:
         // outlives the `waiting` and `connecting` that follow, which is when it
         // is worth showing, and goes once the account is connected.
         QString connError;
+        // tacky's word on the route, off <State>: the proxy this connection
+        // goes through, "" when it goes directly or there is none.
+        QString proxy;
         bool enabled = false;
         bool enabledKnown = false;
         bool stateKnown = false;

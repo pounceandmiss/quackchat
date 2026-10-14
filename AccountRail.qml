@@ -36,14 +36,24 @@ Rectangle {
     }
 
     // The state in words beside the badge's dot: one red dot cannot say whether
-    // the server is unreachable or the password was rejected.
-    function stateText(state, enabled, known) {
+    // the server is unreachable or the password was rejected. `proxy` is tacky's
+    // word that the link goes through one; a failure already names it.
+    function stateText(state, enabled, known, proxy) {
         // The backend answers the account list before it answers what those
         // accounts are doing, and "offline" would be a guess in between.
         if (!known)
             return qsTr("checking…")
         if (!enabled)
             return qsTr("disabled")
+        if (proxy) {
+            switch (state) {
+            case "connected": return qsTr("connected via proxy")
+            case "waiting": return qsTr("reconnecting via proxy…")
+            case "connecting": return qsTr("connecting via proxy…")
+            case "authenticating": return qsTr("authenticating via proxy…")
+            case "binding": return qsTr("binding via proxy…")
+            }
+        }
         switch (state) {
         case "connected": return qsTr("connected")
         case "auth-error": return qsTr("sign-in failed")
@@ -90,7 +100,7 @@ Rectangle {
                 // account page has it in full.
                 readonly property string stateLine: {
                     const state = rail.stateText(cell.connState, cell.acctEnabled,
-                                                 cell.statusKnown)
+                                                 cell.statusKnown, cell.model.proxy)
                     return cell.model.connError !== "" && cell.acctEnabled
                            ? state + " · " + cell.model.connError : state
                 }

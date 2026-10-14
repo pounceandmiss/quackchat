@@ -54,6 +54,16 @@ Page {
         App.accounts.connRev
         return page.account !== "" ? App.accounts.connErrorFor(page.account) : ""
     }
+    // The proxy tacky says the link goes through, "" when direct. The live
+    // route, not the field: what was typed is not what is in use until saved.
+    readonly property string liveProxy: {
+        App.accounts.connRev
+        return page.account !== "" ? App.accounts.proxyFor(page.account) : ""
+    }
+    readonly property bool liveConnected: {
+        App.accounts.connRev
+        return page.account !== "" && App.accounts.connStateFor(page.account) === "connected"
+    }
     // tacky retries a transport failure for good, but stops on rejected
     // credentials (auth-error) or a stream error retrying won't cure
     // (disconnected), until the account is enabled again or a connection
@@ -428,6 +438,17 @@ Page {
                                           | Qt.ImhNoPredictiveText | Qt.ImhUrlCharactersOnly
                         onAccepted: if (page.dirty) page.save()
                     }
+                }
+
+                // Which proxy the link is on now, as tacky reports it.
+                Caption {
+                    objectName: "proxyRoute"
+                    Layout.fillWidth: true
+                    visible: page.liveProxy !== ""
+                    text: page.liveConnected ? qsTr("Connected through %1.").arg(page.liveProxy)
+                                             : qsTr("Connecting through %1…").arg(page.liveProxy)
+                    color: page.liveConnected ? Theme.positive : Theme.textDim
+                    wrapMode: Text.WordWrap
                 }
 
                 // tacky's reason for refusing what was saved, in full.

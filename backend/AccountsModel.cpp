@@ -23,6 +23,8 @@ QVariant AccountsModel::data(const QModelIndex &index, int role) const {
         return a.connState;
     case ConnErrorRole:
         return a.connError;
+    case ProxyRole:
+        return a.proxy;
     case EnabledRole:
         return a.enabled;
     case StatusKnownRole:
@@ -39,6 +41,7 @@ QHash<int, QByteArray> AccountsModel::roleNames() const {
         {EnabledRole, "enabled"},
         {StatusKnownRole, "statusKnown"},
         {ConnErrorRole, "connError"},
+        {ProxyRole, "proxy"},
     };
 }
 
@@ -107,6 +110,11 @@ QString AccountsModel::connErrorFor(const QString &jid) const {
     return i < 0 ? QString() : m_accounts.at(i).connError;
 }
 
+QString AccountsModel::proxyFor(const QString &jid) const {
+    const int i = indexOfJid(jid);
+    return i < 0 ? QString() : m_accounts.at(i).proxy;
+}
+
 QString AccountsModel::firstJid() const {
     return m_accounts.isEmpty() ? QString() : m_accounts.first().jid;
 }
@@ -162,6 +170,8 @@ void AccountsModel::handleEvent(const QString &module, const QString &name,
             if (state == QLatin1String("connected"))
                 setConnError(acc, QString());
             setConnState(acc, state);
+            // After the state, which adds the row for an account not listed yet.
+            setProxy(acc, a.value(QStringLiteral("proxy")).toString());
         } else if (name == QLatin1String("AuthError")) {
             // The state first: for an account not listed yet, it adds the row.
             setConnState(acc, QStringLiteral("auth-error"));
@@ -344,4 +354,15 @@ void AccountsModel::setConnError(const QString &jid, const QString &message) {
     emit connRevChanged();
     const QModelIndex idx = index(i);
     emit dataChanged(idx, idx, {ConnErrorRole});
+}
+
+void AccountsModel::setProxy(const QString &jid, const QString &proxy) {
+    const int i = indexOfJid(jid);
+    if (i < 0 || m_accounts.at(i).proxy == proxy)
+        return;
+    m_accounts[i].proxy = proxy;
+    ++m_connRev;
+    emit connRevChanged();
+    const QModelIndex idx = index(i);
+    emit dataChanged(idx, idx, {ProxyRole});
 }
