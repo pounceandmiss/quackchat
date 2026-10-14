@@ -108,23 +108,30 @@ Popup {
         }
     }
 
-    contentItem: EmojiPicker {
+    // Built on the first open rather than with the page: the picker's model
+    // wants the whole sifted catalogue, and asked for while the window loads
+    // it is sifted then, on the UI thread, instead of by main.cpp's preload.
+    contentItem: Loader {
         id: picker
-        touch: pop.sheet
-        onChosen: (emoji) => {
-            pop.close()
-            pop.chosen(emoji)
+        active: false
+        sourceComponent: EmojiPicker {
+            touch: pop.sheet
+            onChosen: (emoji) => {
+                pop.close()
+                pop.chosen(emoji)
+            }
         }
     }
 
     // A keyboard up for the composer would leave only a sliver for the sheet;
     // the field brings it back when tapped.
     onAboutToShow: {
+        picker.active = true
         if (pop.sheet)
             Qt.inputMethod.hide() // qmllint disable missing-property
         pop.slide = pop.sheet ? 0 : 1
     }
-    onOpened: picker.reset()
+    onOpened: picker.item.reset()
 
     // WORKAROUND, as in FullScreenSheet: a modal popup lets drags through to
     // the pointer handlers behind it, so flicking the grid would swipe the
