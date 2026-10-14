@@ -18,7 +18,7 @@ carries its own toolchain, so they need almost nothing installed.
 
 tacky is a submodule:
 
-    git clone --recurse-submodules https://github.com/pounceandmiss/quack_qml.git
+    git clone --recurse-submodules https://github.com/pounceandmiss/quackchat.git
 
 After a plain clone, or when the pin moves:
 

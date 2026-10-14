@@ -19,7 +19,7 @@ An XMPP client for Linux, Windows and Android, written in Qt Quick. Uses
 
 ## Getting it
 
-Builds are on the [releases page](https://github.com/pounceandmiss/quack_qml/releases).
+Builds are on the [releases page](https://github.com/pounceandmiss/quackchat/releases).
 
 ## Building
 
