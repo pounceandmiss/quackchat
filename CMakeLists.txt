@@ -230,11 +230,11 @@ endif()
 
 add_subdirectory(QuackStyle)
 
-set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-set_source_files_properties(Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-set_source_files_properties(Jid.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-set_source_files_properties(Stamp.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
-set_source_files_properties(AppWindows.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Jid.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/Stamp.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(qml/AppWindows.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(quack
     URI Quack
     # What `import Quack` resolves to, not the app's version: it moves only when
@@ -242,78 +242,78 @@ qt_add_qml_module(quack
     VERSION 1.0
     OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/Quack"
     QML_FILES
-        Main.qml
-        AppWindow.qml
-        ShellWindow.qml
-        ChatWindow.qml
-        AccountSettingsWindow.qml
-        AppSettingsWindow.qml
-        ContactDetailsWindow.qml
-        MucDetailsWindow.qml
-        MessageXmlWindow.qml
-        AppShell.qml
-        AccountRail.qml
-        AccountBadge.qml
-        SheetDialog.qml
-        FullScreenSheet.qml
-        PageHeader.qml
-        AddAccountSheet.qml
-        RegisterAccountSheet.qml
-        DataForm.qml
-        AccountSettingsPage.qml
-        RouteChooser.qml
-        AppSettingsPage.qml
-        TrustPicker.qml
-        TrustList.qml
-        Card.qml
-        Caption.qml
-        CopiedNotice.qml
-        BackendNotice.qml
-        Notice.qml
-        NoticeHost.qml
-        ContactDetailsPage.qml
-        MucDetailsPage.qml
-        UnreachableBanner.qml
-        MessageXmlPage.qml
-        Fingerprint.qml
-        ConversationsPage.qml
-        ChatRowMenu.qml
-        PersonMenu.qml
-        AppMenu.qml
-        ContextMenuArea.qml
-        ChoiceBox.qml
-        MenuEntry.qml
-        NewChatSheet.qml
-        Jid.qml
-        Stamp.qml
-        JoinRoomSheet.qml
-        TextPromptDialog.qml
-        ChangePasswordDialog.qml
-        RevealBox.qml
-        ConfirmDialog.qml
-        StorageGate.qml
-        MessageHits.qml
-        SectionLabel.qml
-        ThinScrollBar.qml
-        ChatPage.qml
-        ChatBubble.qml
-        EmojiPicker.qml
-        EmojiPopup.qml
-        MessageAttachment.qml
-        Avatar.qml
-        IconButton.qml
-        CallWindow.qml
-        GroupCallWindow.qml
-        GroupCallTile.qml
-        GroupCallInviteDialog.qml
-        GroupCallBanner.qml
-        OngoingCallBar.qml
-        CallButton.qml
-        AudioLevelRow.qml
-        AppWindows.qml
-        Glyph.qml
-        Icons.qml
-        Theme.qml
+        qml/Main.qml
+        qml/AppWindow.qml
+        qml/ShellWindow.qml
+        qml/ChatWindow.qml
+        qml/AccountSettingsWindow.qml
+        qml/AppSettingsWindow.qml
+        qml/ContactDetailsWindow.qml
+        qml/MucDetailsWindow.qml
+        qml/MessageXmlWindow.qml
+        qml/AppShell.qml
+        qml/AccountRail.qml
+        qml/AccountBadge.qml
+        qml/SheetDialog.qml
+        qml/FullScreenSheet.qml
+        qml/PageHeader.qml
+        qml/AddAccountSheet.qml
+        qml/RegisterAccountSheet.qml
+        qml/DataForm.qml
+        qml/AccountSettingsPage.qml
+        qml/RouteChooser.qml
+        qml/AppSettingsPage.qml
+        qml/TrustPicker.qml
+        qml/TrustList.qml
+        qml/Card.qml
+        qml/Caption.qml
+        qml/CopiedNotice.qml
+        qml/BackendNotice.qml
+        qml/Notice.qml
+        qml/NoticeHost.qml
+        qml/ContactDetailsPage.qml
+        qml/MucDetailsPage.qml
+        qml/UnreachableBanner.qml
+        qml/MessageXmlPage.qml
+        qml/Fingerprint.qml
+        qml/ConversationsPage.qml
+        qml/ChatRowMenu.qml
+        qml/PersonMenu.qml
+        qml/AppMenu.qml
+        qml/ContextMenuArea.qml
+        qml/ChoiceBox.qml
+        qml/MenuEntry.qml
+        qml/NewChatSheet.qml
+        qml/Jid.qml
+        qml/Stamp.qml
+        qml/JoinRoomSheet.qml
+        qml/TextPromptDialog.qml
+        qml/ChangePasswordDialog.qml
+        qml/RevealBox.qml
+        qml/ConfirmDialog.qml
+        qml/StorageGate.qml
+        qml/MessageHits.qml
+        qml/SectionLabel.qml
+        qml/ThinScrollBar.qml
+        qml/ChatPage.qml
+        qml/ChatBubble.qml
+        qml/EmojiPicker.qml
+        qml/EmojiPopup.qml
+        qml/MessageAttachment.qml
+        qml/Avatar.qml
+        qml/IconButton.qml
+        qml/CallWindow.qml
+        qml/GroupCallWindow.qml
+        qml/GroupCallTile.qml
+        qml/GroupCallInviteDialog.qml
+        qml/GroupCallBanner.qml
+        qml/OngoingCallBar.qml
+        qml/CallButton.qml
+        qml/AudioLevelRow.qml
+        qml/AppWindows.qml
+        qml/Glyph.qml
+        qml/Icons.qml
+        qml/Theme.qml
     SOURCES
         backend/AppController.cpp backend/AppController.h
         backend/LogBridge.cpp backend/LogBridge.h
