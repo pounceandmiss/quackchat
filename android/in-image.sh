@@ -73,7 +73,7 @@ make -C /src/third_party/tacky android-lib \
 # empty build type compiles with no -O flags yet still packages as a release.
 # QT_ANDROID_DEPLOYMENT_TYPE decides the *package* type independently of it, so
 # it is stated too rather than left to whatever the tree was last configured for.
-# The webrtc media backend, when --webrtc asked for it (see README.md), built
+# The webrtc media backend, when --webrtc asked for it (see BUILDING.md), built
 # before CMake looks for it. As in appimage/in-image.sh: tacky clones the
 # wrapper at its pin and fetches the prebuilts into /src/build-deps - shared
 # with the other targets, unlike the rest of this build's tacky tree, since

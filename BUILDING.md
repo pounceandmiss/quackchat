@@ -1,0 +1,359 @@
+# Building quackchat
+
+There are two ways to build, and they need entirely different things. A host
+build uses the Qt and the compiler this machine already has. It is the quick
+one, and the only one that builds the tests. The packages - the AppImage, the
+Windows package, the apk and the Flatpak - each build in a pinned container that
+carries its own toolchain, so they need almost nothing installed.
+
+- [Getting the source](#getting-the-source)
+- [Host build](#host-build)
+- [Packages](#packages)
+- [The webrtc backend](#the-webrtc-backend)
+- [Reproducible builds](#reproducible-builds)
+- [Packages without the containers](#packages-without-the-containers)
+- [Maintenance](#maintenance)
+
+## Getting the source
+
+tacky is a submodule:
+
+    git clone --recurse-submodules https://github.com/pounceandmiss/quack_qml.git
+
+After a plain clone, or when the pin moves:
+
+    git submodule update --init --recursive
+
+`--recursive` matters: tacky carries zippy, its build system, as a submodule of
+its own.
+
+## Host build
+
+### What it needs
+
+* Qt 6.10 or newer: Core, Gui, Network, Qml, Quick, QuickControls2,
+  QuickDialogs2, Test and LinguistTools. On Linux, Qt6 DBus carries the desktop
+  notifications if it is there. A floor, not a preference: ChatListFilter uses
+  endFilterChange() (6.10) and the QML uses the SafeArea attached type (6.9).
+* CMake 3.21+, Ninja, and a C++17 compiler.
+* For tacky: a POSIX toolchain and `make`. Its own dependencies (Tcl, mbedTLS,
+  libdatachannel, opus and the rest) are downloaded and built by its makefile
+  at pinned versions, which costs a couple of gigabytes and a long first
+  build. Later builds reuse it.
+
+`ccache` and `mold` are picked up when installed. `-DQUACK_FAST_LINKER=OFF`
+leaves mold alone, which is what the release builds do so that their output does
+not depend on having it.
+
+### Building and testing
+
+tacky is a separate build system and nothing here drives it, so its archive
+comes first:
+
+    make -C third_party/tacky lib
+
+Then the app:
+
+    cmake --preset default
+    cmake --build build
+    ctest --preset default
+
+The binary is `build/quackchat`.
+
+CMake finds `third_party/tacky` on its own. A checkout elsewhere is named with
+`-DTACKY_ROOT=<dir>` or `$TACKY_ROOT`, and wants both `embed/tacky.h` and
+`dist/libtacky.a` under it. A `dist/libtacky_webrtc.so` there (tacky's
+`make webrtc-so`, which fetches what it needs; see
+[The webrtc backend](#the-webrtc-backend)) is staged next to the binary.
+`cmake --build build --target tacky-lib` re-runs tacky's make without leaving
+the build tree, which is the short way round after moving the pin.
+
+Debug builds compile QML to bytecode and Release builds compile it ahead of
+time to C++, trading build time for startup and binding speed. Override with
+`-DQUACK_QML_AOT=ON|OFF`.
+
+## Packages
+
+### What they need
+
+`docker`, and `flatpak-builder` for the Flatpak. That is the whole list: no Qt
+kit, no MinGW, no Android SDK, and nothing to configure. Since every toolchain
+lives in a container, the artifacts do not depend on this machine and anyone
+with docker can produce them.
+
+### Building every package at once
+
+    ./release.sh [--check] [<version>] [target...]
+
+builds every artifact into `dist/` and writes a `SHA256SUMS` over them. Targets
+are `windows`, `android`, `flatpak` and `appimage` - all four run when none are
+named. Each leg is logged to `dist/logs/<target>.log` as well as the terminal.
+
+`<version>` is checked rather than applied: the version lives in
+`project(quack_qml VERSION)`, which is what CPack, the Android version code and
+the AppImage all read, so naming it here only asserts that the bump happened.
+
+Everything the selected targets need is checked before the first one builds.
+`--check` runs just that and stops, which is how to find out whether this
+machine can make a release without waiting for one.
+
+The per-target sections below are for building one on its own. `release.sh`
+calls exactly those scripts.
+
+### How the build containers work
+
+    docker/run.sh <profile> <command...>
+
+builds the image named by `<profile>` and runs the command with the checkout
+bind-mounted at `/src` as the invoking user, so nothing lands root-owned. There
+are two profiles: `common` for the AppImage and the Windows cross-build, and
+`android`, which derives from it and adds an NDK and an SDK.
+
+The per-target scripts below call it, so `./appimage/build.sh` is the normal way
+in. `docker/run.sh common bash` gives a shell in the same toolchain, which is how
+to work out why a build behaves differently there than here. The Dockerfiles say
+why the two are split the way they are.
+
+### The Linux AppImage
+
+A single portable binary needing no Qt on the machine that runs it:
+
+    ./appimage/build.sh
+
+The result is `dist/quackchat-<version>-x86_64.AppImage`, built in Rocky 9 for
+its glibc 2.34 - the floor Qt's own binaries set - so it runs on Ubuntu 22.04,
+Debian 12, RHEL 9 and newer. It carries Qt and tacky, and leaves the graphics
+stack to the host: libGL, libEGL, libxkbcommon, fontconfig and dbus.
+
+`--clean` rebuilds the app but keeps tacky's dependencies, which take long to
+compile; delete `build-appimage/` to rebuild those too. `--no-aot` skips the
+ahead-of-time QML compile, which dominates the build. `--webrtc` puts the
+[webrtc backend](#the-webrtc-backend) in.
+
+    ./appimage/smoke-test.sh
+
+runs it on a clean Ubuntu container under a virtual X server, the only real
+check that it works without Qt installed.
+
+### The Windows package
+
+Cross-built from Linux, with no Windows host anywhere in the picture:
+
+    ./windows/build.sh
+
+leaving `dist/quackchat-<version>-win64.zip` and the NSIS installer beside it.
+Both come from one staged tree: the installer writes under Program Files and so
+asks for administrator, and the ZIP is what someone without it unpacks and runs
+in place. `--no-installer` skips NSIS. `--clean` drops the app's half of
+`build-win/` and keeps tacky's dependencies. `--webrtc` puts the
+[webrtc backend](#the-webrtc-backend) in, which is what sends video from
+Windows.
+
+NSIS is not packaged for EL9 at all - not in the vault repos and not in EPEL -
+so `docker/common.Dockerfile` builds it from source, along with the scons that
+builds it. That is more pinning than a distro package gives, not less: the
+compiler and the prebuilt stubs are each fixed by checksum.
+
+### The Android apk
+
+    ./android/build.sh
+
+leaves `dist/quackchat-<version>-unsigned.apk`. Android installs nothing
+unsigned, so that file is an input to signing rather than something to hand out.
+`--debug` builds the debug-signed apk instead, which does install - for testing
+only, since nothing the debug key signed can ever be published.
+
+Signing happens in the container too, when `QUACK_ANDROID_KEYSTORE` and
+`QUACK_ANDROID_KEY_ALIAS` are set - `release.sh` reads them from `release.env`.
+The keystore is bind-mounted read-only, never copied into the checkout or into
+an image, and the password is passed by variable name rather than value so it
+stays out of the process table. Left unset, `apksigner` prompts.
+
+`--webrtc` puts the [webrtc backend](#the-webrtc-backend) in, where the
+background service uses it for calls.
+
+`--x86_64` builds for x86_64 instead of arm64-v8a, for the emulator, leaving
+`dist/quackchat-<version>-rtc-x86_64-unsigned.apk` (or `-debug.apk`). It builds
+in `build-android-x86_64/`, so the arm64 tree is left alone. It cannot take
+`--webrtc`: the libwebrtc prebuilt is arm64-only.
+
+The image carries its own NDK, so tacky's Android targets are driven with
+`ANDROID_DOCKER=0`. Left at the default they would start a second container from
+inside this one. `docker/android.Dockerfile` pins the NDK, the JDK and the
+command-line tools by checksum, but what `sdkmanager` fetches cannot be pinned -
+those packages publish none - and the versions it installs have to satisfy the
+Android Gradle Plugin that Qt chose, not one we pick.
+
+### The Flatpak
+
+    ./flatpak/build.sh
+
+leaves `dist/quackchat-<version>-x86_64.flatpak`, after checking both pins and
+dating the build by the commit rather than by the manifest's mtime.
+flatpak-builder cannot read a submodule, so it builds tacky from the commit
+pinned in the manifest instead. tacky and its dependencies are fetched from
+pinned sources and built with no network of their own.
+
+The webrtc backend is the exception: an offline build cannot compile it, so the
+manifest takes `third_party/tacky/dist/libtacky_webrtc.so` as a file and refuses
+to start without one. `./appimage/build.sh --webrtc` leaves one there, which is
+why `release.sh` builds the AppImage before the Flatpak.
+
+While working on the app, the form that installs what it builds is more useful:
+
+    cd flatpak
+    flatpak-builder --user --ccache --force-clean --install \
+        build-dir io.github.pounceandmiss.Quack.yml
+
+## The webrtc backend
+
+Calls run on one of two media stacks. `rtc` is tacky's own - libdatachannel
+with rtc-ma and rtc-mv - linked into every build, speaking Opus and VP8, with no
+camera on Windows. `webrtc` is libwebrtc in a library of its own,
+`libtacky_webrtc.so` (`.dll` on Windows): the wider codec set, echo
+cancellation, and the one that sends video from Windows. A build that carries
+it uses it by default.
+
+It is opt-in per build and always in a release:
+
+    ./appimage/build.sh --webrtc
+
+The same flag works for `./windows/build.sh` and `./android/build.sh`;
+`release.sh` passes it to all three, and the Flatpak takes the library the
+AppImage build leaves behind. Nothing is prepared by hand: tacky clones the
+rtc-webrtc wrapper at the commit pinned in its Makefile and runs the wrapper's
+`third_party/fetch.sh`, which fetches libwebrtc, Chromium's clang and the libc++
+headers - and the MSVC SDK, for Windows - each pinned by hash or commit, into
+`build-deps/` beside tacky's other sources. A few hundred megabytes, once per
+platform.
+
+Without the flag the build is shorter, calls run on rtc, and the result is
+named for it: `quackchat-<version>-rtc-x86_64.AppImage`, `-rtc-win64.zip`,
+`-rtc.apk`. A build with it keeps the plain name, so the two are never mistaken
+for one another.
+
+To build a checkout of the wrapper other than the pinned one - while working on
+it - mount it in and name it:
+
+    QUACK_RUN_MOUNTS=$HOME/dev/tacky_calls/rtc-webrtc:/webrtc \
+    QUACK_WEBRTC_SRC=/webrtc ./appimage/build.sh --webrtc
+
+The mount is not read-only: the fetch writes that checkout's `third_party/`
+when it is not already in place.
+
+## Reproducible builds
+
+The AppImage is reproducible: the same commit gives the same bytes, so a binary
+from a release page is one anybody can rebuild and check against the source. The
+clock and the checkout's file mtimes are replaced by the commit date, the uid and
+the linker are fixed rather than inherited from the build host, and the whole
+toolchain is pinned by digest and checksum in `docker/common.Dockerfile`.
+
+"The same commit" includes the webrtc backend, since a release carries it: the
+wrapper's commit is pinned in tacky, and every prebuilt it links - libwebrtc,
+Chromium's clang, the libc++ headers - by hash or commit in the wrapper, so the
+whole of it is named by the commit and fetched the same way on every machine.
+libwebrtc itself is a prebuilt, though: the same bytes go in everywhere, but
+nobody here compiles them from source. A build without `--webrtc` is a
+different artifact under a different name, not a failed reproduction.
+
+    tools/repro-check.sh
+
+builds a second copy from a fresh clone of HEAD and compares. It uses a fresh
+clone rather than a rebuild in place because a rebuild reuses its build tree and
+can agree with itself for reasons that would not survive somebody else's
+checkout. `diffoscope` is worth having installed before a mismatch turns up.
+Both builds run on one machine, so it catches the clock, the path and the
+mtimes. Only a rebuild somewhere else proves the rest.
+
+The other three packages are not held to it. All of them build from the same
+pinned toolchain, so the ingredients are fixed, but nothing checks that their
+output settles: `tools/repro-check.sh flatpak` would settle the Flatpak, whose
+remaining unknown is the KDE sdk it builds against - a binary runtime nobody
+here compiles, recorded in `flatpak/runtime.pin` rather than built. Windows and
+Android have no such check at all, and the apk in particular goes through
+gradle, which would have to be made deterministic first. The Windows backend
+adds an input of its own: the MSVC CRT and SDK, which xwin fetches from
+Microsoft by version rather than by hash.
+
+## Packages without the containers
+
+Both cross builds can be driven against a host toolchain instead, which is what
+this repository did before the containers. Nothing here is reproducible - the
+output depends on which compiler, kit and linker the machine happens to carry,
+which is the reason the containers exist - so it is for working on the packaging
+itself rather than for producing anything to hand out.
+
+### Windows
+
+Wants a MinGW Qt kit, `wine`, `makensis` and a native tclsh 9.0 installed:
+
+    make -C third_party/tacky win-lib
+    cmake -B build-win -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64-toolchain.cmake \
+        -DCMAKE_PREFIX_PATH=<qt>/mingw_64 \
+        -DQT_HOST_PATH=<qt>/gcc_64
+    cmake --build build-win
+
+`cpack -G ZIP` or `cpack -G NSIS` from the build directory packages it, with
+`windeployqt` running under wine. NSIS is only needed for the installer.
+
+### Android
+
+Wants the SDK, NDK r29, JDK 21 and the Android Qt kit:
+
+    make -C third_party/tacky android-lib
+    <qt>/android_arm64_v8a/bin/qt-cmake -S . -B build-android -G Ninja \
+        -DQT_HOST_PATH=<qt>/gcc_64 \
+        -DANDROID_SDK_ROOT=<sdk> \
+        -DANDROID_NDK_ROOT=<sdk>/ndk/<r29> \
+        -DANDROID_PLATFORM=android-30 \
+        -DCMAKE_BUILD_TYPE=Debug
+    JAVA_HOME=<jdk21> cmake --build build-android --target apk
+
+NDK r29 and `ANDROID_PLATFORM=android-30` are what the tacky archive is built
+against: older NDKs lack `__cxa_init_primary_exception`, and API levels below
+30 lack `pthread_cond_clockwait`.
+
+JDK 21 has to be `JAVA_HOME` for the `apk` target: newer JDKs break gradle's
+jlink step.
+
+`CMAKE_BUILD_TYPE` is worth passing because `qt-cmake` leaves it empty, and an
+empty build type compiles with no `-O` flags yet still packages as a release.
+Debug is the one that installs: gradle signs it with the machine's debug
+keystore. Release leaves the apk unsigned - the signing key is the packager's to
+supply, and Android takes nothing unsigned - so for a release build that still
+goes on a device, add `-DQT_ANDROID_DEPLOYMENT_TYPE=Debug`. Nothing the debug
+key signed can be published.
+
+## Maintenance
+
+### Moving the tacky pin
+
+    git -C third_party/tacky fetch origin
+    git -C third_party/tacky checkout <commit>
+    git add third_party/tacky
+    ./flatpak/check-pin.sh --sync
+
+The last line carries the commit into the manifest, which names it a second
+time. `ctest` fails while the two disagree. If tacky's own dependency pins
+moved, the manifest says how to regenerate its source list.
+
+### Translations
+
+Every string on screen goes through `qsTr()` or `tr()`, and the catalogues are
+compiled into the binary. To add a language, list it in
+`qt_standard_project_setup`:
+
+    I18N_TRANSLATED_LANGUAGES de fr
+
+then hand the catalogue it generates to a translator:
+
+    cmake --build build --target update_translations
+
+That target rewrites every `i18n/*.ts` from the sources, leaving finished
+translations alone, so it is also what to run after changing a string.
+
+The Android notification service does not read any of this: its strings are
+Android resources, translated by adding `android/res/values-<lang>/strings.xml`
+beside the existing `values/strings.xml`.

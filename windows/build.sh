@@ -14,7 +14,7 @@
 # build-win/ holds the build tree and persists, so a rebuild is incremental.
 # --clean drops the app's half and keeps tacky's deps, which cost the better
 # part of an hour to compile; delete build-win/ for those too. --webrtc puts the
-# webrtc media backend in (see README.md, "Calls: the webrtc backend"), which is
+# webrtc media backend in (see BUILDING.md, "The webrtc backend"), which is
 # what sends video from Windows; the result is named differently without it.
 #
 # The tree is never shared with a host-native cross build: a different MinGW
@@ -39,7 +39,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 # The commit date, as the AppImage does. The PE is not reproducible today - see
-# the README - but zippy reads this for its own timestamps either way, and
+# BUILDING.md - but zippy reads this for its own timestamps either way, and
 # having it set is a precondition for ever getting there rather than a claim
 # that we already have.
 if [ -z "${SOURCE_DATE_EPOCH-}" ]; then
