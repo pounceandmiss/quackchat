@@ -26,18 +26,9 @@ Page {
 
     // A setting that is on or off.
     component SettingBox: CheckBox {
-        id: setting
         Layout.fillWidth: true
         padding: 0
-        // The style centres its indicator when the control has no text of its
-        // own, so set it even though contentItem draws it.
-        contentItem: Text {
-            text: setting.text
-            color: Theme.textPrimary
-            font.pixelSize: 14
-            leftPadding: setting.indicator.width + 8
-            verticalAlignment: Text.AlignVCenter
-        }
+        font.pixelSize: 14
     }
 
     // A setting with a few choices: its name, and a drop-down of them.

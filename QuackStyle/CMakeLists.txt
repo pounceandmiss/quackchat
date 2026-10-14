@@ -11,5 +11,6 @@ qt_add_qml_module(quackstyle
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/QuackStyle"
     QML_FILES
         Button.qml
+        CheckBox.qml
         DialogButtonBox.qml)
 target_link_libraries(quackstyle PRIVATE Qt6::Quick Qt6::QuickTemplates2 Qt6::QuickControls2Impl)

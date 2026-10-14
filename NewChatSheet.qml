@@ -69,13 +69,7 @@ SheetDialog {
             objectName: "newChatAddContact"
             checked: true
             text: qsTr("Add to my contacts")
-            contentItem: Text {
-                text: addBox.text
-                color: Theme.textPrimary
-                font.pixelSize: 14
-                verticalAlignment: Text.AlignVCenter
-                leftPadding: addBox.indicator.width + addBox.spacing
-            }
+            font.pixelSize: 14
         }
     }
 }

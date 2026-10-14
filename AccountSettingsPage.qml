@@ -536,18 +536,10 @@ Page {
                     objectName: "blindTrustBox"
                     Layout.fillWidth: true
                     padding: 0
-                    // The style centres its indicator when the control has no
-                    // text of its own, so set it even though contentItem draws it.
+                    font.pixelSize: 14
                     text: qsTr("Trust new devices automatically")
                     checked: page.devices ? page.devices.blindTrust : false
                     onToggled: if (page.devices) page.devices.blindTrust = checked
-                    contentItem: Text {
-                        text: blindTrustBox.text
-                        color: Theme.textPrimary
-                        font.pixelSize: 14
-                        leftPadding: blindTrustBox.indicator.width + 8
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
                 Caption {
                     Layout.fillWidth: true

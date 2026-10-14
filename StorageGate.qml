@@ -108,16 +108,8 @@ SheetDialog {
             Layout.fillWidth: true
             visible: gate.wantsPassphrase
             padding: 0
-            // The style centres its indicator when the control has no text of
-            // its own, so set it even though contentItem draws it.
+            font.pixelSize: 12
             text: qsTr("Show passphrase")
-            contentItem: Text {
-                text: revealBox.text
-                color: Theme.textDim
-                font.pixelSize: 12
-                leftPadding: revealBox.indicator.width + 8
-                verticalAlignment: Text.AlignVCenter
-            }
         }
 
         Text {
