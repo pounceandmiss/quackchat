@@ -40,7 +40,7 @@ make -C /src/third_party/tacky win-lib \
     WIN_BUILD=../../build-win/tacky \
     WIN_DEPS_DIR=/src/build-deps
 
-# The webrtc media backend, when --webrtc asked for it (see README.md), built
+# The webrtc media backend, when --webrtc asked for it (see BUILDING.md), built
 # before CMake looks for it. As in appimage/in-image.sh: tacky clones the
 # wrapper at its pin and fetches the prebuilts - here the MSVC CRT and SDK too -
 # into /src/build-deps, or builds the checkout QUACK_WEBRTC_SRC names.

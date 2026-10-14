@@ -17,7 +17,7 @@
 # cost the better part of an hour to compile; delete build-appimage/ for those
 # too. --no-aot skips the ahead-of-time QML compile, which dominates a release
 # build and has no bearing on packaging. --webrtc puts the webrtc media backend
-# in (see README.md, "Calls: the webrtc backend"): a few hundred megabytes of
+# in (see BUILDING.md, "The webrtc backend"): a few hundred megabytes of
 # pinned prebuilts fetched on the first run, and a differently named result
 # without it.
 #

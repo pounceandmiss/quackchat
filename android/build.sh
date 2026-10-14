@@ -19,8 +19,8 @@
 # --clean drops it. tacky's Android dependency tree stays inside it rather than
 # joining the one the Linux and Windows builds share: android.mk builds those
 # dependencies in place, in their own source directories, so that tree belongs to
-# this target alone. --webrtc puts the webrtc media backend in (see README.md,
-# "Calls: the webrtc backend"); the result is named differently without it.
+# this target alone. --webrtc puts the webrtc media backend in (see BUILDING.md,
+# "The webrtc backend"); the result is named differently without it.
 #
 # --x86_64 builds for x86_64 instead of arm64-v8a, for the emulator, in a tree of
 # its own (build-android-x86_64/). There is no x86_64 libwebrtc prebuilt, so it

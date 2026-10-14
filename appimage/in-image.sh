@@ -58,7 +58,7 @@ make -C /src/third_party/tacky lib \
     LINUX_BUILD="$build/tacky" \
     DEPS_DIR=/src/build-deps
 
-# The webrtc media backend, when --webrtc asked for it (see README.md), built
+# The webrtc media backend, when --webrtc asked for it (see BUILDING.md), built
 # before CMake looks for it. tacky clones the wrapper at its pinned commit and
 # fetches the pinned prebuilts into the same /src/build-deps, once; a checkout
 # named by QUACK_WEBRTC_SRC (mounted with QUACK_RUN_MOUNTS) builds instead.
