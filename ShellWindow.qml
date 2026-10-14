@@ -67,5 +67,5 @@ AppWindow {
     // on the first window - see the note in AppSettingsPage.
     StorageGate { parent: shell.Overlay.overlay }
 
-    edgeToEdge: BackendNotice {}
+    BackendNotice { host: win.notices }
 }

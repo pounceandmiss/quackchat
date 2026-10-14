@@ -111,12 +111,19 @@ void AppController::onEvent(const QString &module, const QString &name,
         emit backendStartFailedChanged();
         return;
     }
-    if (module != QLatin1String("error"))
+    if (module != QLatin1String("error") || name != QLatin1String("Background"))
         return;
     const QString message =
         args.toMap().value(QStringLiteral("message")).toString();
-    if (!message.isEmpty())
+    if (!message.isEmpty() && !m_mutedErrors.contains(message))
         emit backendError(message);
+}
+
+void AppController::muteBackendError(const QString &message) {
+    if (message.isEmpty() || m_mutedErrors.contains(message))
+        return;
+    m_mutedErrors.insert(message);
+    emit backendErrorMuted(message);
 }
 
 void AppController::setDebugArgs(const DebugArgs &args) {

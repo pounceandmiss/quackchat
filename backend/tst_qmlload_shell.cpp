@@ -4,6 +4,7 @@
 #include <QStyleHints>
 #include <QJsonDocument>
 #include <QQmlComponent>
+#include <functional>
 
 #include "AppController.h"
 #include "CallsModel.h"
@@ -53,6 +54,29 @@ class TestShell : public QObject {
         if (shell)
             shell->setParentItem(win.contentItem());
         return shell;
+    }
+
+    // This window's notice stack (NoticeHost), and the cards on it whose names
+    // start with `prefix`.
+    static QQuickItem *noticesOf(QQuickWindow *win) {
+        return win->property("notices").value<QQuickItem *>();
+    }
+    static QList<QQuickItem *> cardsOf(QQuickItem *host, const QString &prefix) {
+        QList<QQuickItem *> out;
+        const std::function<void(QQuickItem *)> walk = [&](QQuickItem *item) {
+            const auto children = item->childItems();
+            for (QQuickItem *child : children) {
+                if (child->objectName().startsWith(prefix))
+                    out << child;
+                walk(child);
+            }
+        };
+        if (host)
+            walk(host);
+        return out;
+    }
+    static QQuickItem *cardOf(QQuickItem *host, const QString &key) {
+        return findItem(host, "notice_" + key);
     }
 
     // The rail lives on the window overlay rather than among the shell's own
@@ -212,18 +236,55 @@ private slots:
         app->backend()->setTransport(fake);
         QQuickWindow *win = loadMain(e);
         QVERIFY(win);
-        auto *notice = win->findChild<QQuickItem *>("backendNotice");
+        auto *notice = win->findChild<QObject *>("backendNotice");
         QVERIFY(notice);
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
 
-        // Attached but not up yet: that is a backend to wait for.
-        QVERIFY(notice->isVisible());
+        // Attached but not up yet: that is a backend to wait for, once it has
+        // been away long enough to be worth saying.
         QVERIFY(notice->property("message").toString().contains("Reconnecting"));
+        QVERIFY(!cardOf(host, "backend"));
+        QTRY_VERIFY(cardOf(host, "backend"));
 
         fake->start({});
-        QTRY_VERIFY(!notice->isVisible());
+        QTRY_VERIFY(!cardOf(host, "backend"));
+
+        // Swiped away, it stays away while the backend is still gone...
+        fake->stop();
+        QTRY_VERIFY(cardOf(host, "backend"));
+        QVERIFY(QMetaObject::invokeMethod(host, "dismiss",
+                                          Q_ARG(QVariant, QVariant("backend"))));
+        QVERIFY(!cardOf(host, "backend"));
+        QTest::qWait(1700);
+        QVERIFY(!cardOf(host, "backend"));
+
+        // ...and the next time it goes, it says so again.
+        fake->start({});
+        QTRY_VERIFY(!notice->property("down").toBool());
+        fake->stop();
+        QTRY_VERIFY(cardOf(host, "backend"));
+        e.assertNoErrors();
+    }
+
+    // Gone and straight back - the UI reattaching on Android - says nothing.
+    void backendNoticeSkipsABriefOutage() {
+        AppEngine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        auto *fake = new FakeTransport;
+        app->backend()->setTransport(fake);
+        fake->start({});
+        QQuickWindow *win = loadMain(e);
+        QVERIFY(win);
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
 
         fake->stop();
-        QTRY_VERIFY(notice->isVisible());
+        QTest::qWait(300);
+        fake->start({});
+        QTest::qWait(1700);
+        QVERIFY(!cardOf(host, "backend"));
         e.assertNoErrors();
     }
 
@@ -234,15 +295,16 @@ private slots:
         QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
         QQuickWindow *win = loadMain(e);
         QVERIFY(win);
-        auto *notice = win->findChild<QQuickItem *>("backendNotice");
+        auto *notice = win->findChild<QObject *>("backendNotice");
         QVERIFY(notice);
-        QVERIFY(!notice->isVisible());
+        QVERIFY(!notice->property("shown").toBool());
+        QVERIFY(cardsOf(noticesOf(win), "notice_").isEmpty());
         e.assertNoErrors();
     }
 
-    // error <Background> reaches the user as its message alone: errorinfo is a
-    // Tcl trace, which the backend has already logged.
-    void backendNoticeShowsAReportedFailure() {
+    // error <Background> gets a card of its own, which a repeat refreshes
+    // rather than stacks, and which can be told to stop for the run.
+    void backgroundErrorIsPostedAndMutable() {
         AppEngine e;
         auto *app = e.singletonInstance<AppController *>("Quack", "App");
         QVERIFY(app);
@@ -251,15 +313,38 @@ private slots:
         fake->start({});
         QQuickWindow *win = loadMain(e);
         QVERIFY(win);
-        auto *notice = win->findChild<QQuickItem *>("backendNotice");
-        QVERIFY(notice);
-        QVERIFY(!notice->isVisible());
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
 
-        fake->deliver(R"(["event","error","Background",)"
-                      R"({"message":"cannot read x","errorinfo":"trace\n at y"}])");
-        QTRY_VERIFY(notice->isVisible());
-        const QString shown = notice->property("message").toString();
-        QCOMPARE(shown, QString("cannot read x"));
+        const auto background = [&](const QByteArray &message) {
+            fake->deliver(R"(["event","error","Background",{"message":")" + message +
+                          R"(","errorinfo":"trace\n at y"}])");
+        };
+        background("cannot read x");
+        QTRY_VERIFY(cardOf(host, "bg:cannot read x"));
+        QQuickItem *card = cardOf(host, "bg:cannot read x");
+        // The trace stays in the log; Copy takes the message alone.
+        QCOMPARE(card->property("copyText").toString(), QString("cannot read x"));
+        QVERIFY(card->property("copyable").toBool());
+        QVERIFY(!cardOf(host, "backend"));
+
+        background("cannot read x");
+        QCoreApplication::processEvents();
+        QCOMPARE(cardsOf(host, "notice_bg:").size(), 1);
+
+        app->muteBackendError("cannot read x");
+        QTRY_VERIFY(!cardOf(host, "bg:cannot read x"));
+        background("cannot read x");
+        QCoreApplication::processEvents();
+        QVERIFY(!cardOf(host, "bg:cannot read x"));
+
+        background("something else");
+        QTRY_VERIFY(cardOf(host, "bg:something else"));
+
+        // Only <Background> is the app's to say.
+        fake->deliver(R"(["event","error","MethodError",{"message":"not this"}])");
+        QCoreApplication::processEvents();
+        QVERIFY(!cardOf(host, "bg:not this"));
         e.assertNoErrors();
     }
 
@@ -274,15 +359,147 @@ private slots:
         fake->start({});
         QQuickWindow *win = loadMain(e);
         QVERIFY(win);
-        auto *notice = win->findChild<QQuickItem *>("backendNotice");
-        QVERIFY(notice);
-        QVERIFY(!notice->isVisible());
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
+        QVERIFY(!cardOf(host, "backend"));
 
         fake->deliver(R"(["event","backend","Dead",)"
                       R"({"error":"tackyd_embed_init failed: omemo: EPROTOBUF"}])");
         QTRY_VERIFY(app->backendStartFailed());
-        QVERIFY(notice->isVisible());
-        QVERIFY(notice->property("message").toString().contains("EPROTOBUF"));
+        // Nothing to wait out: it says so at once.
+        QQuickItem *card = cardOf(host, "backend");
+        QVERIFY(card);
+        QVERIFY(card->property("text").toString().contains("EPROTOBUF"));
+        QVERIFY(card->property("copyable").toBool());
+        QCOMPARE(card->property("copyText").toString(),
+                 QString("tackyd_embed_init failed: omemo: EPROTOBUF"));
+        e.assertNoErrors();
+    }
+
+    // One stack per window: newest first, one-offs gone on their own, states
+    // until hidden.
+    void noticeHostStacksAndTimesOut() {
+        AppEngine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QQuickWindow *win = loadMain(e);
+        QVERIFY(win);
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
+        host->setProperty("timeout", 300);
+
+        QVERIFY(QMetaObject::invokeMethod(
+            host, "show", Q_ARG(QVariant, QVariant("state")),
+            Q_ARG(QVariant, QVariant(QVariantMap{{"text", "a state"}}))));
+        QVariant first, second;
+        QVERIFY(QMetaObject::invokeMethod(
+            host, "post", Q_RETURN_ARG(QVariant, first),
+            Q_ARG(QVariant, QVariant(QVariantMap{{"text", "one"}})), Q_ARG(QVariant, QVariant())));
+        QVERIFY(QMetaObject::invokeMethod(
+            host, "post", Q_RETURN_ARG(QVariant, second),
+            Q_ARG(QVariant, QVariant(QVariantMap{{"text", "two"}})), Q_ARG(QVariant, QVariant())));
+        QCoreApplication::processEvents();
+        QQuickItem *a = cardOf(host, "state");
+        QQuickItem *one = cardOf(host, first.toString());
+        QQuickItem *two = cardOf(host, second.toString());
+        QVERIFY(a && one && two);
+        QVERIFY(two->y() < one->y());
+        QVERIFY(one->y() < a->y());
+
+        QTRY_VERIFY(!cardOf(host, first.toString()) && !cardOf(host, second.toString()));
+        QVERIFY(cardOf(host, "state"));
+        QVERIFY(QMetaObject::invokeMethod(host, "hide",
+                                          Q_ARG(QVariant, QVariant("state"))));
+        QVERIFY(!cardOf(host, "state"));
+        e.assertNoErrors();
+    }
+
+    // A card sits over the page, so a tap on it must stop there rather than
+    // land on the header it covers; a drag still takes it away.
+    void noticeCardKeepsTapsAndSwipesAway() {
+        AppEngine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QQuickWindow *win = loadMain(e);
+        QVERIFY(win);
+        QVERIFY(QTest::qWaitForWindowExposed(win));
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
+
+        QQmlComponent under(&e);
+        under.setData("import QtQuick\nMouseArea { property int clicks: 0;"
+                      " onClicked: clicks++ }", QUrl());
+        QScopedPointer<QObject> holder(under.create());
+        auto *below = qobject_cast<QQuickItem *>(holder.data());
+        QVERIFY2(below, qPrintable(under.errorString()));
+        // Over the page, under the stack: where the header a card covers is.
+        QQuickItem *safe = host->parentItem()->childItems().first();
+        QVERIFY(safe != host);
+        below->setParentItem(safe);
+        below->setZ(1000);
+        below->setSize(safe->size());
+
+        QVariant key;
+        QVERIFY(QMetaObject::invokeMethod(
+            host, "post", Q_RETURN_ARG(QVariant, key),
+            Q_ARG(QVariant, QVariant(QVariantMap{{"text", "covering"}})),
+            Q_ARG(QVariant, QVariant())));
+        QTRY_VERIFY(cardOf(host, key.toString()));
+        QQuickItem *card = cardOf(host, key.toString());
+        // Left of centre: clear of the buttons at the right end.
+        const QPoint at = card->mapToScene(QPointF(card->width() / 4,
+                                                   card->height() / 2)).toPoint();
+
+        // Touch, as on a phone, where this went wrong; and the mouse.
+        static QPointingDevice *finger = QTest::createTouchDevice();
+        QTest::touchEvent(win, finger).press(0, at);
+        QTest::touchEvent(win, finger).release(0, at);
+        QCoreApplication::processEvents();
+        QTest::mouseClick(win, Qt::LeftButton, {}, at);
+        QCoreApplication::processEvents();
+        QCOMPARE(below->property("clicks").toInt(), 0);
+        QVERIFY(cardOf(host, key.toString()));
+
+        QTest::touchEvent(win, finger).press(0, at);
+        for (int dx = 10; dx <= 300; dx += 10)
+            QTest::touchEvent(win, finger).move(0, at + QPoint(dx, 0));
+        QTest::touchEvent(win, finger).release(0, at + QPoint(300, 0));
+        QTRY_VERIFY(!cardOf(host, key.toString()));
+        QCOMPARE(below->property("clicks").toInt(), 0);
+        e.assertNoErrors();
+    }
+
+    // A 1:1 call that never started has no call window to say why in, so the
+    // chat's window does.
+    void refusedCallIsPostedToTheChatsWindow() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QQmlComponent chatWin(&e, "Quack", "ChatWindow");
+        QVERIFY2(chatWin.isReady(), qPrintable(chatWin.errorString()));
+        QScopedPointer<QObject> cw(chatWin.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"chatJid", "friend@example.com"},
+             {"chatName", "Friend"}}));
+        auto *win = qobject_cast<QQuickWindow *>(cw.data());
+        QVERIFY(win);
+        QQuickItem *host = noticesOf(win);
+        QVERIFY(host);
+
+        // Someone else's chat is not this window's business.
+        emit app->calls()->startFailed("me@example.com", "other@example.com", "nope");
+        QCoreApplication::processEvents();
+        QVERIFY(cardsOf(host, "notice_").isEmpty());
+
+        emit app->calls()->startFailed("me@example.com", "friend@example.com",
+                                       "calls are disabled while a proxy is configured");
+        QTRY_COMPARE(cardsOf(host, "notice_").size(), 1);
+        QQuickItem *card = cardsOf(host, "notice_").first();
+        QVERIFY(card->property("text").toString().contains("proxy"));
+        QCOMPARE(card->property("copyText").toString(),
+                 QString("calls are disabled while a proxy is configured"));
+
+        // The microphone turned down says so in the same place.
+        emit app->calls()->microphoneDenied("me@example.com", "friend@example.com");
+        QTRY_COMPARE(cardsOf(host, "notice_").size(), 2);
         e.assertNoErrors();
     }
 

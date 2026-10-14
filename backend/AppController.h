@@ -9,6 +9,7 @@
 
 #include <QHash>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -144,13 +145,19 @@ public:
     // No-op once started.
     Q_INVOKABLE void startFromEnvironment();
 
+    // Stop reporting this backendError message until the next start. It is
+    // still logged: the backend writes it before it ever reaches us.
+    Q_INVOKABLE void muteBackendError(const QString &message);
+
 signals:
     void logPathChanged();
     void backendStartFailedChanged();
     // A backend failure with no request behind it (error <Background>). No
     // model listens for those, so the app itself is what says them. The
-    // message only: the event's errorinfo is a Tcl trace for the log.
+    // message only: the event's errorinfo is a Tcl trace for the log. Not
+    // for a muted message.
     void backendError(const QString &message);
+    void backendErrorMuted(const QString &message);
 
 private:
     // Drop what was cached for an account that has been removed.
@@ -204,6 +211,7 @@ private:
     bool m_started = false;
     bool m_startFailed = false;
     QString m_startError;
+    QSet<QString> m_mutedErrors;
 };
 
 #endif // APPCONTROLLER_H

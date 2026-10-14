@@ -269,6 +269,8 @@ qt_add_qml_module(quack
         Caption.qml
         CopiedNotice.qml
         BackendNotice.qml
+        Notice.qml
+        NoticeHost.qml
         ContactDetailsPage.qml
         MucDetailsPage.qml
         UnreachableBanner.qml

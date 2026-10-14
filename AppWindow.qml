@@ -14,9 +14,8 @@ ApplicationWindow {
     id: win
 
     default property alias content: safe.data
-    // For the few things that want the window's own edges and account for the
-    // insets themselves, as BackendNotice does with the top one.
-    property alias edgeToEdge: edge.data
+    // This window's notice stack (see NoticeHost).
+    readonly property alias notices: noticeHost
 
     visible: true
     color: Theme.background
@@ -76,10 +75,10 @@ ApplicationWindow {
             anchors.leftMargin: SafeArea.margins.left
             anchors.rightMargin: SafeArea.margins.right
         },
-        // After the safe area, so what goes here floats over the page rather
-        // than under it.
-        Item {
-            id: edge
+        // After the safe area, so it floats over the page rather than under
+        // it. The window's own edges: it keeps clear of the insets itself.
+        NoticeHost {
+            id: noticeHost
             anchors.fill: parent
         },
         Shortcut {

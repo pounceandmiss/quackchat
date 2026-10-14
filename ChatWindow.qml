@@ -38,5 +38,5 @@ AppWindow {
 
     // A pop-out is somewhere you type: it says a dead backend as loudly as the
     // shell does.
-    edgeToEdge: BackendNotice {}
+    BackendNotice { host: win.notices }
 }

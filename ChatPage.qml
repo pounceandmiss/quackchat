@@ -344,6 +344,34 @@ Page {
             App.calls.start(page.account, page.chatJid, video)
     }
 
+    // A call that never got as far as ringing has no sid and so no call window
+    // to say why in; the window showing that chat does. A group call's refusal
+    // lands in its own window (GroupCall's reason).
+    function callNotice(opts) {
+        const notices = page.Window.window ? page.Window.window.notices : null
+        if (notices)
+            notices.post(opts)
+    }
+    Connections {
+        target: App.calls
+        function onStartFailed(account, peer, message) {
+            if (account === page.account && peer === page.chatJid)
+                page.callNotice({
+                    text: qsTr("Call not started: %1").arg(message),
+                    copyText: message,
+                    tone: "negative",
+                    copyable: true
+                })
+        }
+        function onMicrophoneDenied(account, peer) {
+            if (account === page.account && peer === page.chatJid)
+                page.callNotice({
+                    text: qsTr("Microphone access is off for Quack."),
+                    tone: "warning"
+                })
+        }
+    }
+
     readonly property ChatSession session: App.chatFor(page.account, page.chatJid,
                                                        page.chatGroupchat)
     readonly property ChatModel chatModel: page.session ? page.session.messages : null
@@ -1374,66 +1402,7 @@ Page {
         }
     }
 
-    // A call that never got off the ground has no sid and so no call window to
-    // report from. Only the page showing that very chat says so, which keeps a
-    // pop-out and its shell from both piping up.
-    property string callNotice: ""
-    onChatJidChanged: {
-        callNotice = ""
-        declinedHere = false
-    }
-
-    Connections {
-        target: App.calls
-        function onStartFailed(account, peer, message) {
-            if (account === page.account && peer === page.chatJid)
-                page.callNotice = message
-        }
-        function onMicrophoneDenied(account, peer) {
-            if (account === page.account && peer === page.chatJid)
-                page.callNotice = qsTr("Microphone access is off for Quack.")
-        }
-    }
-
-    // A tap puts it away early.
-    AbstractButton {
-        id: notice
-        z: 5
-        anchors.top: parent.top
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.topMargin: 10
-        width: Math.min(parent.width - 24, 420)
-        height: noticeText.implicitHeight + 20
-        visible: page.callNotice !== ""
-        Accessible.name: page.callNotice
-        Accessible.description: qsTr("Dismiss")
-        focusPolicy: Qt.NoFocus
-        onClicked: page.callNotice = ""
-
-        background: Rectangle {
-            radius: 8
-            color: Theme.surface
-            border.width: 1
-            border.color: Theme.negative
-        }
-        contentItem: Item {
-            Text {
-                id: noticeText
-                anchors.centerIn: parent
-                width: notice.width - 24
-                text: page.callNotice
-                color: Theme.textPrimary
-                font.pixelSize: 13
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-            }
-        }
-        Timer {
-            running: notice.visible
-            interval: 6000
-            onTriggered: page.callNotice = ""
-        }
-    }
+    onChatJidChanged: page.declinedHere = false
 
     ColumnLayout {
         id: chatColumn
