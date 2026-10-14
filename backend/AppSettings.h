@@ -1,6 +1,7 @@
 // The preferences that belong to the app rather than to an account, exposed to
 // QML as `App.settings`. tacky keeps them in one global key/value store; this
-// is the slice of it the GUI has anything to say about.
+// is the slice of it the GUI has anything to say about. An account's own
+// settings (what it tells its contacts) are AccountSettings'.
 //
 // Every value is a string and an unset key reads as an empty one, so tacky's
 // own defaults are repeated here, as they are in the Tk client's setting menu
@@ -47,18 +48,6 @@ class AppSettings : public QObject {
     // line per chat, and columns puts two of those side by side. A key of our
     // own.
     Q_PROPERTY(QString chatListStyle READ chatListStyle NOTIFY chatListStyleChanged)
-    // Whether contacts may ask the local time (XEP-0202) and how long the app
-    // has been idle (XEP-0012). Off unless turned on, and answered only to
-    // contacts with a subscription to us.
-    Q_PROPERTY(bool answerTime READ answerTime NOTIFY answerTimeChanged)
-    Q_PROPERTY(bool answerLastActivity READ answerLastActivity
-                   NOTIFY answerLastActivityChanged)
-    // Whether contacts are told when their messages arrive and are read
-    // (XEP-0184 receipts, XEP-0333 markers). On unless turned off, and only
-    // ever sent to contacts with a subscription to us: tacky's
-    // send_chat_markers, the Tk client's "Send Read Receipts".
-    Q_PROPERTY(bool sendChatMarkers READ sendChatMarkers
-                   NOTIFY sendChatMarkersChanged)
     // "" (tacky picks) | rtc | webrtc, stored by tacky, which reads it when it
     // picks a backend. Takes effect at the next start.
     Q_PROPERTY(QString mediaBackend READ mediaBackend NOTIFY mediaBackendChanged)
@@ -84,9 +73,6 @@ public:
     bool logRedact() const { return m_logRedact; }
     bool chatAvatars() const { return m_chatAvatars; }
     QString chatListStyle() const { return m_chatListStyle; }
-    bool answerTime() const { return m_answerTime; }
-    bool answerLastActivity() const { return m_answerLastActivity; }
-    bool sendChatMarkers() const { return m_sendChatMarkers; }
     QString mediaBackend() const { return m_mediaBackend; }
     QString activeMediaBackend() const { return m_activeMediaBackend; }
     QStringList recentEmoji() const { return m_recentEmoji; }
@@ -106,9 +92,6 @@ public:
     Q_INVOKABLE void setChatAvatars(bool on);
     // Unknown styles are ignored.
     Q_INVOKABLE void setChatListStyle(const QString &style);
-    Q_INVOKABLE void setAnswerTime(bool on);
-    Q_INVOKABLE void setAnswerLastActivity(bool on);
-    Q_INVOKABLE void setSendChatMarkers(bool on);
     // Unknown names are ignored.
     Q_INVOKABLE void setMediaBackend(const QString &name);
     void setRecentEmoji(const QStringList &emoji);
@@ -129,9 +112,6 @@ signals:
     void logRedactChanged();
     void chatAvatarsChanged();
     void chatListStyleChanged();
-    void answerTimeChanged();
-    void answerLastActivityChanged();
-    void sendChatMarkersChanged();
     void mediaBackendChanged();
     void activeMediaBackendChanged();
     void recentEmojiChanged();
@@ -151,9 +131,6 @@ private:
     bool m_logRedact = true;
     bool m_chatAvatars = true;
     QString m_chatListStyle = QStringLiteral("full");
-    bool m_answerTime = false;
-    bool m_answerLastActivity = false;
-    bool m_sendChatMarkers = true;
     QString m_mediaBackend;   // "" until stored: the automatic choice
     QString m_activeMediaBackend;
     QStringList m_recentEmoji;
@@ -167,9 +144,6 @@ private:
     int m_logRedactToken = -1;
     int m_chatAvatarsToken = -1;
     int m_chatListStyleToken = -1;
-    int m_answerTimeToken = -1;
-    int m_answerLastActivityToken = -1;
-    int m_sendChatMarkersToken = -1;
     int m_mediaBackendToken = -1;
     int m_activeBackendToken = -1;
     int m_recentEmojiToken = -1;

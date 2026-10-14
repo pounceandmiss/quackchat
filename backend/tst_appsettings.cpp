@@ -73,14 +73,13 @@ void TestAppSettings::refreshesWhenTheBackendConnects() {
         keys << call.at(2).toMap().value("key").toString();
     }
     keys.sort();
-    QCOMPARE(keys, QStringList({"answer_last_activity", "answer_time",
-                                "attachment_autofetch",
+    QCOMPARE(keys, QStringList({"attachment_autofetch",
                                 "attachment_autofetch_max", "chat_avatars",
                                 "chat_list_style",
                                 "emoji_recent", "emoji_tones",
                                 "log_level", "log_native",
                                 "log_redact_content", "log_to_file",
-                                "media_backend", "send_chat_markers"}));
+                                "media_backend"}));
     // The running backend is asked for alongside them, and is not a setting.
     QCOMPARE(others, QStringList({"media/backend"}));
 }
@@ -170,6 +169,12 @@ void TestAppSettings::changedEventsAreGlobal() {
     feed(s, R"(["event","setting","Changed",{"key":"chat_mode","value":"window"}])");
     QCOMPARE(policy.count(), 1);
     QCOMPARE(cap.count(), 1);
+
+    // As is one from an account's own store, even under a key this holds.
+    feed(s, R"(["event","setting","Changed",
+        {"acc":"me@example.com","key":"attachment_autofetch","value":"everyone"}])");
+    QCOMPARE(s.attachmentAutofetch(), QString("never"));
+    QCOMPARE(policy.count(), 1);
 }
 
 // Pins the key names and the get/set argument shape against the real module.
@@ -188,9 +193,6 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
     s.setChatAvatars(false);
     s.setChatListStyle(QStringLiteral("columns"));
     s.setMediaBackend(QStringLiteral("webrtc"));
-    s.setAnswerTime(true);
-    s.setAnswerLastActivity(true);
-    s.setSendChatMarkers(false);
     // Astral characters and joiners, through the store and back intact.
     const QStringList recent{QStringLiteral("👍🏽"), QStringLiteral("👩‍👩‍👧"),
                              QStringLiteral("🇩🇪")};
@@ -216,10 +218,6 @@ void TestAppSettings::settingsRoundTripThroughTheBackend() {
         readback.chatListStyle() == QLatin1String("columns"), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(
         readback.mediaBackend() == QLatin1String("webrtc"), 5000);
-    // Each the opposite of its default, so only a stored value passes.
-    QTRY_VERIFY_WITH_TIMEOUT(readback.answerTime(), 5000);
-    QTRY_VERIFY_WITH_TIMEOUT(readback.answerLastActivity(), 5000);
-    QTRY_VERIFY_WITH_TIMEOUT(!readback.sendChatMarkers(), 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.recentEmoji() == recent, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(readback.emojiTones() == QStringList({"👍🏽"}), 5000);
     // Stored is not running: the backend answers with what it could open,

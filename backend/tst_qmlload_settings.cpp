@@ -210,6 +210,46 @@ private slots:
         e.assertNoErrors();
     }
 
+    // What the account tells its contacts sits on its own page, shows that
+    // account's store and writes to it the moment a box is toggled.
+    void thePrivacyCardIsTheAccounts() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        AccountSettings *settings = app->accountSettingsFor("me@example.com");
+        QVERIFY(settings);
+
+        QObject *time = w->findChild<QObject *>("answerTimeBox");
+        QObject *away = w->findChild<QObject *>("answerLastActivityBox");
+        QObject *receipts = w->findChild<QObject *>("sendChatMarkersBox");
+        QVERIFY(time && away && receipts);
+        QVERIFY(!time->property("checked").toBool());
+        QVERIFY(!away->property("checked").toBool());
+        QVERIFY(receipts->property("checked").toBool());
+
+        settings->handleEvent("setting", "Changed",
+                              QVariantMap{{"acc", "me@example.com"},
+                                          {"key", "answer_time"}, {"value", "1"}});
+        QCoreApplication::processEvents();
+        QVERIFY(time->property("checked").toBool());
+
+        const QString shot = qEnvironmentVariable("QUACK_SHOT");
+        if (!shot.isEmpty())
+            w->grabWindow().save(shot);
+
+        // As a click does: the box flips, then says so.
+        QVERIFY(QMetaObject::invokeMethod(receipts, "toggle"));
+        QVERIFY(QMetaObject::invokeMethod(receipts, "toggled"));
+        QVERIFY(!settings->sendChatMarkers());
+
+        holder.reset();
+        QCoreApplication::processEvents();
+        e.assertNoErrors();
+    }
+
     // Why the account can't connect leads the page while it stands, in full
     // and copyable, whatever the cause; getting through takes the card away.
     void aConnectionErrorHasACardOfItsOwn() {

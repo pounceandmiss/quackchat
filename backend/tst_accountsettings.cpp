@@ -48,7 +48,61 @@ private slots:
     void refetchesNickOnReady();
     void serverPasswordChangeReadsBackTheStoredOne();
     void serverPasswordRefusalIsKeptForTheDialog();
+    void privacySettingsFollowOnlyTheirAccount();
+    void privacyWritesCarryTheAccount();
+    void integrationPrivacySettingsArePerAccount();
 };
+
+// tacky's defaults until something is stored, and only this account's own
+// store moves them: a global <Changed> has no acc, another account's has its.
+void TestAccountSettings::privacySettingsFollowOnlyTheirAccount() {
+    AccountSettings s;
+    TackyBackend backend; // handleEvent wants one; nothing is sent
+    s.setBackend(&backend);
+    s.setAccount("me@h");
+    QVERIFY(!s.answerTime());
+    QVERIFY(!s.answerLastActivity());
+    QVERIFY(s.sendChatMarkers());
+
+    QSignalSpy time(&s, &AccountSettings::answerTimeChanged);
+    QSignalSpy markers(&s, &AccountSettings::sendChatMarkersChanged);
+    s.handleEvent("setting", "Changed",
+                  QVariantMap{{"key", "answer_time"}, {"value", "1"}});
+    s.handleEvent("setting", "Changed",
+                  QVariantMap{{"acc", "other@h"}, {"key", "answer_time"}, {"value", "1"}});
+    QVERIFY(!s.answerTime());
+    QCOMPARE(time.count(), 0);
+
+    s.handleEvent("setting", "Changed",
+                  QVariantMap{{"acc", "me@h"}, {"key", "answer_time"}, {"value", "1"}});
+    QVERIFY(s.answerTime());
+    QCOMPARE(time.count(), 1);
+
+    // Unwritten leaves receipts on; "0" is the only way off.
+    s.handleEvent("setting", "Changed",
+                  QVariantMap{{"acc", "me@h"}, {"key", "send_chat_markers"}, {"value", ""}});
+    QVERIFY(s.sendChatMarkers());
+    s.handleEvent("setting", "Changed",
+                  QVariantMap{{"acc", "me@h"}, {"key", "send_chat_markers"}, {"value", "0"}});
+    QVERIFY(!s.sendChatMarkers());
+    QCOMPARE(markers.count(), 1);
+}
+
+void TestAccountSettings::privacyWritesCarryTheAccount() {
+    TackyBackend backend; // not started: the write is fire-and-forget
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@h");
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    s.setSendChatMarkers(false);
+    QVERIFY(!s.sendChatMarkers()); // shown before the round trip
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.first().at(0).toString(), QString("setting"));
+    QCOMPARE(sent.first().at(1).toString(), QString("set"));
+    QCOMPARE(sent.first().at(2).toMap(),
+             (QVariantMap{{"acc", "me@h"}, {"key", "send_chat_markers"}, {"value", "0"}}));
+}
 
 // The server has the new password and tacky stored it too, so the field is
 // re-read from the account row rather than filled with what was typed.
@@ -398,6 +452,46 @@ void TestAccountSettings::integrationSavesTor() {
     QVERIFY(s.saving());
     QTRY_COMPARE_WITH_TIMEOUT(saved.count(), 2, 5000);
     QVERIFY(!s.tor());
+
+    backend.stop();
+}
+
+// Pins the argument shape against the real module, and that two accounts
+// keep apart what each tells its contacts.
+void TestAccountSettings::integrationPrivacySettingsArePerAccount() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    for (const QString &user : {QStringLiteral("me"), QStringLiteral("you")})
+        backend.notify("account", "add",
+                       QVariantMap{{"acc", user + "@example.com"},
+                                   {"password", "pw"},
+                                   {"domain", "example.com"},
+                                   {"username", user}});
+
+    AccountSettings me;
+    me.setBackend(&backend);
+    me.setAccount("me@example.com");
+    AccountSettings you;
+    you.setBackend(&backend);
+    you.setAccount("you@example.com");
+    me.setAnswerTime(true);
+    me.setSendChatMarkers(false);
+    you.setAnswerLastActivity(true);
+    you.setSendChatMarkers(false);
+
+    // send_chat_markers is asked last, so once it is in so are the others.
+    AccountSettings meBack;
+    meBack.setBackend(&backend);
+    meBack.setAccount("me@example.com");
+    AccountSettings youBack;
+    youBack.setBackend(&backend);
+    youBack.setAccount("you@example.com");
+    QTRY_VERIFY_WITH_TIMEOUT(!meBack.sendChatMarkers(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!youBack.sendChatMarkers(), 5000);
+    QVERIFY(meBack.answerTime());
+    QVERIFY(!meBack.answerLastActivity());
+    QVERIFY(!youBack.answerTime());
+    QVERIFY(youBack.answerLastActivity());
 
     backend.stop();
 }

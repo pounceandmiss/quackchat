@@ -12,9 +12,9 @@ import Quack
 // AccountSettingsWindow on desktop and as a full-screen sheet on mobile, so it
 // carries its own header and footer.
 //
-// The credential, the route and the name are edited and then saved. The OMEMO controls
-// are not: a trust change is written the moment it is picked, so Cancel has
-// nothing to undo there.
+// The credential, the route and the name are edited and then saved. The privacy
+// and OMEMO controls are not: each is written the moment it is picked, so
+// Cancel has nothing to undo there.
 Page {
     id: page
     objectName: "accountSettingsPage"
@@ -137,6 +137,12 @@ Page {
     component Caption: Text {
         color: Theme.textDim
         font.pixelSize: 11
+    }
+
+    component SettingBox: CheckBox {
+        Layout.fillWidth: true
+        padding: 0
+        font.pixelSize: 14
     }
 
     // The picture is published on its own, so this is not wired to Save.
@@ -472,6 +478,36 @@ Page {
                     Layout.fillWidth: true
                     visible: page.routeDirty
                     text: qsTr("Saving reconnects the account, ending any call or transfer it has going.")
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            // What the account tells its contacts. Written as toggled, like
+            // the trust controls below.
+            Card {
+                SectionTitle { text: qsTr("Privacy") }
+
+                SettingBox {
+                    objectName: "answerTimeBox"
+                    text: qsTr("Let contacts see my local time")
+                    checked: page.settings ? page.settings.answerTime : false
+                    onToggled: if (page.settings) page.settings.setAnswerTime(checked)
+                }
+                SettingBox {
+                    objectName: "answerLastActivityBox"
+                    text: qsTr("Let contacts see how long I've been away")
+                    checked: page.settings ? page.settings.answerLastActivity : false
+                    onToggled: if (page.settings) page.settings.setAnswerLastActivity(checked)
+                }
+                SettingBox {
+                    objectName: "sendChatMarkersBox"
+                    text: qsTr("Send read receipts")
+                    checked: page.settings ? page.settings.sendChatMarkers : true
+                    onToggled: if (page.settings) page.settings.setSendChatMarkers(checked)
+                }
+                Caption {
+                    Layout.fillWidth: true
+                    text: qsTr("Applies to this account. Only contacts who see your online status can ask your time or are sent receipts, and receipts are never sent in group chats.")
                     wrapMode: Text.WordWrap
                 }
             }

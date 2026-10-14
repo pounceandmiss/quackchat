@@ -5,6 +5,12 @@
 #include "AvatarEncoder.h"
 #include "TackyBackend.h"
 
+namespace {
+const QLatin1String kAnswerTime("answer_time");
+const QLatin1String kAnswerLastActivity("answer_last_activity");
+const QLatin1String kSendChatMarkers("send_chat_markers");
+} // namespace
+
 AccountSettings::AccountSettings(QObject *parent) : QObject(parent) {}
 
 void AccountSettings::setAccount(const QString &acc) {
@@ -37,6 +43,19 @@ void AccountSettings::refresh() {
         m_backend->request(QStringLiteral("account"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("acc"), m_account}});
     requestNick();
+    requestSettings();
+}
+
+// The account's own store: tacky's setting module, given an acc.
+void AccountSettings::requestSettings() {
+    const auto get = [this](const QString &key) {
+        return m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
+                                  QVariantMap{{QStringLiteral("acc"), m_account},
+                                              {QStringLiteral("key"), key}});
+    };
+    m_answerTimeToken = get(kAnswerTime);
+    m_answerLastActivityToken = get(kAnswerLastActivity);
+    m_sendChatMarkersToken = get(kSendChatMarkers);
 }
 
 // Our own nick, so the subject is the account itself.
@@ -172,6 +191,14 @@ void AccountSettings::handleEvent(const QString &module, const QString &name,
                                   const QVariant &args) {
     if (!m_backend)
         return;
+    // A setting <Changed> without an acc is the global store's.
+    if (module == QLatin1String("setting") && name == QLatin1String("Changed")) {
+        const QVariantMap a = args.toMap();
+        if (a.value(QStringLiteral("acc")).toString() == m_account)
+            applySetting(a.value(QStringLiteral("key")).toString(),
+                         a.value(QStringLiteral("value")).toString());
+        return;
+    }
     // tacky narrates a publish in two steps (data, then metadata), which is the
     // only progress there is to show while the upload is out.
     if (module == QLatin1String("avatar") && name == QLatin1String("Progress")) {
@@ -199,7 +226,13 @@ void AccountSettings::handleEvent(const QString &module, const QString &name,
 }
 
 void AccountSettings::handleResult(int token, const QVariant &data) {
-    if (token == m_getToken) {
+    if (token == m_answerTimeToken) {
+        applySetting(kAnswerTime, data.toString());
+    } else if (token == m_answerLastActivityToken) {
+        applySetting(kAnswerLastActivity, data.toString());
+    } else if (token == m_sendChatMarkersToken) {
+        applySetting(kSendChatMarkers, data.toString());
+    } else if (token == m_getToken) {
         applyAccount(data.toMap());
     } else if (token == m_nickGetToken) {
         applyNick(data.toString());
@@ -232,6 +265,20 @@ void AccountSettings::handleResult(int token, const QVariant &data) {
 // A failed read (no such account yet, or no backend) leaves the fields alone
 // rather than blanking what the user typed, so only the write is reported.
 void AccountSettings::handleError(int token, const QString &message) {
+    // A setting never read leaves the default standing. Dropping the token
+    // keeps a late reply from landing on a question already asked again.
+    if (token == m_answerTimeToken) {
+        m_answerTimeToken = -1;
+        return;
+    }
+    if (token == m_answerLastActivityToken) {
+        m_answerLastActivityToken = -1;
+        return;
+    }
+    if (token == m_sendChatMarkersToken) {
+        m_sendChatMarkersToken = -1;
+        return;
+    }
     if (token == m_avatarToken) {
         // Where a rejected publish lands: the server's reason, a dispatch that
         // threw before sending, or the request timing out unanswered.
@@ -310,4 +357,54 @@ void AccountSettings::setAvatarStatus(const QString &text, bool error) {
     m_avatarStatus = text;
     m_avatarError = error;
     emit avatarStatusChanged();
+}
+
+// An empty value is a key never written, which leaves tacky's default in force
+// - so it leaves ours alone too.
+void AccountSettings::applySetting(const QString &key, const QString &value) {
+    if (value.isEmpty())
+        return;
+    if (key == kAnswerTime) {
+        // Off unless "1", the way tacky reads it.
+        const bool on = value == QLatin1String("1");
+        if (m_answerTime == on)
+            return;
+        m_answerTime = on;
+        emit answerTimeChanged();
+    } else if (key == kAnswerLastActivity) {
+        const bool on = value == QLatin1String("1");
+        if (m_answerLastActivity == on)
+            return;
+        m_answerLastActivity = on;
+        emit answerLastActivityChanged();
+    } else if (key == kSendChatMarkers) {
+        const bool on = value != QLatin1String("0");
+        if (m_sendChatMarkers == on)
+            return;
+        m_sendChatMarkers = on;
+        emit sendChatMarkersChanged();
+    }
+}
+
+void AccountSettings::writeSetting(const QString &key, bool on) {
+    if (!m_backend || m_account.isEmpty())
+        return;
+    const QString value = on ? QStringLiteral("1") : QStringLiteral("0");
+    m_backend->notify(QStringLiteral("setting"), QStringLiteral("set"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("key"), key},
+                                  {QStringLiteral("value"), value}});
+    applySetting(key, value); // <Changed> confirms; don't wait to redraw
+}
+
+void AccountSettings::setAnswerTime(bool on) {
+    writeSetting(kAnswerTime, on);
+}
+
+void AccountSettings::setAnswerLastActivity(bool on) {
+    writeSetting(kAnswerLastActivity, on);
+}
+
+void AccountSettings::setSendChatMarkers(bool on) {
+    writeSetting(kSendChatMarkers, on);
 }

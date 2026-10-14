@@ -22,9 +22,6 @@ const QLatin1String kLogNative("log_native");
 const QLatin1String kLogRedact("log_redact_content");
 const QLatin1String kChatAvatars("chat_avatars");
 const QLatin1String kChatListStyle("chat_list_style");
-const QLatin1String kAnswerTime("answer_time");
-const QLatin1String kAnswerLastActivity("answer_last_activity");
-const QLatin1String kSendChatMarkers("send_chat_markers");
 // Space-separated: no emoji has a space in it.
 const QLatin1String kRecentEmoji("emoji_recent");
 const QLatin1String kEmojiTones("emoji_tones");
@@ -77,15 +74,6 @@ void AppSettings::refresh() {
     m_mediaBackendToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kMediaBackend}});
-    m_answerTimeToken =
-        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
-                           QVariantMap{{QStringLiteral("key"), kAnswerTime}});
-    m_answerLastActivityToken =
-        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
-                           QVariantMap{{QStringLiteral("key"), kAnswerLastActivity}});
-    m_sendChatMarkersToken =
-        m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
-                           QVariantMap{{QStringLiteral("key"), kSendChatMarkers}});
     m_recentEmojiToken =
         m_backend->request(QStringLiteral("setting"), QStringLiteral("get"),
                            QVariantMap{{QStringLiteral("key"), kRecentEmoji}});
@@ -117,12 +105,6 @@ void AppSettings::handleResult(int token, const QVariant &data) {
         applyValue(kChatListStyle, data.toString());
     else if (token == m_mediaBackendToken)
         applyValue(kMediaBackend, data.toString());
-    else if (token == m_answerTimeToken)
-        applyValue(kAnswerTime, data.toString());
-    else if (token == m_answerLastActivityToken)
-        applyValue(kAnswerLastActivity, data.toString());
-    else if (token == m_sendChatMarkersToken)
-        applyValue(kSendChatMarkers, data.toString());
     else if (token == m_recentEmojiToken)
         applyValue(kRecentEmoji, data.toString());
     else if (token == m_emojiTonesToken)
@@ -158,12 +140,6 @@ void AppSettings::handleError(int token, const QString &message) {
         m_chatListStyleToken = -1;
     else if (token == m_mediaBackendToken)
         m_mediaBackendToken = -1;
-    else if (token == m_answerTimeToken)
-        m_answerTimeToken = -1;
-    else if (token == m_answerLastActivityToken)
-        m_answerLastActivityToken = -1;
-    else if (token == m_sendChatMarkersToken)
-        m_sendChatMarkersToken = -1;
     else if (token == m_recentEmojiToken)
         m_recentEmojiToken = -1;
     else if (token == m_emojiTonesToken)
@@ -174,11 +150,13 @@ void AppSettings::handleError(int token, const QString &message) {
 
 void AppSettings::handleEvent(const QString &module, const QString &name,
                               const QVariant &args) {
-    // Global, so there is no acc to filter on; applyValue ignores the keys
-    // this does not hold.
+    // applyValue ignores the keys this does not hold. One with an acc is from
+    // an account's own store, which is AccountSettings' to follow.
     if (module != QLatin1String("setting") || name != QLatin1String("Changed"))
         return;
     const QVariantMap a = args.toMap();
+    if (a.contains(QStringLiteral("acc")))
+        return;
     applyValue(a.value(QStringLiteral("key")).toString(),
                a.value(QStringLiteral("value")).toString());
 }
@@ -256,25 +234,6 @@ void AppSettings::applyValue(const QString &key, const QString &value) {
             return;
         m_chatListStyle = value;
         emit chatListStyleChanged();
-    } else if (key == kAnswerTime) {
-        // Off unless "1", the way tacky reads it.
-        const bool on = value == QLatin1String("1");
-        if (m_answerTime == on)
-            return;
-        m_answerTime = on;
-        emit answerTimeChanged();
-    } else if (key == kAnswerLastActivity) {
-        const bool on = value == QLatin1String("1");
-        if (m_answerLastActivity == on)
-            return;
-        m_answerLastActivity = on;
-        emit answerLastActivityChanged();
-    } else if (key == kSendChatMarkers) {
-        const bool on = value != QLatin1String("0");
-        if (m_sendChatMarkers == on)
-            return;
-        m_sendChatMarkers = on;
-        emit sendChatMarkersChanged();
     }
 }
 
@@ -319,18 +278,6 @@ void AppSettings::setChatListStyle(const QString &style) {
     if (!isChatListStyle(style))
         return;
     write(kChatListStyle, style);
-}
-
-void AppSettings::setAnswerTime(bool on) {
-    write(kAnswerTime, on ? QStringLiteral("1") : QStringLiteral("0"));
-}
-
-void AppSettings::setAnswerLastActivity(bool on) {
-    write(kAnswerLastActivity, on ? QStringLiteral("1") : QStringLiteral("0"));
-}
-
-void AppSettings::setSendChatMarkers(bool on) {
-    write(kSendChatMarkers, on ? QStringLiteral("1") : QStringLiteral("0"));
 }
 
 // Only what this build offers, plus "" for automatic: tacky would accept any
