@@ -328,7 +328,13 @@ Item {
         // the ＋ button spilling out and nothing else drawn. `parent` is the
         // window overlay.
         height: parent ? parent.height : 0
-        padding: 0
+        // Every side by name: Material sets each of its own, for its rounded
+        // corners and the system bars, and a side set by name outranks
+        // `padding`. The rail clears the bars itself.
+        topPadding: 0
+        bottomPadding: 0
+        leftPadding: 0
+        rightPadding: 0
         // Over a chat pushed on top of the list, the left edge belongs to going
         // back rather than to the rail.
         interactive: !shell.chatOnTop
