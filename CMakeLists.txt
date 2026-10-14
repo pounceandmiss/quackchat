@@ -626,6 +626,22 @@ if(CMAKE_HOST_UNIX AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/third_party/tacky/.git
     add_test(NAME check-pin
              COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/flatpak/check-pin.sh)
 endif()
+
+# Qt runs qmlimportscanner over every executable that links Qml at configure
+# time, one after another, ~15 s a target and the bulk of a reconfigure. It
+# finds the QML plugins to link in: with a shared Qt only Quack's own, static
+# because `quack` is, which the tests link by hand instead. The finalizer that
+# scans runs at the end of this directory, so setting it here is in time.
+if(QT6_IS_SHARED_LIBS_BUILD)
+    get_property(_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_t IN LISTS _targets)
+        if(_t MATCHES "^tst_")
+            set_target_properties(${_t} PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+            target_sources(${_t} PRIVATE backend/QuackPluginImport.cpp)
+            target_link_libraries(${_t} PRIVATE quackplugin)
+        endif()
+    endforeach()
+endif()
 endif()
 
 # Packaging. Neither half of it is an option to set: whether Qt is static comes
