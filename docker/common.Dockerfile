@@ -80,6 +80,10 @@ RUN dnf -y --disablerepo='*' --enablerepo='vault-*' install epel-release \
 #                            libstdc++ DLL is packaged apart from the compiler.
 #   wine                     windeployqt ships only as a .exe. Without it cpack
 #                            packages a tree with no Qt in it at all.
+#   google-noto-emoji-color  for the tests, not the packages: the emoji picker
+#                            hides what the fonts cannot draw, and DejaVu alone
+#                            draws 😀 but almost nothing else, which leaves it
+#                            next to empty. The AppImage ships no fonts.
 # curl is absent on purpose: the base image's curl-minimal already provides
 # /usr/bin/curl and conflicts with the full package, failing the transaction.
 RUN dnf -y --disablerepo='*' --enablerepo='vault-*' --enablerepo=epel install \
@@ -95,7 +99,7 @@ RUN dnf -y --disablerepo='*' --enablerepo='vault-*' --enablerepo=epel install \
         xcb-util-renderutil xcb-util-wm xcb-util-cursor \
         libSM libICE glib2 freetype dbus-libs \
         mingw64-gcc mingw64-gcc-c++ mingw64-libstdc++ mingw64-winpthreads-static \
-        wine \
+        wine google-noto-emoji-color-fonts \
     && dnf clean all
 
 # No dnf runs after this point, so nothing will rewrite these. Switching the live
