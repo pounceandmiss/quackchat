@@ -11,7 +11,7 @@ ChatListModel::ChatListModel(QObject *parent)
     : MapListModel({"jid", "name", "source", "groupchat", "autojoin",
                     "last_activity", "subscription", "room_state", "room_reason",
                     "unread", "unread_mentions", "invited", "preview",
-                    "is_self", "pinned", "order"},
+                    "is_self", "pinned", "order", "muted"},
                    parent) {}
 
 // One chat's entry, for the views that hold a JID with no row of this model to
@@ -95,6 +95,16 @@ void ChatListModel::removeContact(const QString &jid) {
 void ChatListModel::pin(const QString &jid, bool pinned) {
     sendEdit(QStringLiteral("chatlist"), QStringLiteral("pin"),
              {{QStringLiteral("jid"), jid}, {QStringLiteral("pinned"), pinned}});
+}
+
+// The notify policy is keyed by `chat`, not `jid`, so it skips sendEdit.
+void ChatListModel::setMuted(const QString &jid, bool muted) {
+    if (!m_backend || m_account.isEmpty() || jid.isEmpty())
+        return;
+    m_backend->notify(QStringLiteral("notify"), QStringLiteral("set"),
+                      QVariantMap{{QStringLiteral("acc"), m_account},
+                                  {QStringLiteral("chat"), jid},
+                                  {QStringLiteral("muted"), muted}});
 }
 
 void ChatListModel::setPinned(const QStringList &jids) {

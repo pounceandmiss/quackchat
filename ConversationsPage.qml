@@ -398,6 +398,7 @@ Page {
             required property string preview
             required property bool is_self
             required property bool pinned
+            required property bool muted
             required property int index
             // The whole entry, for the row menu: it wants the bookmark fields
             // too, and naming each one here would be a second copy of the
@@ -552,6 +553,14 @@ Page {
                     color: Theme.textDim
                     size: 16
                 }
+                Glyph {
+                    objectName: "mutedGlyph"
+                    Layout.rightMargin: row.edge
+                    visible: row.muted
+                    path: Icons.volumeOff
+                    color: Theme.textDim
+                    size: 16
+                }
 
                 // Someone named you in there. The Tk list says this by bolding
                 // the row, which is no signal here - the name is already bold -
@@ -665,6 +674,7 @@ Page {
         onPopOutChat: page.popOutChat(jid, chatTitle, groupchat)
         onStartCall: App.calls.start(page.account, jid)
         onTogglePin: if (page.chatList) page.chatList.pin(jid, !pinned)
+        onToggleMute: if (page.chatList) page.chatList.setMuted(jid, !muted)
         onAddContact: if (page.chatList) page.chatList.addContact(jid, "")
         onJoinRoom: if (page.chatList) page.chatList.joinRoom(jid)
         onLeaveRoom: if (page.chatList) page.chatList.leaveRoom(jid)

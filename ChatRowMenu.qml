@@ -25,6 +25,7 @@ AppMenu {
     // The chat with the account's own JID: no one to call or add.
     property bool isSelf: false
     property bool pinned: false
+    property bool muted: false
     property bool autojoin: false
     property string roomState: ""
     property string roomReason: ""
@@ -35,6 +36,7 @@ AppMenu {
     signal popOutChat()
     signal startCall()
     signal togglePin()
+    signal toggleMute()
     signal addContact()
     signal renameContact()
     signal removeContact()
@@ -52,6 +54,7 @@ AppMenu {
         menu.jid = entry.jid ?? ""
         menu.isSelf = entry.is_self === true
         menu.pinned = entry.pinned === true
+        menu.muted = entry.muted === true
         // The row's own title rule: an unnamed chat goes by its JID.
         menu.chatTitle = menu.isSelf ? qsTr("Note to self")
                        : entry.name ? entry.name : menu.jid
@@ -138,6 +141,13 @@ AppMenu {
         objectName: "pinEntry"
         text: menu.pinned ? qsTr("Unpin") : qsTr("Pin")
         onTriggered: menu.togglePin()
+    }
+    // A mention still alerts through a mute. Notes to self never alert.
+    MenuEntry {
+        objectName: "muteEntry"
+        text: menu.muted ? qsTr("Unmute") : qsTr("Mute")
+        offered: !menu.isSelf
+        onTriggered: menu.toggleMute()
     }
 
     // Membership, not attendance: joining remembers the room (autojoin), and

@@ -34,6 +34,7 @@ public:
         IsSelfRole, // the chat with the account's own JID: notes to yourself
         PinnedRole,
         OrderRole, // tacky's opaque sort key: larger sits higher
+        MutedRole, // no alerts but mentions; rooms start out muted
     };
     Q_ENUM(Role)
 
@@ -75,6 +76,8 @@ public:
     // takes the whole pinned list, top first.
     Q_INVOKABLE void pin(const QString &jid, bool pinned);
     Q_INVOKABLE void setPinned(const QStringList &jids);
+    // Silences a chat's alerts, bar mentions; tacky applies the policy.
+    Q_INVOKABLE void setMuted(const QString &jid, bool muted);
     // Re-ask the server for the roster and the bookmarks, then reload. refresh()
     // alone only re-reads what tacky already has stored.
     Q_INVOKABLE void reload();

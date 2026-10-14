@@ -45,6 +45,7 @@ private slots:
     void contactEditsGoOutAsRosterCommands();
     void roomEditsGoOutAsBookmarkCommands();
     void pinsGoOutAsChatlistCommands();
+    void mutesGoOutAsNotifySet();
     void editsWithoutAnAccountOrJidAreDropped();
     void reloadReAsksTheServer();
 };
@@ -420,6 +421,29 @@ void TestChatList::pinsGoOutAsChatlistCommands() {
     QCOMPARE(sent.at(2).at(2).toMap().value("jids").toStringList(),
              QStringList({"b@h", "a@h"}));
     QCOMPARE(m.rowCount(), 0);
+}
+
+// setMuted() names the chat as `chat`, which is what notify set takes, and the
+// row only changes when tacky's <Item> brings the new policy back.
+void TestChatList::mutesGoOutAsNotifySet() {
+    TackyBackend backend;
+    ChatListModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.applyList(entriesFrom(R"([{"jid":"bob@h","order":1,"muted":false}])"));
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.setMuted("bob@h", true);
+    m.setMuted("room@muc?join", false);
+    QCOMPARE(framesFrom(sent),
+             QStringList({"notify/set acc=me@h chat=bob@h muted=true",
+                          "notify/set acc=me@h chat=room@muc?join muted=false"}));
+    QVERIFY(!m.data(m.index(0), ChatListModel::MutedRole).toBool());
+
+    feedEvent(m, R"(["event","chatlist","Item",
+        {"acc":"me@h","jid":"bob@h","item":{"jid":"bob@h","order":1,"muted":true}}])");
+    QVERIFY(m.data(m.index(0), ChatListModel::MutedRole).toBool());
+    QCOMPARE(m.roleNames().value(ChatListModel::MutedRole), QByteArray("muted"));
 }
 
 // The JID goes out exactly as the row holds it, `?join` and all - stripping it

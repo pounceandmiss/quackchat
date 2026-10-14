@@ -758,6 +758,71 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A muted row says so, and the menu offers the other way round.
+    void mutedRowsShowItAndTheMenuFlipsIt() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        ChatListModel *chats = app->chatListFor("me@example.com");
+        QVERIFY(chats);
+        chats->applyList(QJsonDocument::fromJson(R"([
+            {"jid":"bob@example.com","name":"Bob","muted":true,"order":2},
+            {"jid":"amy@example.com","name":"Amy","muted":false,"order":1}
+        ])").array().toVariantList());
+
+        QQuickWindow win;
+        win.resize(360, 500);
+        win.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&win));
+
+        QQmlComponent comp(&e, "Quack", "ConversationsPage");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"account", "me@example.com"},
+             {"width", win.width()},
+             {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *page = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(page);
+        page->setParentItem(win.contentItem());
+
+        QQuickItem *list = findItem(win.contentItem(), "chatList");
+        QVERIFY(list);
+        QTRY_COMPARE(list->property("count").toInt(), 2);
+        win.grabWindow();
+        auto rowAt = [&](int i) {
+            QQuickItem *item = nullptr;
+            QMetaObject::invokeMethod(list, "itemAtIndex",
+                                      Q_RETURN_ARG(QQuickItem *, item), Q_ARG(int, i));
+            return item;
+        };
+        QVERIFY(findItem(rowAt(0), "mutedGlyph")->isVisible());
+        QVERIFY(!findItem(rowAt(1), "mutedGlyph")->isVisible());
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QObject *menu = page->findChild<QObject *>("chatRowMenu");
+        QVERIFY(menu);
+        QObject *muteEntry = menu->findChild<QObject *>("muteEntry");
+        QVERIFY(muteEntry);
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "load", Q_ARG(QVariant, QVariant(chats->entryFor("bob@example.com")))));
+        QCOMPARE(muteEntry->property("text").toString(), QString("Unmute"));
+        QVERIFY(QMetaObject::invokeMethod(muteEntry, "triggered"));
+        QVERIFY(QMetaObject::invokeMethod(
+            menu, "load", Q_ARG(QVariant, QVariant(chats->entryFor("amy@example.com")))));
+        QCOMPARE(muteEntry->property("text").toString(), QString("Mute"));
+        QVERIFY(QMetaObject::invokeMethod(muteEntry, "triggered"));
+        QCOMPARE(sent.count(), 2);
+        QCOMPARE(sent.at(0).at(0).toString(), QString("notify"));
+        QCOMPARE(sent.at(0).at(1).toString(), QString("set"));
+        QCOMPARE(sent.at(0).at(2).toMap().value("chat").toString(), QString("bob@example.com"));
+        QVERIFY(!sent.at(0).at(2).toMap().value("muted").toBool());
+        QCOMPARE(sent.at(1).at(2).toMap().value("chat").toString(), QString("amy@example.com"));
+        QVERIFY(sent.at(1).at(2).toMap().value("muted").toBool());
+
+        e.assertNoErrors();
+    }
+
     // Notes to yourself: named so, with nobody to call or add, and never a
     // roster entry when typed into the new-chat sheet.
     void notesToSelf() {
