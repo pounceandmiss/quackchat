@@ -12,9 +12,10 @@
 // its own progress, so it is applied the moment a picture is picked, like the
 // OMEMO trust controls.
 //
-// The proxy is saved with the rest, but last: tacky starts the account over
-// when it changes, which would fail a nickname write still out on the old
-// session. A malformed one is refused, and the refusal is the status.
+// The route (proxy and tor) is saved with the rest, but last: tacky starts
+// the account over when it changes, which would fail a nickname write still
+// out on the old session. A malformed proxy is refused, and the refusal is the
+// status.
 #ifndef ACCOUNTSETTINGS_H
 #define ACCOUNTSETTINGS_H
 
@@ -36,7 +37,10 @@ class AccountSettings : public QObject {
     Q_PROPERTY(QString password READ password NOTIFY passwordChanged)
     Q_PROPERTY(QString nick READ nick NOTIFY nickChanged)
     // socks5://[user:pass@]host:port, or empty to connect directly.
+    // With tor set, where Tor's SOCKS port is, empty for 127.0.0.1:9050.
     Q_PROPERTY(QString proxy READ proxy NOTIFY proxyChanged)
+    // Whether the account goes through Tor, on circuits of its own.
+    Q_PROPERTY(bool tor READ tor NOTIFY proxyChanged)
     // Why tacky refused the last proxy saved, in full: it is shown under the
     // field, where the one-line status would cut it short. Cleared by the next
     // save.
@@ -69,6 +73,7 @@ public:
     QString password() const { return m_password; }
     QString nick() const { return m_nick; }
     QString proxy() const { return m_proxy; }
+    bool tor() const { return m_tor; }
     QString proxyError() const { return m_proxyError; }
     QString status() const { return m_status; }
     bool statusError() const { return m_statusError; }
@@ -91,7 +96,7 @@ public:
     // Writes whatever differs from what was loaded. saved() follows once the
     // writes are through, which for the nickname means the server said yes.
     Q_INVOKABLE void save(const QString &password, const QString &nick,
-                          const QString &proxy);
+                          const QString &proxy, bool tor);
 
     // Change the password on the server. On success tacky stores the new one
     // too; serverPasswordChanged() follows, and a failure lands in
@@ -144,13 +149,15 @@ private:
     QString m_nick;
     QString m_proxy;
     QString m_proxyError;
+    bool m_tor = false;
     QString m_pendingProxy; // what save() was given, written after the nick
+    bool m_pendingTor = false;
     QString m_status;
     bool m_statusError = false;
     int m_getToken = -1;
     int m_nickGetToken = -1;
     int m_nickToken = -1; // in flight `nick set`
-    int m_proxyToken = -1; // in flight `account set` of the proxy
+    int m_proxyToken = -1; // in flight `account set` of the route
     int m_avatarToken = -1; // in flight `avatar publish` / `avatar disable`
     int m_changePasswordToken = -1; // in flight `account changePassword`
     QString m_changePasswordError;

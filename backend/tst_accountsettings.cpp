@@ -44,6 +44,7 @@ private slots:
     void integrationAvatarPublishFailureIsReported();
     void integrationSavesProxy();
     void integrationMalformedProxyIsRefused();
+    void integrationSavesTor();
     void refetchesNickOnReady();
     void serverPasswordChangeReadsBackTheStoredOne();
     void serverPasswordRefusalIsKeptForTheDialog();
@@ -225,7 +226,7 @@ void TestAccountSettings::integrationLoadsAndSavesPassword() {
 
     QSignalSpy saved(&s, &AccountSettings::saved);
     QSignalSpy sent(&backend, &TackyBackend::sent);
-    s.save("new", s.nick(), s.proxy());
+    s.save("new", s.nick(), s.proxy(), s.tor());
     QCOMPARE(saved.count(), 1); // nothing to wait on but the local write
     QCOMPARE(sent.count(), 1);
     QCOMPARE(sent.first().at(1).toString(), QString("set"));
@@ -255,7 +256,7 @@ void TestAccountSettings::integrationSaveWithoutChangesIsNoWrite() {
     QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("old"), 5000);
 
     QSignalSpy saved(&s, &AccountSettings::saved);
-    s.save(s.password(), s.nick(), s.proxy());
+    s.save(s.password(), s.nick(), s.proxy(), s.tor());
     QCOMPARE(saved.count(), 1);
     QCOMPARE(s.status(), QString()); // nothing was written, so nothing to report
     QVERIFY(!s.saving());
@@ -314,7 +315,7 @@ void TestAccountSettings::integrationSavesProxy() {
     QCOMPARE(s.proxy(), QString());
 
     QSignalSpy saved(&s, &AccountSettings::saved);
-    s.save(s.password(), s.nick(), "socks5://127.0.0.1:9050");
+    s.save(s.password(), s.nick(), "socks5://127.0.0.1:9050", false);
     QVERIFY(s.saving());
     QTRY_COMPARE_WITH_TIMEOUT(saved.count(), 1, 5000);
     QVERIFY(!s.saving());
@@ -346,7 +347,7 @@ void TestAccountSettings::integrationMalformedProxyIsRefused() {
     QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("pw"), 5000);
 
     QSignalSpy saved(&s, &AccountSettings::saved);
-    s.save(s.password(), s.nick(), "http://example.com:8080");
+    s.save(s.password(), s.nick(), "http://example.com:8080", false);
     QTRY_VERIFY_WITH_TIMEOUT(!s.saving(), 5000);
     QCOMPARE(saved.count(), 0);
     QVERIFY(s.statusError());
@@ -356,8 +357,47 @@ void TestAccountSettings::integrationMalformedProxyIsRefused() {
     QCOMPARE(s.proxy(), QString());
 
     // The next save starts clean.
-    s.save(s.password(), s.nick(), s.proxy());
+    s.save(s.password(), s.nick(), s.proxy(), s.tor());
     QVERIFY(s.proxyError().isEmpty());
+
+    backend.stop();
+}
+
+// Real backend: Tor is the tor flag, with proxy left empty for its usual
+// address; both read back from the account row, and turning it off again is
+// a route change of its own.
+void TestAccountSettings::integrationSavesTor() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"},
+                               {"password", "pw"},
+                               {"domain", "example.com"},
+                               {"username", "me"}});
+
+    AccountSettings s;
+    s.setBackend(&backend);
+    s.setAccount("me@example.com");
+    QTRY_COMPARE_WITH_TIMEOUT(s.password(), QString("pw"), 5000);
+    QVERIFY(!s.tor());
+
+    QSignalSpy saved(&s, &AccountSettings::saved);
+    s.save(s.password(), s.nick(), QString(), true);
+    QVERIFY(s.saving());
+    QTRY_COMPARE_WITH_TIMEOUT(saved.count(), 1, 5000);
+    QVERIFY(s.tor());
+    QCOMPARE(s.proxy(), QString());
+
+    s.applyAccount({});
+    QVERIFY(!s.tor());
+    s.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(s.tor(), 5000);
+    QCOMPARE(s.proxy(), QString());
+
+    s.save(s.password(), s.nick(), QString(), false);
+    QVERIFY(s.saving());
+    QTRY_COMPARE_WITH_TIMEOUT(saved.count(), 2, 5000);
+    QVERIFY(!s.tor());
 
     backend.stop();
 }

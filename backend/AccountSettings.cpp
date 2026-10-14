@@ -48,7 +48,7 @@ void AccountSettings::requestNick() {
 }
 
 void AccountSettings::save(const QString &password, const QString &nick,
-                           const QString &proxy) {
+                           const QString &proxy, bool tor) {
     if (!m_backend || m_account.isEmpty())
         return;
 
@@ -63,6 +63,7 @@ void AccountSettings::save(const QString &password, const QString &nick,
     }
 
     m_pendingProxy = proxy;
+    m_pendingTor = tor;
     setProxyError(QString());
     if (nick != m_nick) {
         // Publishing the nickname is a round trip to the server, so this is
@@ -79,10 +80,11 @@ void AccountSettings::save(const QString &password, const QString &nick,
     saveProxy(wrote);
 }
 
-// The last step of a save, after the nickname is through: a changed proxy
-// restarts the account, so tacky's answer is what ends the save.
+// The last step of a save, after the nickname is through: a changed route
+// restarts the account, so tacky's answer is what ends the save. Both fields
+// go in one write, so the account starts over once.
 void AccountSettings::saveProxy(bool wrote) {
-    if (m_pendingProxy == m_proxy) {
+    if (m_pendingProxy == m_proxy && m_pendingTor == m_tor) {
         setStatus(wrote ? tr("Saved") : QString(), false);
         emit saved();
         return;
@@ -90,7 +92,8 @@ void AccountSettings::saveProxy(bool wrote) {
     m_proxyToken =
         m_backend->request(QStringLiteral("account"), QStringLiteral("set"),
                            QVariantMap{{QStringLiteral("acc"), m_account},
-                                       {QStringLiteral("proxy"), m_pendingProxy}});
+                                       {QStringLiteral("proxy"), m_pendingProxy},
+                                       {QStringLiteral("tor"), m_pendingTor}});
     setStatus(tr("Saving"), false);
     emit savingChanged();
 }
@@ -207,6 +210,7 @@ void AccountSettings::handleResult(int token, const QVariant &data) {
     } else if (token == m_proxyToken) {
         m_proxyToken = -1;
         m_proxy = m_pendingProxy;
+        m_tor = m_pendingTor;
         emit proxyChanged();
         emit savingChanged();
         setStatus(tr("Saved"), false);
@@ -258,8 +262,10 @@ void AccountSettings::handleError(int token, const QString &message) {
 
 void AccountSettings::applyAccount(const QVariantMap &row) {
     const QString proxy = row.value(QStringLiteral("proxy")).toString();
-    if (proxy != m_proxy) {
+    const bool tor = row.value(QStringLiteral("tor")).toBool();
+    if (proxy != m_proxy || tor != m_tor) {
         m_proxy = proxy;
+        m_tor = tor;
         emit proxyChanged();
     }
     const QString password = row.value(QStringLiteral("password")).toString();

@@ -161,6 +161,54 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A stored Tor route opens on the Tor choice with its port in Tor's field;
+    // picking the proxy instead shows an empty field of its own, and picking
+    // Tor again finds the port as it was.
+    void theRouteIsAChoiceWithAFieldForEach() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openAccountSettings(e, holder);
+        QVERIFY(w);
+        AccountSettings *settings = app->accountSettingsFor("me@example.com");
+        QVERIFY(settings);
+        settings->applyAccount(QVariantMap{{"proxy", "socks5://127.0.0.1:9150"},
+                                           {"tor", 1}});
+        QCoreApplication::processEvents();
+
+        QObject *page = w->findChild<QObject *>("accountSettingsPage");
+        QObject *box = w->findChild<QObject *>("routeBox");
+        QObject *tor = w->findChild<QObject *>("torField");
+        QObject *proxy = w->findChild<QObject *>("proxyField");
+        QVERIFY(page && box && tor && proxy);
+        QCOMPARE(page->property("route").toString(), QString("tor"));
+        QCOMPARE(box->property("currentIndex").toInt(), 1);
+        QVERIFY(tor->property("visible").toBool());
+        QCOMPARE(tor->property("text").toString(), QString("socks5://127.0.0.1:9150"));
+        QVERIFY(!page->property("dirty").toBool());
+
+        const QString shot = qEnvironmentVariable("QUACK_SHOT");
+        if (!shot.isEmpty()) {
+            QMetaObject::invokeMethod(tor, "forceActiveFocus");
+            w->grabWindow().save(shot);
+        }
+
+        QVERIFY(QMetaObject::invokeMethod(box, "picked", Q_ARG(QVariant, "proxy")));
+        QVERIFY(!tor->property("visible").toBool());
+        QVERIFY(proxy->property("visible").toBool());
+        QCOMPARE(proxy->property("text").toString(), QString());
+        QVERIFY(page->property("dirty").toBool());
+
+        QVERIFY(QMetaObject::invokeMethod(box, "picked", Q_ARG(QVariant, "tor")));
+        QCOMPARE(tor->property("text").toString(), QString("socks5://127.0.0.1:9150"));
+        QVERIFY(!page->property("dirty").toBool());
+
+        holder.reset();
+        QCoreApplication::processEvents();
+        e.assertNoErrors();
+    }
+
     // Why the account can't connect leads the page while it stands, in full
     // and copyable, whatever the cause; getting through takes the card away.
     void aConnectionErrorHasACardOfItsOwn() {

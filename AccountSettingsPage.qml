@@ -7,12 +7,12 @@ import QtQuick.Layouts
 import Quack
 
 // One account's details: the stored login password (and a way to change the
-// one on the server), the proxy it connects through, the published name, this device's OMEMO key, and the
+// one on the server), the route it connects by (directly, Tor or a proxy), the published name, this device's OMEMO key, and the
 // trust state of every other device the account has. Hosted by
 // AccountSettingsWindow on desktop and as a full-screen sheet on mobile, so it
 // carries its own header and footer.
 //
-// The credential, the proxy and the name are edited and then saved. The OMEMO controls
+// The credential, the route and the name are edited and then saved. The OMEMO controls
 // are not: a trust change is written the moment it is picked, so Cancel has
 // nothing to undo there.
 Page {
@@ -43,7 +43,15 @@ Page {
         page.editingNick = false
         page.bindPassword()
         nickField.text = Qt.binding(() => page.settings ? page.settings.nick : "")
-        proxyField.text = Qt.binding(() => page.settings ? page.settings.proxy : "")
+        page.route = Qt.binding(() => !page.settings ? "direct"
+                                      : page.settings.tor ? "tor"
+                                      : page.settings.proxy !== "" ? "proxy" : "direct")
+        // One field per choice, so switching back loses nothing typed. With
+        // tor set, proxy is where Tor listens.
+        torField.text = Qt.binding(() => page.settings && page.settings.tor
+                                         ? page.settings.proxy : "")
+        proxyField.text = Qt.binding(() => page.settings && !page.settings.tor
+                                           ? page.settings.proxy : "")
     }
     onAccountChanged: page.bindAccount()
     Component.onCompleted: page.bindAccount()
@@ -74,10 +82,21 @@ Page {
         return state === "auth-error" || state === "disconnected"
     }
 
+    // How the account reaches its server: "direct", "tor" or "proxy". Bound
+    // to the stored route by bindAccount until a pick replaces it.
+    property string route: "direct"
+    // What a save would write for the route.
+    readonly property string pendingProxy: page.route === "tor" ? torField.text.trim()
+                                         : page.route === "proxy" ? proxyField.text.trim() : ""
+    readonly property bool pendingTor: page.route === "tor"
+    readonly property bool routeDirty: page.settings !== null
+                                       && (page.pendingProxy !== page.settings.proxy
+                                           || page.pendingTor !== page.settings.tor)
+
     readonly property bool dirty: page.settings !== null
                                   && (passwordField.text !== page.settings.password
                                       || nickField.text !== page.settings.nick
-                                      || proxyField.text.trim() !== page.settings.proxy)
+                                      || page.routeDirty)
 
     // Whether this account has an avatar published, which is what decides if
     // there is anything to remove. The hash is the truth here rather than the
@@ -423,9 +442,41 @@ Page {
             Card {
                 SectionTitle { text: qsTr("Connection") }
 
+                ChoiceBox {
+                    objectName: "routeBox"
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("Connect")
+                    entries: [
+                        { label: qsTr("Directly"), value: "direct" },
+                        { label: qsTr("Through Tor"), value: "tor" },
+                        { label: qsTr("Through a SOCKS5 proxy"), value: "proxy" }
+                    ]
+                    current: page.route
+                    onPicked: (value) => page.route = value
+                }
+
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 2
+                    visible: page.route === "tor"
+                    Caption { text: qsTr("Tor's SOCKS port") }
+                    TextField {
+                        id: torField
+                        objectName: "torField"
+                        Layout.fillWidth: true
+                        // Armed by bindAccount. Empty is tacky's default
+                        // address; a login here would be used as given.
+                        placeholderText: qsTr("socks5://127.0.0.1:9050")
+                        inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
+                                          | Qt.ImhNoPredictiveText | Qt.ImhUrlCharactersOnly
+                        onAccepted: if (page.dirty) page.save()
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    visible: page.route === "proxy"
                     Caption { text: qsTr("SOCKS5 proxy") }
                     TextField {
                         id: proxyField
@@ -445,8 +496,11 @@ Page {
                     objectName: "proxyRoute"
                     Layout.fillWidth: true
                     visible: page.liveProxy !== ""
-                    text: page.liveConnected ? qsTr("Connected through %1.").arg(page.liveProxy)
-                                             : qsTr("Connecting through %1…").arg(page.liveProxy)
+                    text: page.settings && page.settings.tor
+                          ? (page.liveConnected ? qsTr("Connected through Tor at %1.").arg(page.liveProxy)
+                                                : qsTr("Connecting through Tor at %1…").arg(page.liveProxy))
+                          : (page.liveConnected ? qsTr("Connected through %1.").arg(page.liveProxy)
+                                                : qsTr("Connecting through %1…").arg(page.liveProxy))
                     color: page.liveConnected ? Theme.positive : Theme.textDim
                     wrapMode: Text.WordWrap
                 }
@@ -463,17 +517,17 @@ Page {
 
                 Caption {
                     Layout.fillWidth: true
-                    text: proxyField.text.trim() !== ""
-                          ? qsTr("Everything this account sends goes through the proxy, files included. Calls are off while it is set.")
-                          : qsTr("Leave empty to connect directly. A login goes in as socks5://user:password@host:port.")
+                    visible: page.route !== "direct"
+                    text: page.route === "tor"
+                          ? qsTr("Everything this account sends goes through Tor, files included, on circuits no other account shares. Calls are off. Leave the port empty for a system Tor or Orbot; Tor Browser listens on socks5://127.0.0.1:9150.")
+                          : qsTr("Everything this account sends goes through the proxy, files included. Calls are off while it is set. A login goes in as socks5://user:password@host:port.")
                     wrapMode: Text.WordWrap
                 }
 
                 // tacky starts the account over on the new route.
                 Caption {
                     Layout.fillWidth: true
-                    visible: page.settings !== null
-                             && proxyField.text.trim() !== page.settings.proxy
+                    visible: page.routeDirty
                     text: qsTr("Saving reconnects the account, ending any call or transfer it has going.")
                     wrapMode: Text.WordWrap
                 }
@@ -631,7 +685,8 @@ Page {
 
     function save() {
         if (page.settings)
-            page.settings.save(passwordField.text, nickField.text, proxyField.text.trim())
+            page.settings.save(passwordField.text, nickField.text, page.pendingProxy,
+                               page.pendingTor)
     }
 
     CopiedNotice {
