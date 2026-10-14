@@ -16,6 +16,7 @@ class TestChatSession : public QObject {
     Q_OBJECT
 private slots:
     void sendingWhileEditingCorrectsInstead();
+    void aMentionOpensOrJoinsTheDraft();
     void cancellingAnEditGivesTheDraftBack();
     void sendingAnEditGivesTheDraftBackToo();
     void aSecondEditKeepsTheFirstStash();
@@ -346,6 +347,20 @@ void TestChatSession::aRemovedAccountTakesItsChatsWithIt() {
     QVERIFY(gone.isNull());
     QVERIFY(goneList.isNull());
     QCOMPARE(app.chatFor("other@h", "a@h", false), kept);
+}
+
+void TestChatSession::aMentionOpensOrJoinsTheDraft() {
+    TackyBackend backend;
+    ChatSession s(&backend, "me@h", "room@muc.h?join", true);
+    s.mention("amy");
+    QCOMPARE(s.draft(), QString("amy: "));
+    s.setDraft(s.draft() + "and");
+    s.mention("zoe");
+    QCOMPARE(s.draft(), QString("amy: and zoe "));
+    s.mention("bo");
+    QCOMPARE(s.draft(), QString("amy: and zoe bo "));
+    s.mention("");
+    QCOMPARE(s.draft(), QString("amy: and zoe bo "));
 }
 
 QTEST_MAIN(TestChatSession)

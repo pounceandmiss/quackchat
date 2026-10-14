@@ -182,12 +182,79 @@ Page {
     function openContact() {
         if (!page.hasChat || page.chatGroupchat || page.isSelf)
             return null
+        return page.openPerson(page.chatJid, page.chatName, "")
+    }
+
+    // Someone's contact details from inside this chat - a room member or a
+    // message's sender - hosted like the chat's own contact. `fp` is the key a
+    // message came from, marked on their list; "" for none.
+    function openPerson(jid, name, fp) {
+        if (jid === "")
+            return null
         if (Theme.mobile) {
+            contactSheet.jid = jid
+            contactSheet.name = name
+            contactSheet.fingerprint = fp
             contactSheet.open()
             return null
         }
-        return AppWindows.contactDetails(page.account, page.chatJid,
-                                         page.chatName)
+        return AppWindows.contactDetails(page.account, jid, name, fp)
+    }
+
+    // Mention someone in this room, from a tap on them here or in the room's
+    // details.
+    function mention(nick) {
+        if (!page.session || nick === "")
+            return
+        page.session.mention(nick)
+        input.cursorPosition = input.length
+        input.forceActiveFocus()
+    }
+
+    // A message's sender, by the occupant JID it came from, whose resource is
+    // their nick. It only edits the draft, so the room need not be joined.
+    function authorTapped(from) {
+        page.mention(Jid.resource(from))
+    }
+
+    // Their menu, once tacky has said who they are: they may have left, or
+    // changed nick. `pos` is in the page's coordinates, since the row may be
+    // gone by the time the answer arrives.
+    property int senderToken: 0
+    property point senderPos
+    property string senderFp: ""
+    function authorMenu(from, occupantId, fp, pos) {
+        page.senderPos = pos
+        page.senderFp = fp
+        page.senderToken = senders.requestPerson(from, occupantId)
+    }
+    MucRoomModel {
+        id: senders
+        backend: App.backend
+        account: page.account
+        jid: page.chatGroupchat ? page.chatJid : ""
+        onPersonAnswered: (token, person) => {
+            if (token !== page.senderToken)
+                return
+            page.senderToken = 0
+            // A failed read, or someone known only by their nick: nothing to
+            // offer.
+            if (person.key === undefined || person.realJid === "")
+                return
+            senderMenu.load(person)
+            senderMenu.popup(page, page.senderPos.x, page.senderPos.y)
+        }
+    }
+    PersonMenu {
+        id: senderMenu
+        onDetailsRequested: {
+            if (senderMenu.self)
+                AppWindows.accountSettings(page.account)
+            else
+                page.openPerson(senderMenu.realJid, senderMenu.nick, page.senderFp)
+        }
+        onConversationRequested: AppWindows.showChat(page.account, senderMenu.realJid)
+        onCopyRequested: Clipboard.setText(senderMenu.realJid)
     }
 
     // Answers whether it had anything to close, so the Android back chain knows
@@ -203,12 +270,16 @@ Page {
         id: contactSheet
         objectName: "contactSheet"
         covers: chatColumn
+        property string jid: ""
+        property string name: ""
+        property string fingerprint: ""
 
         ContactDetailsPage {
             anchors.fill: parent
             account: page.account
-            jid: page.chatJid
-            name: page.chatName
+            jid: contactSheet.jid
+            name: contactSheet.name
+            highlightFingerprint: contactSheet.fingerprint
             onDone: contactSheet.close()
         }
     }
@@ -251,6 +322,11 @@ Page {
             shown: detailsSheet.visible
             omemo: page.chatGroupchat ? page.omemo : null
             onDone: detailsSheet.close()
+            onMentionRequested: (nick) => {
+                detailsSheet.close()
+                page.mention(nick)
+            }
+            onPersonRequested: (jid, name) => page.openPerson(jid, name, "")
         }
     }
 
@@ -1611,6 +1687,8 @@ Page {
                 required property var attachments
                 required property var invite
                 required property var callInvite
+                required property string occupantId
+                required property string senderFp
                 // BottomToTop over a newest-first model puts row index - 1
                 // below this one on screen, so a row whose section differs from
                 // the previous one is the foot of its run. Index 0 has no
@@ -1643,6 +1721,11 @@ Page {
                     // Rooms have many voices; a 1:1 has only the two, already
                     // named by the header and the bubble side.
                     showAuthor: page.chatGroupchat && !wrap.outgoing && !bubble.notice
+                    authorActions: page.chatGroupchat && !wrap.outgoing && !bubble.notice
+                    onAuthorTapped: page.authorTapped(wrap.from)
+                    onAuthorMenuRequested: (pos) => page.authorMenu(
+                        wrap.from, wrap.occupantId, wrap.senderFp,
+                        bubble.mapToItem(page, pos.x, pos.y))
                     avatarAccount: page.account
                     avatarJid: App.settings.chatAvatars && !bubble.notice ? wrap.from : ""
                     showAvatar: wrap.runEnd

@@ -19,6 +19,14 @@ QtObject {
         return cut < 0 ? raw : raw.substring(0, cut)
     }
 
+    // Everything after the first slash, as written. For a room's occupant JID
+    // (room@service/nick) that is the nick; tacky leaves a room message's
+    // `from_resource` empty, so this is where the sender's nick comes from.
+    function resource(jid) {
+        const cut = jid.indexOf("/")
+        return cut < 0 ? "" : jid.substring(cut + 1)
+    }
+
     // Enough to enable an OK button on: a localpart, an @, and a domain. Not
     // tacky's `jid valid-account`, which is stricter than a half-typed address
     // deserves to be judged by.

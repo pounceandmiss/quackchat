@@ -454,82 +454,75 @@ Page {
         }
     }
 
-    // What may be done to one occupant, straight off the caps tacky stamped the
-    // row with. Loaded from the row before it pops up, the way the chat list's
-    // menu is: a menu per delegate is a windowful of scenery for a row that is
-    // usually only looked at.
-    AppMenu {
-        id: occupantMenu
-        objectName: "occupantMenu"
-        width: 240
+    // A tap on someone mentions them in the chat; a long press opens their
+    // menu. The host carries both out, since it knows which chat this page
+    // belongs to and whether contact details open as a sheet or a window.
+    signal mentionRequested(string nick)
+    signal personRequested(string jid, string name)
 
-        property string nick: ""
-        property string realJid: ""
-        property var caps: ({})
+    function mention(person) {
+        if (person.self)
+            return
+        if (!person.present) {
+            copiedNotice.text = qsTr("%1 is not in the room")
+                .arg(person.nick !== "" ? person.nick : person.realJid)
+            copiedNotice.show()
+            return
+        }
+        page.mentionRequested(person.nick)
+    }
 
-        function load(row) {
-            occupantMenu.nick = row.nick
-            occupantMenu.realJid = row.realJid
-            occupantMenu.caps = row.caps
-        }
-        function can(what) { return occupantMenu.caps[what] === true }
+    function openPersonMenu(person, item, x, y) {
+        personMenu.load(person)
+        personMenu.popup(item, x, y)
+    }
 
-        MenuEntry {
-            objectName: "kickEntry"
-            text: qsTr("Kick…")
-            offered: occupantMenu.can("kick")
-            onTriggered: page.ask("kick", qsTr("Kick %1").arg(occupantMenu.nick),
-                                  qsTr("Reason (optional). A kick only lasts "
-                                       + "until they walk back in."),
-                                  "", occupantMenu.nick)
+    PersonMenu {
+        id: personMenu
+        moderation: true
+        onDetailsRequested: {
+            if (personMenu.self)
+                AppWindows.accountSettings(page.account)
+            else
+                page.personRequested(personMenu.realJid, personMenu.nick)
         }
-        MenuEntry {
-            objectName: "banEntry"
-            text: qsTr("Ban…")
-            labelColor: Theme.negative
-            offered: occupantMenu.can("ban")
-            // Against the real JID: an affiliation outlives the nick it was set
-            // on, which is what makes a ban a ban and a kick only a kick.
-            onTriggered: page.ask("ban", qsTr("Ban %1").arg(occupantMenu.nick),
-                                  qsTr("Reason (optional). A ban keeps them out "
-                                       + "until it is lifted."),
-                                  "", occupantMenu.realJid)
+        onConversationRequested: {
+            AppWindows.showChat(page.account, personMenu.realJid)
+            page.done()
         }
-        MenuEntry {
-            objectName: "makeModeratorEntry"
-            text: qsTr("Make moderator")
-            offered: occupantMenu.can("make_moderator")
-            onTriggered: room.setRole(occupantMenu.nick, "moderator")
-        }
-        MenuEntry {
-            objectName: "grantVoiceEntry"
-            text: qsTr("Grant voice")
-            offered: occupantMenu.can("grant_voice")
-            onTriggered: room.setRole(occupantMenu.nick, "participant")
-        }
-        MenuEntry {
-            objectName: "revokeVoiceEntry"
-            text: qsTr("Revoke voice")
-            offered: occupantMenu.can("revoke_voice")
-            onTriggered: room.setRole(occupantMenu.nick, "visitor")
-        }
-        MenuEntry {
-            objectName: "grantMembershipEntry"
-            text: qsTr("Grant membership")
-            offered: occupantMenu.can("grant_membership")
-            onTriggered: room.setAffiliation(occupantMenu.realJid, "member")
-        }
-        MenuEntry {
-            objectName: "revokeMembershipEntry"
-            text: qsTr("Revoke membership")
-            offered: occupantMenu.can("revoke_membership")
-            onTriggered: room.setAffiliation(occupantMenu.realJid, "none")
-        }
-        MenuEntry {
-            objectName: "copyOccupantJidEntry"
-            text: qsTr("Copy address")
-            offered: occupantMenu.realJid !== ""
-            onTriggered: page.copyText(occupantMenu.realJid)
+        onCopyRequested: page.copyText(personMenu.realJid)
+        onModerate: (what) => {
+            switch (what) {
+            case "kick":
+                page.ask("kick", qsTr("Kick %1").arg(personMenu.nick),
+                         qsTr("Reason (optional). A kick only lasts "
+                              + "until they walk back in."),
+                         "", personMenu.nick)
+                break
+            // Against the real JID: an affiliation outlives the nick it was
+            // set on, which is what makes a ban a ban and a kick only a kick.
+            case "ban":
+                page.ask("ban", qsTr("Ban %1").arg(personMenu.nick),
+                         qsTr("Reason (optional). A ban keeps them out "
+                              + "until it is lifted."),
+                         "", personMenu.realJid)
+                break
+            case "make_moderator":
+                room.setRole(personMenu.nick, "moderator")
+                break
+            case "grant_voice":
+                room.setRole(personMenu.nick, "participant")
+                break
+            case "revoke_voice":
+                room.setRole(personMenu.nick, "visitor")
+                break
+            case "grant_membership":
+                room.setAffiliation(personMenu.realJid, "member")
+                break
+            case "revoke_membership":
+                room.setAffiliation(personMenu.realJid, "none")
+                break
+            }
         }
     }
 
@@ -985,16 +978,20 @@ Page {
 
             ItemDelegate {
                 id: occupantRow
+                objectName: "occupantRow"
                 width: personRow.width
                 height: personRow.hasKeys ? 72 : 58
-                onClicked: if (occupantRow.canModerate) {
-                    occupantMenu.load(personRow)
-                    occupantMenu.popup(occupantRow, occupantRow.pressX, occupantRow.pressY)
+                onClicked: page.mention(personRow)
+                ContextMenuArea {
+                    enabled: occupantRow.offersMenu
+                    onRequested: (x, y) => page.openPersonMenu(personRow, occupantRow, x, y)
                 }
 
-                // Nothing to offer means nothing to press. The row is still a
-                // row - it just does not pretend to be a button.
-                readonly property bool canModerate: {
+                // Nothing to offer for someone known only by a nick whom we may
+                // not moderate: there is no address to open or copy.
+                readonly property bool offersMenu: {
+                    if (personRow.realJid !== "")
+                        return true
                     for (const key in personRow.caps)
                         if (personRow.caps[key] === true)
                             return true
@@ -1019,8 +1016,7 @@ Page {
                 }
 
                 background: Rectangle {
-                    color: occupantRow.hovered && occupantRow.canModerate
-                           ? Theme.menuHover : "transparent"
+                    color: occupantRow.hovered ? Theme.menuHover : "transparent"
                 }
 
                 contentItem: RowLayout {
@@ -1126,10 +1122,10 @@ Page {
                         iconSize: 18
                         Accessible.name: qsTr("Actions for this person")
                         glyphColor: Theme.textDim
-                        visible: occupantRow.canModerate
+                        visible: occupantRow.offersMenu
                         onClicked: {
-                            occupantMenu.load(personRow)
-                            occupantMenu.popupUnder(occupantMenuButton)
+                            personMenu.load(personRow)
+                            personMenu.popupUnder(occupantMenuButton)
                         }
                     }
                 }

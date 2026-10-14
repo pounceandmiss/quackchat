@@ -302,16 +302,21 @@ QtObject {
     }
 
     // One contact's details. Trust is written as it is picked, so two windows
-    // on the same contact would argue over what is on screen.
-    function contactDetails(account, jid, name) {
+    // on the same contact would argue over what is on screen. `fingerprint`
+    // marks the key a message came from, and moves to the newest one asked
+    // about when the window is already open.
+    function contactDetails(account, jid, name, fingerprint) {
         if (!account || !jid)
             return null
         const key = account + "|" + jid
         const open = mgr._contactWindows[key]
-        if (open)
+        if (open) {
+            open.fingerprint = fingerprint || ""
             return _raise(open)
+        }
         const w = _track(mgr._contactComp.createObject(null,
-            { account: account, jid: jid, name: name || "" }))
+            { account: account, jid: jid, name: name || "",
+              fingerprint: fingerprint || "" }))
         if (w)
             mgr._contactWindows[key] = w
         return w

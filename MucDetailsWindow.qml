@@ -31,5 +31,14 @@ AppWindow {
         }
         showClose: false // the window's own close button is right there
         onDone: win.close()
+        // Back to the room's chat, wherever it is shown, with them mentioned.
+        onMentionRequested: (nick) => {
+            const s = App.chatFor(win.account, win.jid, true)
+            if (s)
+                s.mention(nick)
+            AppWindows.showChat(win.account, win.jid)
+            win.close()
+        }
+        onPersonRequested: (jid, name) => AppWindows.contactDetails(win.account, jid, name, "")
     }
 }

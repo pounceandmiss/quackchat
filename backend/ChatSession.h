@@ -91,6 +91,10 @@ public:
     Q_INVOKABLE void attach(const QUrl &file);
     Q_INVOKABLE void unattach(int index);
 
+    // Mention someone in a room: "nick: " into an empty draft, otherwise the
+    // nick appended to it.
+    Q_INVOKABLE void mention(const QString &nick);
+
     Q_INVOKABLE void replyToMessage(qlonglong ts, const QString &body,
                                     bool outgoing);
     Q_INVOKABLE void cancelReply();

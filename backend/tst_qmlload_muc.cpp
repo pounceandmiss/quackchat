@@ -302,6 +302,89 @@ private slots:
         e.assertNoErrors();
     }
 
+    // A tap on someone mentions them in the chat, except ourselves and a member
+    // who is not here.
+    void tappingSomeoneMentionsThem() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        // The page alone, without the window that would act on the mention:
+        // that would raise a shell, and a test has none.
+        QQuickWindow window;
+        QQmlComponent comp(&e);
+        comp.setData("import Quack\nMucDetailsPage { account: \"me@example.com\"; "
+                     "jid: \"room@muc.example.com?join\"; shown: true }", QUrl());
+        QScopedPointer<QObject> holder(comp.create());
+        auto *page = qobject_cast<QQuickItem *>(holder.data());
+        QVERIFY2(page, qPrintable(comp.errorString()));
+        page->setParentItem(window.contentItem());
+        page->setSize(QSizeF(460, 700));
+        window.resize(460, 700);
+        window.grabWindow(); // a render, so the list lays its rows out
+        auto *room = page->findChild<MucRoomModel *>();
+        QVERIFY(room);
+        room->applyJoined(true);
+        QVariantMap amy = person("amy", "participant", "none");
+        amy["self"] = true;
+        room->applyPeople(QVariantMap{
+            {"list", "complete"},
+            {"groups", QVariantMap{}},
+            {"me", QVariantMap{}},
+            {"people", QVariantList{amy, person("zoe", "participant", "none"),
+                                    person("", "absent", "member", "gone@example.com")}}});
+        QCoreApplication::processEvents();
+
+        QSignalSpy mentioned(page, SIGNAL(mentionRequested(QString)));
+        QTRY_COMPARE((window.grabWindow(), findItems(page, "occupantRow").size()), 3);
+        const QList<QQuickItem *> rows = findItems(page, "occupantRow");
+        for (QQuickItem *row : rows)
+            QVERIFY(QMetaObject::invokeMethod(row, "clicked"));
+        QCOMPARE(mentioned.count(), 1);
+        QCOMPARE(mentioned.at(0).at(0).toString(), QString("zoe"));
+
+        e.assertNoErrors();
+    }
+
+    // What the menu offers follows who they are: an address to open and copy
+    // where the room gives one, and moderation only where the caps allow it.
+    void thePersonMenuOffersWhatThereIsToDo() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openMucDetails(e, holder);
+        QVERIFY(w);
+        QObject *menu = w->findChild<QObject *>("personMenu");
+        QVERIFY(menu);
+        const auto offered = [&](const char *name) {
+            QObject *entry = menu->findChild<QObject *>(name);
+            return entry && entry->property("offered").toBool();
+        };
+
+        QVariantMap mo{{"nick", "mo"}, {"realJid", "mo@elsewhere.example"},
+                       {"self", false}, {"caps", QVariantMap{{"kick", true}}}};
+        QVERIFY(QMetaObject::invokeMethod(menu, "load", Q_ARG(QVariant, mo)));
+        QVERIFY(offered("personDetailsEntry"));
+        QVERIFY(offered("startConversationEntry"));
+        QVERIFY(offered("copyOccupantJidEntry"));
+        QVERIFY(offered("kickEntry"));
+        QVERIFY(!offered("banEntry"));
+
+        QVariantMap me{{"nick", "amy"}, {"realJid", "me@example.com"},
+                       {"self", true}, {"caps", QVariantMap{}}};
+        QVERIFY(QMetaObject::invokeMethod(menu, "load", Q_ARG(QVariant, me)));
+        QCOMPARE(menu->findChild<QObject *>("personDetailsEntry")->property("text").toString(),
+                 QString("Account details"));
+        QVERIFY(!offered("startConversationEntry"));
+
+        QVariantMap nickOnly{{"nick", "zoe"}, {"realJid", ""}, {"self", false},
+                             {"caps", QVariantMap{}}};
+        QVERIFY(QMetaObject::invokeMethod(menu, "load", Q_ARG(QVariant, nickOnly)));
+        QVERIFY(!offered("personDetailsEntry"));
+        QVERIFY(!offered("startConversationEntry"));
+        QVERIFY(!offered("copyOccupantJidEntry"));
+
+        e.assertNoErrors();
+    }
+
     // Looking for a person puts away what the page says about the room: the
     // matches start under the box rather than under a screenful of subject.
     void filteringPutsTheRoomCardsAway() {

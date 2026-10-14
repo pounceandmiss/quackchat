@@ -158,6 +158,16 @@ void ChatSession::setDraft(const QString &text) {
     emit draftChanged();
 }
 
+void ChatSession::mention(const QString &nick) {
+    if (nick.isEmpty())
+        return;
+    if (m_draft.trimmed().isEmpty())
+        setDraft(nick + QStringLiteral(": "));
+    else
+        setDraft(m_draft + (m_draft.back().isSpace() ? QString() : QStringLiteral(" "))
+                 + nick + QLatin1Char(' '));
+}
+
 void ChatSession::attach(const QUrl &file) {
     const QString path = pickedfile::localPath(file);
     if (path.isEmpty())

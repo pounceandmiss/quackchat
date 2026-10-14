@@ -175,6 +175,22 @@ MucRoomModel::Person MucRoomModel::fromMap(const QVariantMap &m) {
     return p;
 }
 
+QVariantMap MucRoomModel::toQml(const Person &p) {
+    return {{QStringLiteral("key"), p.key},
+            {QStringLiteral("nick"), p.nick},
+            {QStringLiteral("occupantJid"), p.occupantJid},
+            {QStringLiteral("realJid"), p.realJid},
+            {QStringLiteral("role"), p.role},
+            {QStringLiteral("affiliation"), p.affiliation},
+            {QStringLiteral("show"), p.show},
+            {QStringLiteral("status"), p.status},
+            {QStringLiteral("caps"), p.caps},
+            {QStringLiteral("self"), p.self},
+            {QStringLiteral("group"), p.group},
+            {QStringLiteral("present"), p.present},
+            {QStringLiteral("keys"), p.keys}};
+}
+
 bool MucRoomModel::matches(const Person &p, const QString &filter) {
     if (filter.isEmpty())
         return true;
@@ -305,6 +321,11 @@ void MucRoomModel::handleResult(int token, const QVariant &data) {
     } else if (token == m_joinedToken) {
         m_joinedToken = 0;
         applyJoined(data.toBool());
+    } else if (m_personTokens.remove(token)) {
+        // A person always carries a key; anything else is no answer.
+        const QVariantMap m = data.toMap();
+        emit personAnswered(token, m.contains(QStringLiteral("key"))
+                                       ? toQml(fromMap(m)) : QVariantMap{});
     } else {
         // A moderation action that went through. The room reports what it did
         // by presence, so there is nothing here to apply.
@@ -313,6 +334,10 @@ void MucRoomModel::handleResult(int token, const QVariant &data) {
 }
 
 void MucRoomModel::handleError(int token, const QString &message) {
+    if (m_personTokens.remove(token)) {
+        emit personAnswered(token, {});
+        return;
+    }
     const QString action = m_actions.take(token);
     if (!action.isEmpty())
         emit actionFailed(action, message);
@@ -400,4 +425,20 @@ void MucRoomModel::changeNick(const QString &nick) {
                       QVariantMap{{QStringLiteral("acc"), m_account},
                                   {QStringLiteral("jid"), m_roomJid},
                                   {QStringLiteral("nick"), nick}});
+}
+
+int MucRoomModel::requestPerson(const QString &occupantJid,
+                                const QString &occupantId) {
+    if (!m_backend || m_account.isEmpty() || m_roomJid.isEmpty()
+        || occupantJid.isEmpty())
+        return 0;
+    QVariantMap args{{QStringLiteral("acc"), m_account},
+                     {QStringLiteral("jid"), m_roomJid},
+                     {QStringLiteral("occupant"), occupantJid}};
+    if (!occupantId.isEmpty())
+        args.insert(QStringLiteral("occupant_id"), occupantId);
+    const int token =
+        m_backend->request(QStringLiteral("muc"), QStringLiteral("person"), args);
+    m_personTokens.insert(token);
+    return token;
 }

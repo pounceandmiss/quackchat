@@ -17,6 +17,7 @@
 #include <QAbstractListModel>
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
@@ -140,6 +141,15 @@ public:
     // the nick the next join uses too.
     Q_INVOKABLE void changeNick(const QString &nick);
 
+    // Who sent a message, by its `from` and `occupantId`: one of this room's
+    // people, or the absent one tacky makes of a sender who left, or of any
+    // sender in a room not joined (`muc person`). Answers through
+    // personAnswered under the token returned, with the person keyed by the
+    // role names, or {} where the read failed. Works whether or not the model
+    // is active.
+    Q_INVOKABLE int requestPerson(const QString &occupantJid,
+                                  const QString &occupantId = {});
+
     // Routing and transforms are public so tests can drive them with canned data.
     void handleEvent(const QString &module, const QString &name,
                      const QVariant &args);
@@ -162,6 +172,7 @@ signals:
     void countChanged();
     // `action` is what was being attempted, in the words the page will show.
     void actionFailed(const QString &action, const QString &message);
+    void personAnswered(int token, const QVariantMap &person);
 
 private:
     struct Person {
@@ -189,6 +200,8 @@ private:
     };
 
     static Person fromMap(const QVariantMap &m);
+    // A person the way QML reads a row: keyed by the role names.
+    static QVariantMap toQml(const Person &p);
     static bool matches(const Person &p, const QString &filter);
     // The person tacky marks as us, or an empty one.
     Person mine() const;
@@ -224,6 +237,7 @@ private:
     int m_subjectToken = 0;
     int m_joinedToken = 0;
     QHash<int, QString> m_actions; // token -> what it was, for actionFailed
+    QSet<int> m_personTokens;      // requestPerson's, still unanswered
 };
 
 #endif // MUCROOMMODEL_H

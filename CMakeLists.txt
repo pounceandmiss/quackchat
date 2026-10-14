@@ -278,6 +278,7 @@ qt_add_qml_module(quack
         Fingerprint.qml
         ConversationsPage.qml
         ChatRowMenu.qml
+        PersonMenu.qml
         AppMenu.qml
         ContextMenuArea.qml
         ChoiceBox.qml

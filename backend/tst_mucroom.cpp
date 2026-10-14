@@ -61,7 +61,9 @@ private slots:
     void anotherRoomsEventsAreNotOurs();
     void aRefusedActionSaysWhichOneItWas();
     void anAffiliationNeedsARealJid();
+    void aPersonIsAskedForWhileInactive();
     void integrationARoomNotJoinedHasNoPeople();
+    void integrationARoomNotJoinedStillNamesASender();
 };
 
 // tacky orders and counts; the rows are its answer as it stands.
@@ -315,6 +317,46 @@ void TestMucRoom::anAffiliationNeedsARealJid() {
 
 // Through the real backend, for the schema: a room we are not in answers with
 // nobody, rather than an error.
+// A message's sender, looked up from the chat: the model is not active there,
+// and the answer is one person handed back under its token rather than a row.
+void TestMucRoom::aPersonIsAskedForWhileInactive() {
+    TackyBackend backend;
+    MucRoomModel m;
+    m.setBackend(&backend);
+    m.setAccount("me@h");
+    m.setJid("room@muc.h?join"); // tokens 1-2: the two reads refresh() makes
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    QSignalSpy answered(&m, &MucRoomModel::personAnswered);
+    const int token = m.requestPerson("room@muc.h/amy", "occ-a");
+    QCOMPARE(token, 3);
+    QCOMPARE(sent.count(), 1);
+    QCOMPARE(sent.at(0).at(1).toString(), QString("person"));
+    const QVariantMap args = sent.at(0).at(2).toMap();
+    QCOMPARE(args.value("jid").toString(), QString("room@muc.h"));
+    QCOMPARE(args.value("occupant").toString(), QString("room@muc.h/amy"));
+    QCOMPARE(args.value("occupant_id").toString(), QString("occ-a"));
+
+    m.handleResult(token, person("amy", "absent", "amy@h"));
+    QCOMPARE(answered.count(), 1);
+    QCOMPARE(answered.at(0).at(0).toInt(), token);
+    const QVariantMap p = answered.at(0).at(1).toMap();
+    QCOMPARE(p.value("realJid").toString(), QString("amy@h"));
+    QCOMPARE(p.value("nick").toString(), QString("amy"));
+    QCOMPARE(p.value("present").toBool(), false);
+    QCOMPARE(m.rowCount(), 0); // a lookup, not a row
+
+    // An answer that is not a person, and a failed read, both give {}.
+    const int none = m.requestPerson("room@muc.h/zoe");
+    QVERIFY(!sent.last().at(2).toMap().contains("occupant_id"));
+    m.handleResult(none, QVariantMap{});
+    const int lost = m.requestPerson("room@muc.h/zoe");
+    emit backend.error(lost, "boom");
+    QCOMPARE(answered.count(), 3);
+    QVERIFY(answered.at(1).at(1).toMap().isEmpty());
+    QVERIFY(answered.at(2).at(1).toMap().isEmpty());
+}
+
 void TestMucRoom::integrationARoomNotJoinedHasNoPeople() {
     TackyBackend backend;
     QVERIFY(backend.start());
@@ -330,6 +372,29 @@ void TestMucRoom::integrationARoomNotJoinedHasNoPeople() {
     m.setActive(true);
     QTRY_VERIFY(m.memberList() == "none");
     QCOMPARE(m.rowCount(), 0);
+    QCOMPARE(errors.count(), 0);
+    backend.stop();
+}
+
+// Not joined, nobody is present: the sender comes back absent, under the
+// nick they wrote as.
+void TestMucRoom::integrationARoomNotJoinedStillNamesASender() {
+    TackyBackend backend;
+    QVERIFY(backend.start());
+    backend.notify("account", "add",
+                   QVariantMap{{"acc", "me@example.com"}, {"password", "x"},
+                               {"domain", "example.com"}, {"username", "me"}});
+    MucRoomModel m;
+    QSignalSpy errors(&backend, &TackyBackend::error);
+    QSignalSpy answered(&m, &MucRoomModel::personAnswered);
+    m.setBackend(&backend);
+    m.setAccount("me@example.com");
+    m.setJid("room@muc.example.com?join");
+    m.requestPerson("room@muc.example.com/amy", "occ-a");
+    QTRY_COMPARE(answered.count(), 1);
+    const QVariantMap p = answered.at(0).at(1).toMap();
+    QCOMPARE(p.value("nick").toString(), QString("amy"));
+    QCOMPARE(p.value("present").toBool(), false);
     QCOMPARE(errors.count(), 0);
     backend.stop();
 }

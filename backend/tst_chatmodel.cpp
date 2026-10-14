@@ -86,6 +86,7 @@ private slots:
     void markupRoleFollowsTheLinkColor();
     void replyRolesAreAlwaysStrings();
     void encryptionRolesAreAlwaysStrings();
+    void senderRolesAreStrings();
     void statusCarriesTheFailureReason();
     void plaintextResendClearsTheStamp();
     void partialStatusLeavesTheFailureReason();
@@ -845,6 +846,25 @@ void TestChatModel::encryptionRolesAreAlwaysStrings() {
     QCOMPARE(why.typeId(), QMetaType::QString);
     QVERIFY(enc.toString().isEmpty());
     QVERIFY(why.toString().isEmpty());
+}
+
+// Who sent a row, for finding them in the room and the key it came from: both
+// strings, and empty on a row without them.
+void TestChatModel::senderRolesAreStrings() {
+    ChatModel m;
+    m.applyBatch(msgs(R"([{"timestamp":100,"content":{"type":"text","body":"hi"}}])"));
+    const QVariant id = m.data(m.index(0), ChatModel::OccupantIdRole);
+    const QVariant fp = m.data(m.index(0), ChatModel::SenderFpRole);
+    QCOMPARE(id.typeId(), QMetaType::QString);
+    QCOMPARE(fp.typeId(), QMetaType::QString);
+    QVERIFY(id.toString().isEmpty());
+    QVERIFY(fp.toString().isEmpty());
+
+    ChatModel room;
+    room.applyBatch(msgs(R"([{"timestamp":200,"from_jid":"room@muc.h/amy",
+        "occupant_id":"occ-a","sender_fp":"05ab","content":{"type":"text","body":"yo"}}])"));
+    QCOMPARE(room.data(room.index(0), ChatModel::OccupantIdRole).toString(), QString("occ-a"));
+    QCOMPARE(room.data(room.index(0), ChatModel::SenderFpRole).toString(), QString("05ab"));
 }
 
 // An encryption that never came off fails the row outright rather than going

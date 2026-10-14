@@ -10,6 +10,7 @@ AppWindow {
     property string account: ""
     property string jid: ""
     property string name: ""
+    property string fingerprint: ""
 
     width: 520
     height: 720
@@ -22,6 +23,7 @@ AppWindow {
         account: win.account
         jid: win.jid
         name: win.name
+        highlightFingerprint: win.fingerprint
         showClose: false // the window's own close button is right there
         onDone: win.close()
     }

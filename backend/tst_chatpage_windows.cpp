@@ -90,6 +90,7 @@ private slots:
     void notesToSelfHaveNoCallsAndNoContact();
     void senderNamesComeFromAuthorGet();
     void avatarsMarkTheFootOfEachRun();
+    void clickingASendersFaceMentionsThem();
     void anOutgoingAvatarHangsOffTheOtherEdge();
     void theAvatarPreferenceClosesTheGutter();
     void closingTheSearchBarEmptiesIt();
@@ -428,6 +429,26 @@ void TestChatPageWindows::avatarsMarkTheFootOfEachRun() {
     // is held open for.
     QCOMPARE(gutterOf(chat.row(2), false), foot);
     QCOMPARE(gutterOf(chat.row(3), false), foot);
+}
+
+// A click on a sender's face in a room puts their nick in the draft. A real
+// click, so the bubble's own handlers see it first.
+void TestChatPageWindows::clickingASendersFaceMentionsThem() {
+    const Chat chat = open("avatarroom@example.com", true);
+    QVERIFY(chat.feed);
+    QVERIFY(chat.win());
+    chat.model()->applyBatch(QVariantList{
+        said(9000000000000005LL, QStringLiteral("avatarroom@example.com/ann"), "hi")});
+    QQuickItem *face = nullptr;
+    QTRY_VERIFY((face = findItem(chat.row(0), "messageAvatar")) != nullptr);
+    QTRY_VERIFY(face->isVisible() && face->width() > 0);
+
+    const QPointF centre = face->mapToScene(QPointF(face->width() / 2, face->height() / 2));
+    QTest::mouseClick(chat.win(), Qt::LeftButton, {}, centre.toPoint());
+    QQuickItem *input = chat.win()->findChild<QQuickItem *>("messageInput");
+    QVERIFY(input);
+    QTRY_COMPARE(input->property("text").toString(), QString("ann: "));
+    input->setProperty("text", QString());
 }
 
 // Ours sit on the right, so their faces do too - the gutter is on whichever

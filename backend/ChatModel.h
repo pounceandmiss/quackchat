@@ -68,6 +68,12 @@ public:
                          // an empty map for anything else
         CallInviteRole,  // {room, id, inviter, video, state, active} for a
                          // group call invite, an empty map for anything else
+        // Who sent it, for looking them up in the room (`muc person`): their
+        // XEP-0421 occupant-id, "" outside a room or where it gives none.
+        OccupantIdRole,
+        // The fingerprint of the device that sent it, "" for cleartext and
+        // our own sends.
+        SenderFpRole,
         RawRole,
     };
     Q_ENUM(Role)

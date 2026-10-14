@@ -16,6 +16,12 @@ Item {
     // Who sent it, drawn above the body when the chat has more than two voices.
     property string author: ""
     property bool showAuthor: false
+    // Whether the sender's name and face take taps, which a room's do. A tap
+    // mentions them; a long press or right click asks for their menu at `pos`,
+    // in the row's coordinates.
+    property bool authorActions: false
+    signal authorTapped()
+    signal authorMenuRequested(point pos)
 
     // The sender's avatar, drawn in a gutter on the bubble's own side. An empty
     // jid is how the preference turns them off: no face, and no gutter either.
@@ -733,6 +739,7 @@ Item {
                 anchors.topMargin: 8
 
                 Text {
+                    id: authorLine
                     objectName: "authorLine"
                     visible: root.showAuthor && root.author !== ""
                     text: root.author
@@ -741,6 +748,11 @@ Item {
                     font.bold: true
                     elide: Text.ElideRight
                     Layout.maximumWidth: root.maxBubbleWidth
+                    AuthorTap { row: root }
+                    HoverHandler {
+                        enabled: root.authorActions
+                        cursorShape: Qt.PointingHandCursor
+                    }
                 }
 
                 // The quoted target, above the answer. tacky keeps the outgoing
@@ -1077,6 +1089,7 @@ Item {
         // A Loader rather than a visible: false Avatar: a hidden one still runs
         // its source binding, and that binding is what subscribes the JID.
         Loader {
+            id: avatarSlot
             objectName: "avatarSlot"
             active: root.showAvatar && root.avatarJid !== ""
             width: root.avatarEdge
@@ -1091,6 +1104,11 @@ Item {
                 jid: root.avatarJid
                 label: root.author
                 initialsPixelSize: 13
+            }
+            AuthorTap { row: root }
+            HoverHandler {
+                enabled: root.authorActions
+                cursorShape: Qt.PointingHandCursor
             }
         }
 
@@ -1207,8 +1225,45 @@ Item {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
         onPressed: (mouse) => mouse.accepted = root.selectionMode
-                                               || !root.attachmentAt(mouse.x, mouse.y)
+                                               || !(root.attachmentAt(mouse.x, mouse.y)
+                                                    || root.authorAt(mouse.x, mouse.y))
         onClicked: function(mouse) { root.openMenu(Qt.point(mouse.x, mouse.y), true) }
+    }
+
+    // On the sender's name and face, above the bubble's own handlers, so a tap
+    // there is not a tap on the message.
+    // An inline component sees none of this file's ids, so it is handed the
+    // row it belongs to.
+    component AuthorTap: TapHandler {
+        id: authorTap
+        required property var row
+        enabled: authorTap.row.authorActions && !authorTap.row.selectionMode
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        gesturePolicy: TapHandler.ReleaseWithinBounds
+        function at() {
+            return authorTap.parent.mapToItem(authorTap.row, authorTap.point.position.x,
+                                              authorTap.point.position.y)
+        }
+        onTapped: (eventPoint, button) => {
+            if (button === Qt.RightButton)
+                authorTap.row.authorMenuRequested(authorTap.at())
+            else
+                authorTap.row.authorTapped()
+        }
+        onLongPressed: authorTap.row.authorMenuRequested(authorTap.at())
+    }
+
+    // Whether `x`,`y` in the row lands on the sender's name or face, which
+    // handle their own right click.
+    function authorAt(x, y) {
+        if (!root.authorActions)
+            return false
+        for (const item of [authorLine, avatarSlot]) {
+            if (item.visible && item.width > 0
+                    && item.contains(item.mapFromItem(root, x, y)))
+                return true
+        }
+        return false
     }
 
     // Whether `x`,`y` in the row lands on one of the attachments.

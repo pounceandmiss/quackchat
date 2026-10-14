@@ -22,6 +22,9 @@ Page {
     property string jid: ""
     property string name: ""
     property bool showClose: true
+    // The fingerprint of the device a message came from, when the page was
+    // opened from that message, marked on their list. "" otherwise.
+    property string highlightFingerprint: ""
     signal done
 
     background: Rectangle { color: Theme.background }
@@ -69,6 +72,8 @@ Page {
     // A chat can outlive a roster entry, or never have had one: `source` is
     // "free" for a JID we only have history with.
     readonly property bool rostered: page.entry.source === "roster"
+    // No chat with them at all, e.g. someone opened from a room.
+    readonly property bool stranger: page.entry.source === undefined
 
     // What the two of you have agreed to share, as the roster has it. tacky
     // hands the roster item over as it stored it, so `ask` rides along in the
@@ -210,10 +215,19 @@ Page {
                     Caption {
                         objectName: "contactSharing"
                         Layout.fillWidth: true
+                        visible: !page.stranger
                         text: page.rostered
                               ? page.sharingNote
                               : qsTr("You have a conversation with them but have never added them.")
                         wrapMode: Text.WordWrap
+                    }
+                    // Adding them also asks for their status.
+                    Button {
+                        objectName: "addContactButton"
+                        Layout.topMargin: 6
+                        visible: !page.rostered && page.chatList !== null
+                        text: qsTr("Add to contacts")
+                        onClicked: page.chatList.addContact(page.jid, "")
                     }
                 }
             }
@@ -243,6 +257,7 @@ Page {
 
                 TrustList {
                     devices: theirKeys
+                    highlight: page.highlightFingerprint
                     onCopyRequested: (spaced) => page.copyFingerprint(spaced)
                 }
             }

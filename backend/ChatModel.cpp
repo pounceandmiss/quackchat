@@ -203,6 +203,8 @@ QVariant ChatModel::data(const QModelIndex &index, int role) const {
     case FailReasonRole:   return m.value(QStringLiteral("fail_reason")).toString();
     case InviteRole:       return inviteOf(m);
     case CallInviteRole:   return callInviteOf(m);
+    case OccupantIdRole:   return m.value(QStringLiteral("occupant_id")).toString();
+    case SenderFpRole:     return m.value(QStringLiteral("sender_fp")).toString();
     case RawRole:          return m;
     default:               return {};
     }
@@ -227,6 +229,8 @@ QHash<int, QByteArray> ChatModel::roleNames() const {
         {FailReasonRole, "failReason"},
         {InviteRole, "invite"},
         {CallInviteRole, "callInvite"},
+        {OccupantIdRole, "occupantId"},
+        {SenderFpRole, "senderFp"},
         {RawRole, "raw"},
     };
 }

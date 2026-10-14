@@ -669,6 +669,61 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Someone with no chat with us at all: the page offers to add them and
+    // drops the line about a conversation.
+    void aStrangerCanBeAdded() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openContactDetails(e, holder);
+        QVERIFY(w);
+
+        QObject *add = w->findChild<QObject *>("addContactButton");
+        QObject *sharing = w->findChild<QObject *>("contactSharing");
+        QVERIFY(add);
+        QVERIFY(sharing);
+        QVERIFY(add->property("visible").toBool());
+        QVERIFY(!sharing->property("visible").toBool());
+
+        rosterEntry(app, "both", QString());
+        QVERIFY(!add->property("visible").toBool());
+        QVERIFY(sharing->property("visible").toBool());
+
+        e.assertNoErrors();
+    }
+
+    // Opened from a message, the page marks the device that sent it, and only
+    // that one.
+    void theKeyAMessageCameFromIsMarked() {
+        Engine e;
+        QVERIFY(e.singletonInstance<AppController *>("Quack", "App"));
+        QScopedPointer<QObject> holder;
+        QQuickWindow *w = openContactDetails(e, holder);
+        QVERIFY(w);
+        w->setProperty("fingerprint", QString(64, QChar('b')));
+
+        OmemoDevicesModel *devices = nullptr;
+        for (OmemoDevicesModel *m : w->findChildren<OmemoDevicesModel *>())
+            if (m->jid() == QLatin1String("friend@example.com"))
+                devices = m;
+        QVERIFY(devices);
+        QVariantMap one = device(7, "trusted").toMap();
+        QVariantMap two = device(8, "undecided").toMap();
+        two["fingerprint"] = QString(64, QChar('b'));
+        devices->applyTrustList({one, two});
+        QCoreApplication::processEvents();
+
+        int marked = 0;
+        const QList<QQuickItem *> notes = findItems(w->contentItem(), "sentThisNote");
+        QCOMPARE(notes.size(), 2);
+        for (QQuickItem *note : notes)
+            marked += note->property("visible").toBool() ? 1 : 0;
+        QCOMPARE(marked, 1);
+
+        e.assertNoErrors();
+    }
+
     // A request out and nothing back yet is its own state, not "no sharing" -
     // the entry carries `ask` alongside the subscription.
     void aPendingRequestIsItsOwnSharingState() {
@@ -743,11 +798,17 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(mgr, "contactDetails", Q_RETURN_ARG(QVariant, first),
                                           Q_ARG(QVariant, QVariant("me@example.com")),
                                           Q_ARG(QVariant, QVariant("friend@example.com")),
-                                          Q_ARG(QVariant, QVariant("Friend"))));
+                                          Q_ARG(QVariant, QVariant("Friend")),
+                                          Q_ARG(QVariant, QVariant(""))));
+        // Asked again about a message's key, the open window moves its mark.
         QVERIFY(QMetaObject::invokeMethod(mgr, "contactDetails", Q_RETURN_ARG(QVariant, again),
                                           Q_ARG(QVariant, QVariant("me@example.com")),
                                           Q_ARG(QVariant, QVariant("friend@example.com")),
-                                          Q_ARG(QVariant, QVariant("Friend"))));
+                                          Q_ARG(QVariant, QVariant("Friend")),
+                                          Q_ARG(QVariant, QVariant("05ab"))));
+        QVERIFY(again.value<QObject *>());
+        QCOMPARE(again.value<QObject *>()->property("fingerprint").toString(),
+                 QString("05ab"));
         oneWindowNotTwo(first, again);
 
         e.assertNoErrors();

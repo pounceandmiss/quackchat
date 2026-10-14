@@ -13,6 +13,8 @@ ColumnLayout {
 
     // An OmemoDevicesModel, or null on a page that has no account yet.
     required property var devices
+    // A fingerprint to mark (the device a message came from), or "".
+    property string highlight: ""
     // The copy is left to the page, which is where the "copied" notice is.
     signal copyRequested(string spaced)
 
@@ -58,6 +60,17 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.topMargin: 6
             spacing: 6
+
+            Text {
+                objectName: "sentThisNote"
+                Layout.fillWidth: true
+                visible: list.highlight !== "" && deviceRow.fingerprint === list.highlight
+                text: qsTr("This device sent that message")
+                color: Theme.accent
+                font.pixelSize: 12
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
 
             Fingerprint {
                 Layout.fillWidth: true
