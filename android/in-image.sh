@@ -186,8 +186,12 @@ if [ -n "${QUACK_ANDROID_KEYSTORE_PASS-}" ]; then
     pass_args=(--ks-pass env:QUACK_ANDROID_KEYSTORE_PASS
                --key-pass env:QUACK_ANDROID_KEYSTORE_PASS)
 fi
+# No v4 signature: it lands beside the apk as a separate .idsig that only
+# incremental installs (adb --incremental, Play streaming) read. A downloaded
+# apk is verified by the v2/v3 signatures inside it.
 "$tools/apksigner" sign \
     --ks "$QUACK_ANDROID_KEYSTORE" --ks-key-alias "$QUACK_ANDROID_KEY_ALIAS" \
+    --v4-signing-enabled false \
     "${pass_args[@]}" \
     --out "$signed" "$aligned"
 "$tools/apksigner" verify --print-certs "$signed"
