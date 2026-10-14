@@ -87,6 +87,7 @@ class TestRegistration : public QObject {
 private slots:
     void rowsAreTheVisibleFieldsInServerOrder();
     void theFormIsARoundTripBehindTheEvent();
+    void theSignUpGoesByTheRouteItWasGiven();
     void anotherSessionsEventsAreNotOurs();
     void mediaArrivesAsADataUrl();
     void completeFollowsTheRequiredFields();
@@ -195,6 +196,31 @@ void TestRegistration::theFormIsARoundTripBehindTheEvent() {
     QVERIFY(f.reg.hasForm());
     QCOMPARE(f.reg.rowCount(), 5);
     QVERIFY(states.count() >= 2);
+}
+
+// The route goes out with every connect, a retry's too, and stays readable
+// for the account the sign-up makes; a direct one sends neither field.
+void TestRegistration::theSignUpGoesByTheRouteItWasGiven() {
+    Fixture f;
+    f.reg.start(QStringLiteral("example.com"), QString(), true);
+    QVERIFY(f.wire->argsOfLast("connect").value("tor").toBool());
+    QVERIFY(!f.wire->argsOfLast("connect").contains("proxy"));
+    QVERIFY(f.reg.tor());
+
+    f.reg.retry();
+    QCOMPARE(f.wire->callsTo("connect").size(), 2);
+    QVERIFY(f.wire->argsOfLast("connect").value("tor").toBool());
+
+    f.reg.start(QStringLiteral("example.com"), QStringLiteral("socks5://127.0.0.1:1080"));
+    QCOMPARE(f.wire->argsOfLast("connect").value("proxy").toString(),
+             QString("socks5://127.0.0.1:1080"));
+    QVERIFY(!f.wire->argsOfLast("connect").contains("tor"));
+    QCOMPARE(f.reg.proxy(), QString("socks5://127.0.0.1:1080"));
+    QVERIFY(!f.reg.tor());
+
+    f.reg.start(QStringLiteral("example.com"));
+    QVERIFY(!f.wire->argsOfLast("connect").contains("proxy"));
+    QVERIFY(!f.wire->argsOfLast("connect").contains("tor"));
 }
 
 // Two sign-ups can be open at once, so every event names the session it is

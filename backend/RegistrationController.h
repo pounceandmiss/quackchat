@@ -30,6 +30,9 @@ class RegistrationController : public MapListModel {
     Q_PROPERTY(TackyBackend *backend READ backend WRITE setBackend NOTIFY backendChanged)
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
     Q_PROPERTY(QString host READ host NOTIFY hostChanged)
+    // The route the sign-up went by, for the account it makes to keep.
+    Q_PROPERTY(QString proxy READ proxy NOTIFY hostChanged)
+    Q_PROPERTY(bool tor READ tor NOTIFY hostChanged)
     // What went wrong, from tacky. Set with state Failed and cleared by the
     // next start()/retry(), so the two are read together.
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
@@ -74,6 +77,8 @@ public:
 
     State state() const { return m_state; }
     QString host() const { return m_host; }
+    QString proxy() const { return m_proxy; }
+    bool tor() const { return m_tor; }
     QString error() const { return m_error; }
     bool hasForm() const { return rowCount() > 0; }
     QString instructions() const { return m_instructions; }
@@ -82,9 +87,11 @@ public:
     // The session tag tacky keys its side by; unique per instance.
     QString token() const { return m_token; }
 
-    // Ask `host` for its registration form. Port 0 leaves tacky its default.
-    // Replaces whatever this instance was doing, answers included.
-    Q_INVOKABLE void start(const QString &host, int port = 0);
+    // Ask `host` for its registration form, by the route `proxy` and `tor`
+    // name, as tacky's account fields take them. Port 0 leaves tacky its
+    // default. Replaces whatever this instance was doing, answers included.
+    Q_INVOKABLE void start(const QString &host, const QString &proxy = QString(),
+                           bool tor = false, int port = 0);
 
     // Ask the same host again, keeping the answers typed so far. What a failed
     // submit needs: the session it failed in is spent, and a CAPTCHA in the
@@ -140,6 +147,8 @@ private:
     TackyBackend *m_backend = nullptr;
     QString m_token;
     QString m_host;
+    QString m_proxy;
+    bool m_tor = false;
     QString m_error;
     QString m_instructions;
     State m_state = Idle;

@@ -261,6 +261,7 @@ qt_add_qml_module(quack
         RegisterAccountSheet.qml
         DataForm.qml
         AccountSettingsPage.qml
+        RouteChooser.qml
         AppSettingsPage.qml
         TrustPicker.qml
         TrustList.qml

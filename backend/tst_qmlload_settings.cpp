@@ -178,11 +178,12 @@ private slots:
         QCoreApplication::processEvents();
 
         QObject *page = w->findChild<QObject *>("accountSettingsPage");
+        QObject *chooser = w->findChild<QObject *>("routeChooser");
         QObject *box = w->findChild<QObject *>("routeBox");
         QObject *tor = w->findChild<QObject *>("torField");
         QObject *proxy = w->findChild<QObject *>("proxyField");
-        QVERIFY(page && box && tor && proxy);
-        QCOMPARE(page->property("route").toString(), QString("tor"));
+        QVERIFY(page && chooser && box && tor && proxy);
+        QCOMPARE(chooser->property("route").toString(), QString("tor"));
         QCOMPARE(box->property("currentIndex").toInt(), 1);
         QVERIFY(tor->property("visible").toBool());
         QCOMPARE(tor->property("text").toString(), QString("socks5://127.0.0.1:9150"));

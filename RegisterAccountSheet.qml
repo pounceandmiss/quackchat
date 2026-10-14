@@ -27,6 +27,10 @@ SheetDialog {
     readonly property bool busy: reg.state === RegistrationController.Connecting
                                  || reg.state === RegistrationController.Submitting
 
+    function ask() {
+        reg.start(serverField.text.trim(), routeChooser.pendingProxy, routeChooser.pendingTor)
+    }
+
     RegistrationController {
         id: reg
         objectName: "registration"
@@ -36,6 +40,7 @@ SheetDialog {
     onAboutToShow: {
         reg.cancel()
         serverField.clear()
+        routeChooser.clear()
         serverField.forceActiveFocus()
     }
     // Covers Cancel, Esc and a click outside alike: the session is tacky's to
@@ -49,7 +54,8 @@ SheetDialog {
             // form rather than kept beside it.
             if (reg.state === RegistrationController.Registered
                     && reg.registeredJid !== "") {
-                App.accounts.add(reg.registeredJid, reg.valueFor("password"))
+                App.accounts.add(reg.registeredJid, reg.valueFor("password"),
+                                 reg.proxy, reg.tor)
                 sheet.close()
             }
         }
@@ -78,14 +84,23 @@ SheetDialog {
                 enabled: !sheet.busy
                 placeholderText: qsTr("example.com")
                 inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
-                onAccepted: if (text.trim() !== "") reg.start(text.trim())
+                onAccepted: if (text.trim() !== "") sheet.ask()
             }
             Button {
                 objectName: "registerContinue"
                 text: qsTr("Continue")
                 enabled: !sheet.busy && serverField.text.trim() !== ""
-                onClicked: reg.start(serverField.text.trim())
+                onClicked: sheet.ask()
             }
+        }
+
+        // The sign-up goes the way the account then will, so the route is
+        // picked with the server; Continue asks again on a changed one.
+        RouteChooser {
+            id: routeChooser
+            objectName: "registerRoute"
+            enabled: !sheet.busy
+            onAccepted: if (serverField.text.trim() !== "") sheet.ask()
         }
 
         // Step two: the server's own questions.

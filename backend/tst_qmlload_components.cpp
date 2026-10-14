@@ -294,6 +294,50 @@ private slots:
         e.assertNoErrors();
     }
 
+    // Signing in picks the route too: Tor chosen on the sheet goes out with
+    // the account, ahead of the enable that connects it.
+    void signingInGoesByTheRoutePicked() {
+        Engine e;
+        auto *app = e.singletonInstance<AppController *>("Quack", "App");
+        QVERIFY(app);
+
+        QQuickWindow win;
+        win.resize(360, 800);
+        win.show();
+
+        QQmlComponent comp(&e, "Quack", "AccountRail");
+        QVERIFY2(comp.isReady(), qPrintable(comp.errorString()));
+        QScopedPointer<QObject> obj(comp.createWithInitialProperties(
+            {{"width", win.width()}, {"height", win.height()}}));
+        QVERIFY(!obj.isNull());
+        auto *rail = qobject_cast<QQuickItem *>(obj.data());
+        QVERIFY(rail);
+        rail->setParentItem(win.contentItem());
+
+        QObject *sheet = rail->findChild<QObject *>("addAccountSheet");
+        QVERIFY(sheet);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "open"));
+        QTRY_VERIFY(sheet->property("opened").toBool());
+        QObject *jid = sheet->findChild<QObject *>("addAccountJid");
+        QObject *route = sheet->findChild<QObject *>("addAccountRoute");
+        QObject *box = route ? route->findChild<QObject *>("routeBox") : nullptr;
+        QVERIFY(jid && route && box);
+        jid->setProperty("text", "me@example.com");
+        QVERIFY(QMetaObject::invokeMethod(box, "picked", Q_ARG(QVariant, "tor")));
+
+        QSignalSpy sent(app->backend(), &TackyBackend::sent);
+        QVERIFY(QMetaObject::invokeMethod(sheet, "accept"));
+        QVariantMap added;
+        for (const QList<QVariant> &call : sent)
+            if (call.at(0).toString() == "account" && call.at(1).toString() == "add")
+                added = call.at(2).toMap();
+        QCOMPARE(added.value("acc").toString(), QString("me@example.com"));
+        QVERIFY(added.value("tor").toBool());
+        QCOMPARE(added.value("proxy").toString(), QString());
+
+        e.assertNoErrors();
+    }
+
     // A strip shorter than the sheet: the sheet shrinks into it, buttons and
     // all, and scrolls its fields, keeping the focused one in view.
     void aSheetTooTallForTheStripScrollsItsFieldIntoView() {

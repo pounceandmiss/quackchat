@@ -119,12 +119,17 @@ QString AccountsModel::firstJid() const {
     return m_accounts.isEmpty() ? QString() : m_accounts.first().jid;
 }
 
-void AccountsModel::add(const QString &jid, const QString &password) {
+void AccountsModel::add(const QString &jid, const QString &password,
+                        const QString &proxy, bool tor) {
     if (!m_backend || jid.isEmpty())
         return;
+    // The route goes in with the account, before it is enabled, so the first
+    // connection is already on it.
     m_backend->notify(QStringLiteral("account"), QStringLiteral("add"),
                       QVariantMap{{QStringLiteral("acc"), jid},
-                                  {QStringLiteral("password"), password}});
+                                  {QStringLiteral("password"), password},
+                                  {QStringLiteral("proxy"), proxy},
+                                  {QStringLiteral("tor"), tor}});
     m_backend->notify(QStringLiteral("account"), QStringLiteral("enable"),
                       QVariantMap{{QStringLiteral("acc"), jid}});
 }

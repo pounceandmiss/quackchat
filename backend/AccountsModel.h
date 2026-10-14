@@ -60,8 +60,10 @@ public:
     Q_INVOKABLE QString firstJid() const;
 
     // Fire-and-forget; the model updates itself off the resulting events.
-    // `add` also enables the account, which is what signs it in.
-    Q_INVOKABLE void add(const QString &jid, const QString &password);
+    // `add` also enables the account, which is what signs it in, on the route
+    // given: `proxy` and `tor` as tacky's account fields take them.
+    Q_INVOKABLE void add(const QString &jid, const QString &password,
+                         const QString &proxy = QString(), bool tor = false);
     Q_INVOKABLE void enable(const QString &jid);
     Q_INVOKABLE void disable(const QString &jid);
     Q_INVOKABLE void remove(const QString &jid);

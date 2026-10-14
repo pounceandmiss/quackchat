@@ -66,13 +66,16 @@ void RegistrationController::setBackend(TackyBackend *backend) {
     emit backendChanged();
 }
 
-void RegistrationController::start(const QString &host, int port) {
+void RegistrationController::start(const QString &host, const QString &proxy,
+                                   bool tor, int port) {
     if (host.isEmpty())
         return;
     // Whatever this instance was doing, session and answers alike: another
     // server asks its own questions.
     cancel();
     m_host = host;
+    m_proxy = proxy;
+    m_tor = tor;
     m_port = port;
     emit hostChanged();
     connectSession();
@@ -96,6 +99,11 @@ void RegistrationController::connectSession() {
     QVariantMap args{{kToken, m_token}, {QStringLiteral("domain"), m_host}};
     if (m_port > 0)
         args.insert(QStringLiteral("port"), m_port);
+    // So a sign-up goes the way the account then will.
+    if (!m_proxy.isEmpty())
+        args.insert(QStringLiteral("proxy"), m_proxy);
+    if (m_tor)
+        args.insert(QStringLiteral("tor"), true);
     // Fire-and-forget: the outcome is a <Form> or an <Error>, never a reply.
     m_backend->notify(kRegister, QStringLiteral("connect"), args);
     setState(Connecting);

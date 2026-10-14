@@ -5,8 +5,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quack
 
-// The add-account form: a JID + password, wired to App.accounts.add (which
-// creates the account and enables it, i.e. signs in). Opened from the rail's ＋.
+// The add-account form: a JID + password and the route to the server, wired
+// to App.accounts.add (which creates the account and enables it, i.e. signs
+// in). Opened from the rail's ＋.
 //
 // Signing in is the whole of it; someone with no account yet is handed on to
 // RegisterAccountSheet, which is where a server is asked to make one.
@@ -24,9 +25,11 @@ SheetDialog {
     onAboutToShow: {
         jidField.clear()
         passwordField.clear()
+        routeChooser.clear()
         jidField.forceActiveFocus()
     }
-    onAccepted: App.accounts.add(jidField.text.trim(), passwordField.text)
+    onAccepted: App.accounts.add(jidField.text.trim(), passwordField.text,
+                                 routeChooser.pendingProxy, routeChooser.pendingTor)
 
     Component.onCompleted: standardButton(Dialog.Ok).enabled = Qt.binding(() => sheet.jidValid)
 
@@ -59,6 +62,13 @@ SheetDialog {
             Layout.fillWidth: true
             placeholderText: qsTr("password")
             echoMode: TextInput.Password
+            onAccepted: if (sheet.jidValid) sheet.accept()
+        }
+
+        RouteChooser {
+            id: routeChooser
+            objectName: "addAccountRoute"
+            Layout.topMargin: 4
             onAccepted: if (sheet.jidValid) sheet.accept()
         }
 

@@ -34,6 +34,7 @@ private slots:
     void integrationDeadProxyIsReported();
     void integrationEnableRetriesNow();
     void pullsConnStateForRowsFromTheList();
+    void addSignsInOnTheRouteGiven();
     void statusIsUnknownUntilBothRepliesLand();
     void aDisabledAccountNeedsNoConnState();
     void statusKnownBumpsConnRev();
@@ -108,6 +109,23 @@ void TestAccountsModel::pullsConnStateForRowsFromTheList() {
     }
     QVERIFY(pulled.contains("a@h/State"));
     QVERIFY(pulled.contains("b@h/State"));
+}
+
+// The route rides on `account add`, ahead of the enable that signs in, so the
+// first connection already takes it.
+void TestAccountsModel::addSignsInOnTheRouteGiven() {
+    TackyBackend backend;
+    AccountsModel m;
+    m.setBackend(&backend);
+
+    QSignalSpy sent(&backend, &TackyBackend::sent);
+    m.add("a@h", "pw", "", true);
+    QCOMPARE(sent.size(), 2);
+    QCOMPARE(sent.at(0).at(1).toString(), QString("add"));
+    const QVariantMap a = sent.at(0).at(2).toMap();
+    QCOMPARE(a.value("proxy").toString(), QString());
+    QVERIFY(a.value("tor").toBool());
+    QCOMPARE(sent.at(1).at(1).toString(), QString("enable"));
 }
 
 void TestAccountsModel::listSortsAndMarksEnabled() {

@@ -43,14 +43,14 @@ Page {
         page.editingNick = false
         page.bindPassword()
         nickField.text = Qt.binding(() => page.settings ? page.settings.nick : "")
-        page.route = Qt.binding(() => !page.settings ? "direct"
+        routeChooser.route = Qt.binding(() => !page.settings ? "direct"
                                       : page.settings.tor ? "tor"
                                       : page.settings.proxy !== "" ? "proxy" : "direct")
         // One field per choice, so switching back loses nothing typed. With
         // tor set, proxy is where Tor listens.
-        torField.text = Qt.binding(() => page.settings && page.settings.tor
+        routeChooser.torText = Qt.binding(() => page.settings && page.settings.tor
                                          ? page.settings.proxy : "")
-        proxyField.text = Qt.binding(() => page.settings && !page.settings.tor
+        routeChooser.proxyText = Qt.binding(() => page.settings && !page.settings.tor
                                            ? page.settings.proxy : "")
     }
     onAccountChanged: page.bindAccount()
@@ -82,16 +82,11 @@ Page {
         return state === "auth-error" || state === "disconnected"
     }
 
-    // How the account reaches its server: "direct", "tor" or "proxy". Bound
-    // to the stored route by bindAccount until a pick replaces it.
-    property string route: "direct"
-    // What a save would write for the route.
-    readonly property string pendingProxy: page.route === "tor" ? torField.text.trim()
-                                         : page.route === "proxy" ? proxyField.text.trim() : ""
-    readonly property bool pendingTor: page.route === "tor"
+    // The route as picked against the stored one, which bindAccount binds the
+    // chooser to until a pick or an edit replaces it.
     readonly property bool routeDirty: page.settings !== null
-                                       && (page.pendingProxy !== page.settings.proxy
-                                           || page.pendingTor !== page.settings.tor)
+                                       && (routeChooser.pendingProxy !== page.settings.proxy
+                                           || routeChooser.pendingTor !== page.settings.tor)
 
     readonly property bool dirty: page.settings !== null
                                   && (passwordField.text !== page.settings.password
@@ -442,53 +437,10 @@ Page {
             Card {
                 SectionTitle { text: qsTr("Connection") }
 
-                ChoiceBox {
-                    objectName: "routeBox"
-                    Layout.fillWidth: true
-                    Accessible.name: qsTr("Connect")
-                    entries: [
-                        { label: qsTr("Directly"), value: "direct" },
-                        { label: qsTr("Through Tor"), value: "tor" },
-                        { label: qsTr("Through a SOCKS5 proxy"), value: "proxy" }
-                    ]
-                    current: page.route
-                    onPicked: (value) => page.route = value
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    visible: page.route === "tor"
-                    Caption { text: qsTr("Tor's SOCKS port") }
-                    TextField {
-                        id: torField
-                        objectName: "torField"
-                        Layout.fillWidth: true
-                        // Armed by bindAccount. Empty is tacky's default
-                        // address; a login here would be used as given.
-                        placeholderText: qsTr("socks5://127.0.0.1:9050")
-                        inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
-                                          | Qt.ImhNoPredictiveText | Qt.ImhUrlCharactersOnly
-                        onAccepted: if (page.dirty) page.save()
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    visible: page.route === "proxy"
-                    Caption { text: qsTr("SOCKS5 proxy") }
-                    TextField {
-                        id: proxyField
-                        objectName: "proxyField"
-                        Layout.fillWidth: true
-                        // Armed by bindAccount. It can carry a login, so no
-                        // suggestions.
-                        placeholderText: qsTr("socks5://host:port")
-                        inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoAutoUppercase
-                                          | Qt.ImhNoPredictiveText | Qt.ImhUrlCharactersOnly
-                        onAccepted: if (page.dirty) page.save()
-                    }
+                RouteChooser {
+                    id: routeChooser
+                    objectName: "routeChooser"
+                    onAccepted: if (page.dirty) page.save()
                 }
 
                 // Which proxy the link is on now, as tacky reports it.
@@ -512,15 +464,6 @@ Page {
                     visible: text !== ""
                     text: page.settings ? page.settings.proxyError : ""
                     color: Theme.negative
-                    wrapMode: Text.WordWrap
-                }
-
-                Caption {
-                    Layout.fillWidth: true
-                    visible: page.route !== "direct"
-                    text: page.route === "tor"
-                          ? qsTr("Everything this account sends goes through Tor, files included, on circuits no other account shares. Calls are off. Leave the port empty for a system Tor or Orbot; Tor Browser listens on socks5://127.0.0.1:9150.")
-                          : qsTr("Everything this account sends goes through the proxy, files included. Calls are off while it is set. A login goes in as socks5://user:password@host:port.")
                     wrapMode: Text.WordWrap
                 }
 
@@ -685,8 +628,8 @@ Page {
 
     function save() {
         if (page.settings)
-            page.settings.save(passwordField.text, nickField.text, page.pendingProxy,
-                               page.pendingTor)
+            page.settings.save(passwordField.text, nickField.text,
+                               routeChooser.pendingProxy, routeChooser.pendingTor)
     }
 
     CopiedNotice {
