@@ -380,7 +380,6 @@ Page {
                              && storageCard.status !== "locked"
                     enabled: !App.storage.busy
                     flat: true
-                    padding: 0
                     text: {
                         switch (storageCard.status) {
                         case "plaintext":
@@ -406,12 +405,6 @@ Page {
                             storageConfirm.ask(
                                 "decrypt",
                                 qsTr("Local storage will be written back out as plaintext the next time Quack starts. Continue?"))
-                    }
-                    contentItem: Text {
-                        text: storageAction.text
-                        color: Theme.accent
-                        font.pixelSize: 14
-                        verticalAlignment: Text.AlignVCenter
                     }
                 }
             }
@@ -559,7 +552,6 @@ Page {
                     objectName: "exportLogButton"
                     visible: App.logPath !== ""
                     flat: true
-                    padding: 0
                     // Android keeps the file where no file manager can reach
                     // it, so there the only way out is the share chooser.
                     readonly property bool sharing: Qt.platform.os === "android"
@@ -570,12 +562,6 @@ Page {
                             App.shareLog()
                         else
                             Qt.openUrlExternally(App.logFolder())
-                    }
-                    contentItem: Text {
-                        text: exportBtn.text
-                        color: Theme.accent
-                        font.pixelSize: 14
-                        verticalAlignment: Text.AlignVCenter
                     }
                 }
                 Caption {

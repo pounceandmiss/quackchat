@@ -38,7 +38,8 @@ endif()
 # QML uses the SafeArea attached type (6.9). On 6.8 every SafeArea binding throws
 # and the padding it feeds falls back to a style default.
 find_package(Qt6 6.10 REQUIRED
-    COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickDialogs2 Test
+    COMPONENTS Core Gui Network Qml Quick QuickControls2 QuickControls2Impl
+               QuickTemplates2 QuickDialogs2 Test
                LinguistTools Multimedia)
 # Desktop notifications on Linux go over the session bus. Optional: without it
 # the app builds and runs exactly as before, just silently. Android posts its
@@ -227,6 +228,8 @@ if(NOT QUACK_QML_AOT)
     set_target_properties(quack PROPERTIES QT_QMLCACHEGEN_ARGUMENTS "--only-bytecode")
 endif()
 
+add_subdirectory(QuackStyle)
+
 set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Icons.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set_source_files_properties(Jid.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -352,6 +355,10 @@ qt_add_qml_module(quack
         backend/AvatarEncoder.h
         backend/AvatarSink.h)
 target_include_directories(quack PUBLIC backend "${TACKY_INCLUDE}")
+# The style is picked by name at run time, never imported, so nothing would
+# pull its static plugin in: AppController.cpp imports it by hand. Linked
+# into `quack` so the test binaries can run under it too.
+target_link_libraries(quack PUBLIC quackstyleplugin)
 # Core/Qml PUBLIC so the headless tests get the headers without linking QtGui.
 target_link_libraries(quack
     PUBLIC Qt6::Core Qt6::Network Qt6::Qml

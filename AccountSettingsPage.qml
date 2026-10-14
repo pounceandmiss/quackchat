@@ -130,15 +130,7 @@ Page {
 
     // An action that reads as a link, as "Change password on server…" does.
     component LinkButton: Button {
-        id: link
         flat: true
-        padding: 0
-        contentItem: Text {
-            text: link.text
-            color: Theme.accent
-            font.pixelSize: 14
-        }
-        background: null
     }
 
     component Card: Rectangle {
@@ -408,20 +400,12 @@ Page {
                     wrapMode: Text.WordWrap
                 }
 
-                Button {
+                LinkButton {
                     id: changeOnServer
                     objectName: "changePasswordOnServer"
                     text: qsTr("Change password on server…")
-                    flat: true
-                    padding: 0
                     enabled: page.settings !== null
                     onClicked: changePasswordDialog.open()
-                    contentItem: Text {
-                        text: changeOnServer.text
-                        color: changeOnServer.enabled ? Theme.accent : Theme.textDim
-                        font.pixelSize: 14
-                    }
-                    background: null
                 }
             }
 
@@ -611,39 +595,22 @@ Page {
                 elide: Text.ElideRight
             }
 
-            Button {
-                id: cancelBtn
-                text: qsTr("Cancel")
-                flat: true
-                onClicked: page.done()
-                contentItem: Text {
-                    text: cancelBtn.text
-                    color: Theme.textDim
-                    font.pixelSize: 14
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
-                }
-            }
+            // Roles rather than places: the box puts Cancel and Save in the
+            // order the platform's own dialogs use.
+            DialogButtonBox {
+                padding: 0
 
-            Button {
-                id: saveBtn
-                text: page.settings && page.settings.saving ? qsTr("Saving") : qsTr("Save")
-                enabled: page.dirty && !(page.settings && page.settings.saving)
-                onClicked: page.save()
-                contentItem: Text {
-                    text: saveBtn.text
-                    color: saveBtn.enabled ? Theme.textOnAccent : Theme.textDim
-                    font.pixelSize: 14
-                    font.bold: true
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                Button {
+                    text: qsTr("Cancel")
+                    flat: true
+                    DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                    onClicked: page.done()
                 }
-                background: Rectangle {
-                    implicitWidth: 92
-                    implicitHeight: 36
-                    radius: 18
-                    color: saveBtn.enabled ? (saveBtn.pressed ? Theme.accentDeep : Theme.accent)
-                                           : Theme.field
+                Button {
+                    text: page.settings && page.settings.saving ? qsTr("Saving") : qsTr("Save")
+                    enabled: page.dirty && !(page.settings && page.settings.saving)
+                    DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+                    onClicked: page.save()
                 }
             }
         }

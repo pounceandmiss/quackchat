@@ -89,4 +89,9 @@ Dialog {
     x: Math.round((parent ? parent.width - width : 0) / 2)
     y: Math.max(12, Math.round((sheet.clearHeight - height) / 2))
     Behavior on y { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+
+    // Named here rather than left to the dialog, which would build the
+    // fallback style's box and with it the fallback style's buttons. A Dialog
+    // hands its standardButtons to whatever box is its footer.
+    footer: DialogButtonBox { visible: count > 0 }
 }

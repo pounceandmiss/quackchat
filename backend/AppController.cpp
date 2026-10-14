@@ -6,7 +6,12 @@
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QQmlExtensionPlugin>
 #include <utility>
+
+// The app's controls style (QuackStyle/), chosen by name in main.cpp. Nothing
+// imports it, so its static plugin has to be pulled in here.
+Q_IMPORT_QML_PLUGIN(QuackStylePlugin)
 
 #ifdef Q_OS_ANDROID
 #include <QCoreApplication>

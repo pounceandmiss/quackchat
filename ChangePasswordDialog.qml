@@ -81,19 +81,30 @@ SheetDialog {
         }
     }
 
-    footer: DialogButtonBox {
-        Button {
-            text: qsTr("Cancel")
-            enabled: !dlg.busy
-            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
-        }
-        // An action rather than an accept, so the box stays open on the reply.
-        Button {
-            objectName: "changePasswordButton"
-            text: qsTr("Change")
-            enabled: !dlg.busy && newField.text !== ""
-            DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
-            onClicked: dlg.change()
+    // Change is the accept, so the box puts it where the platform puts one, but
+    // the dialog must stay open on the reply. A Dialog closes on the accept of
+    // a box that is its footer, and only of one that is: held in an Item, the
+    // box is ours to answer.
+    footer: Item {
+        implicitHeight: box.implicitHeight
+        DialogButtonBox {
+            id: box
+            anchors.fill: parent
+            onAccepted: dlg.change()
+            onRejected: dlg.close()
+
+            Button {
+                text: qsTr("Cancel")
+                flat: true
+                enabled: !dlg.busy
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+            Button {
+                objectName: "changePasswordButton"
+                text: qsTr("Change")
+                enabled: !dlg.busy && newField.text !== ""
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
         }
     }
 }

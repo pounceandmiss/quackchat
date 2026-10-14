@@ -77,8 +77,19 @@ int main(int argc, char *argv[]) {
     // shadow inside the background item, sized by negative insets, and a
     // background of our own inherits that room as 32px of blank panel around
     // the entries. Default only, as above.
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_FALLBACK_STYLE"))
+        qputenv("QT_QUICK_CONTROLS_FALLBACK_STYLE", "Fusion");
+#endif
+    // The app's own style (QuackStyle/) draws the controls it defines - buttons
+    // and button boxes - in the app's look on every platform; everything else
+    // falls back to the platform's style above, Material on Android, where Qt
+    // picks it. A default, so QT_QUICK_CONTROLS_STYLE=Fusion still shows the
+    // stock controls.
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE"))
-        qputenv("QT_QUICK_CONTROLS_STYLE", "Fusion");
+        qputenv("QT_QUICK_CONTROLS_STYLE", "QuackStyle");
+#ifdef Q_OS_ANDROID
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_FALLBACK_STYLE"))
+        qputenv("QT_QUICK_CONTROLS_FALLBACK_STYLE", "Material");
 #endif
     QGuiApplication app(argc, argv);
     // The basename of icons/io.github.pounceandmiss.Quack.desktop, twice over:

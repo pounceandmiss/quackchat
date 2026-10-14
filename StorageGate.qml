@@ -142,22 +142,23 @@ SheetDialog {
             value: App.storage.progressDone
         }
 
-        RowLayout {
+        DialogButtonBox {
             Layout.fillWidth: true
             Layout.topMargin: 4
-            spacing: 8
-
-            Item { Layout.fillWidth: true }
+            padding: 0
 
             Button {
                 objectName: "storageGateCancel"
                 visible: gate.cancellable
                 enabled: !App.storage.busy
+                flat: true
                 text: qsTr("Cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
                 onClicked: App.storage.cancelPending()
             }
             Button {
                 objectName: "storageGateGo"
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
                 enabled: !App.storage.busy
                        && (!gate.wantsPassphrase || gate.entry !== "")
                 text: {

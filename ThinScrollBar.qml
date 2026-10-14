@@ -1,11 +1,24 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Templates as T
 import Quack
 
 // Slim themed handle in place of the style's grey rail. On touch it is an
 // indicator only: hidden at rest, shown while the view moves.
-ScrollBar {
+//
+// The template rather than the style's ScrollBar: nothing of the style's is
+// wanted, and behind the app's own style a fallback's states are kept beside
+// these instead of giving way to them (two "active" ones, under Material).
+T.ScrollBar {
     id: bar
+
+    implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
+                            implicitContentWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(implicitBackgroundHeight + topInset + bottomInset,
+                             implicitContentHeight + topPadding + bottomPadding)
+    padding: 2
+    visible: bar.policy !== T.ScrollBar.AlwaysOff
+    minimumSize: orientation === Qt.Horizontal ? height / width : width / height
 
     interactive: !Theme.mobile
 
@@ -45,8 +58,7 @@ ScrollBar {
         opacity: bar.restOpacity
     }
 
-    // The style has its own active state and fade over contentItem.opacity,
-    // which would take the binding above off it. These replace them.
+    // Shown while in use, then a fade back to rest.
     states: State {
         name: "active"
         when: bar.size < 1 && (bar.active || bar.pressed)

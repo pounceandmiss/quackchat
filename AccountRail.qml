@@ -221,6 +221,9 @@ Rectangle {
                     modal: true
                     title: qsTr("Remove account")
                     standardButtons: Dialog.Cancel | Dialog.Yes
+                    // The app's box rather than the fallback style's (see
+                    // SheetDialog).
+                    footer: DialogButtonBox {}
                     onAccepted: App.accounts.remove(cell.jid)
                     Text {
                         text: qsTr("Remove %1?\nThis deletes its local cache.").arg(cell.jid)
