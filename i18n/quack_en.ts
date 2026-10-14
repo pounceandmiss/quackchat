@@ -4,7 +4,7 @@
 <context>
     <name>ChatBubble</name>
     <message numerus="yes">
-        <location filename="../ChatBubble.qml" line="1071"/>
+        <location filename="../qml/ChatBubble.qml" line="1071"/>
         <source>%1, %n reaction(s)</source>
         <translation>
             <numerusform>%1, %n reaction</numerusform>
@@ -26,7 +26,7 @@
 <context>
     <name>ChatPage</name>
     <message numerus="yes">
-        <location filename="../ChatPage.qml" line="1099"/>
+        <location filename="../qml/ChatPage.qml" line="1099"/>
         <source>%n selected</source>
         <translation>
             <numerusform>%n selected</numerusform>
@@ -34,7 +34,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../ChatPage.qml" line="1738"/>
+        <location filename="../qml/ChatPage.qml" line="1738"/>
         <source>Jump to the newest message, %n unread</source>
         <extracomment>The way-down button while messages below are unread</extracomment>
         <translation>
@@ -46,7 +46,7 @@
 <context>
     <name>GroupCallBanner</name>
     <message numerus="yes">
-        <location filename="../GroupCallBanner.qml" line="69"/>
+        <location filename="../qml/GroupCallBanner.qml" line="69"/>
         <source>%n person(s) in the call</source>
         <translation>
             <numerusform>%n person in the call</numerusform>
@@ -57,7 +57,7 @@
 <context>
     <name>MucDetailsPage</name>
     <message numerus="yes">
-        <location filename="../MucDetailsPage.qml" line="121"/>
+        <location filename="../qml/MucDetailsPage.qml" line="121"/>
         <source>%n new key(s)</source>
         <translation>
             <numerusform>%n new key</numerusform>
@@ -65,7 +65,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../MucDetailsPage.qml" line="122"/>
+        <location filename="../qml/MucDetailsPage.qml" line="122"/>
         <source>%n key(s), trusted</source>
         <translation>
             <numerusform>%n key, trusted</numerusform>
@@ -73,7 +73,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../MucDetailsPage.qml" line="123"/>
+        <location filename="../qml/MucDetailsPage.qml" line="123"/>
         <source>%n key(s)</source>
         <translation>
             <numerusform>%n key</numerusform>
@@ -81,7 +81,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../MucDetailsPage.qml" line="642"/>
+        <location filename="../qml/MucDetailsPage.qml" line="642"/>
         <source>%n person(s)</source>
         <translation>
             <numerusform>%n person</numerusform>
@@ -89,7 +89,7 @@
         </translation>
     </message>
     <message numerus="yes">
-        <location filename="../MucDetailsPage.qml" line="784"/>
+        <location filename="../qml/MucDetailsPage.qml" line="784"/>
         <source>%n member(s) need attention.</source>
         <translation>
             <numerusform>%n member needs attention.</numerusform>
